@@ -40,7 +40,8 @@ wait
 for layer_idx in {0..3}; do
     python -m experiments.circuits.edges \
         --circuit=$CIRCUIT_NAME \
-        --upstream_layer=$layer_idx &
+        --upstream_layer=$layer_idx \
+        $([ "$SHOULD_RESAMPLE" = "false" ] && echo "--no-resample") &
 done
 
 # Wait for all processes to finish
