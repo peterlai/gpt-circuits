@@ -30,7 +30,7 @@ for layer_idx in {0..4}; do
         --sequence_idx=$SEQUENCE_IDX \
         --token_idx=$TOKEN_IDX \
         --layer_idx=$layer_idx \
-        --resample=$SHOULD_RESAMPLE &
+        $([ "$SHOULD_RESAMPLE" = "false" ] && echo "--no-resample") &
 done
 
 # Wait for all processes to finish
