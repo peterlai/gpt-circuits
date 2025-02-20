@@ -88,6 +88,10 @@ class SAETrainer(Trainer):
         # Train weights.
         super().train()
 
+        # Wait for all processes to complete training.
+        if self.ddp:
+            torch.distributed.barrier()
+
         # Reload all checkpoint weights, which may include those that weren't trained.
         self.model = SparsifiedGPT.load(
             self.config.out_dir,
@@ -104,9 +108,10 @@ class SAETrainer(Trainer):
         self.checkpoint_compound_ce_loss_increase = final_metrics["compound_ce_loss_increase"]
 
         # Summarize results
-        print(f"Final L0s: {self.pretty_print(self.checkpoint_l0s)}")
-        print(f"Final CE loss increases: {self.pretty_print(self.checkpoint_ce_loss_increases)}")
-        print(f"Final compound CE loss increase: {self.pretty_print(self.checkpoint_compound_ce_loss_increase)}")
+        if self.is_main_process:
+            print(f"Final L0s: {self.pretty_print(self.checkpoint_l0s)}")
+            print(f"Final CE loss increases: {self.pretty_print(self.checkpoint_ce_loss_increases)}")
+            print(f"Final compound CE loss increase: {self.pretty_print(self.checkpoint_compound_ce_loss_increase)}")
 
     def configure_optimizer(self, model: SparsifiedGPT) -> Optimizer:
         """
