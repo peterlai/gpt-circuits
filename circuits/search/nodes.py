@@ -67,6 +67,11 @@ class NodeSearch:
         # Get output for layer
         feature_magnitudes = output.feature_magnitudes[layer_idx].squeeze(0)  # Shape: (T, F)
 
+        # If searching for nodes in the last layer, set start_token_idx to target_token_idx.
+        # The last layer is special because its output for the target token is directly used to produce logits.
+        if layer_idx == self.model.gpt.config.n_layer:
+            start_token_idx = target_token_idx
+
         # Get non-zero features where token index is in [start_token_idx...target_token_idx]
         initial_nodes: set[Node] = set({})
         non_zero_indices = torch.nonzero(feature_magnitudes, as_tuple=True)
