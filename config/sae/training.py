@@ -38,7 +38,7 @@ shakespeare_64x4_defaults = {
 }
 
 # Shared training parameters
-tiny_defaults = {
+tiny_32x4_defaults = {
     "data_dir": "data/tiny_stories_10m",
     "eval_interval": 250,
     "eval_steps": 100,
@@ -54,14 +54,6 @@ tiny_defaults = {
 # Training configuration options
 options: dict[str, SAETrainingConfig] = map_options(
     SAETrainingConfig(
-    name="standard.tiny_64x2",
-    sae_config=sae_options["standardx8.tiny_64x2"],
-        **tiny_defaults,
-        loss_coefficients=LossCoefficients(
-        sparsity=(0.02, 0.06, 0.2, 0.2, 0.5),  # Targets L0s of ~10
-        ),
-    ),
-     SAETrainingConfig(
         name="standard.tiny_32x4",
         sae_config=sae_options["standardx16.tiny_32x4"],
         **tiny_defaults,
