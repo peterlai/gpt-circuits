@@ -1,3 +1,4 @@
+import math
 from collections import defaultdict
 from typing import Optional
 
@@ -106,15 +107,17 @@ class EdgeSearch:
                 # Update circuit
                 circuit_edges = circuit_candidate.edges
 
-                # Find least important edge
-                if least_important_edge := self.find_least_important_edge(
+                # Find least important edges
+                if least_important_edges := self.find_least_important_edges(
                     downstream_nodes,
                     circuit_edges,
                     upstream_magnitudes,
                     original_downstream_magnitudes,
                     target_token_idx,
+                    # Remove 2% of edges on each iteration
+                    max_count=int(math.ceil(len(circuit_edges) * 0.02)),
                 ):
-                    discard_candidates = frozenset({least_important_edge})
+                    discard_candidates = frozenset(least_important_edges)
                 else:
                     print("Stopping search - No more edges can be removed.")
                     break
@@ -132,18 +135,22 @@ class EdgeSearch:
 
         return circuit_edges
 
-    def find_least_important_edge(
+    def find_least_important_edges(
         self,
         downstream_nodes: frozenset[Node],
         edges: frozenset[Edge],
         upstream_magnitudes: torch.Tensor,  # Shape: (T, F)
         original_downstream_magnitudes: torch.Tensor,  # Shape: (T, F)
         target_token_idx: int,
-    ) -> Optional[Edge]:
+        max_count: int = 1,
+    ) -> Optional[set[Edge]]:
         """
         Find the least important edge in a circuit. Returns the edge and its mean-squared error.
         To avoid having unconnected nodes, the last edge to a node will not be considered.
+
+        :param max_count: The maximum number of edges to return.
         """
+        # Map edges to ablation effects
         edge_to_error = self.estimate_edge_ablation_effects(
             downstream_nodes,
             edges,
@@ -155,13 +162,22 @@ class EdgeSearch:
         # Sort edges by mean-squared error (ascending)
         sorted_edges = sorted(edge_to_error.items(), key=lambda x: x[1])
 
+        # Edges to be discarded
+        discard_candidates: set[Edge] = set()
+
         # Ignore edges that would leave a node unconnected
         for edge, _ in sorted_edges:
             if len([e for e in edges if e.downstream == edge.downstream]) > 1:
                 if len([e for e in edges if e.upstream == edge.upstream]) > 1:
-                    return edge
+                    discard_candidates.add(edge)
+                    if len(discard_candidates) >= max_count:
+                        break
 
-        # All edges are required
+        # Return least important edges
+        if discard_candidates:
+            return discard_candidates
+
+        # If no discard candidates, all edges are required
         return None
 
     def estimate_edge_ablation_effects(

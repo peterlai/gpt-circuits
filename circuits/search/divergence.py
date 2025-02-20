@@ -82,7 +82,7 @@ def patch_feature_magnitudes(
     layer_idx: int,
     target_token_idx: int,
     circuit_variants: Sequence[Circuit],
-    feature_magnitudes: torch.Tensor,
+    feature_magnitudes: torch.Tensor,  # Shape: (T, F)
     num_samples: int,
 ) -> dict[Circuit, torch.Tensor]:  # Shape: (num_samples, T, F)
     """

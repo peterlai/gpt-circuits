@@ -1,19 +1,27 @@
 """
 Reformat circuit exports for GPT MRI app.
 
-$ python -m experiments.circuits.mri --circuit=train.0.0.51 --dirname=mars
+$ python -m experiments.circuits.mri --circuit=train.0.0.51 --dirname=mri
 """
 
 import argparse
 import json
 from pathlib import Path
 
+import numpy as np
 import torch
 
-from circuits import Edge, Node, json_prettyprint
+from circuits import Circuit, Edge, Node, json_prettyprint
+from circuits.features.cache import ModelCache
 from circuits.features.profiles import FeatureProfile, ModelProfile
-from circuits.features.samples import FeatureSample, ModelSampleSet
-from circuits.search.divergence import get_predictions
+from circuits.features.samples import ModelSampleSet, Sample
+from circuits.search.ablation import ResampleAblator
+from circuits.search.clustering import ClusterSearch
+from circuits.search.divergence import (
+    get_predicted_logits,
+    get_predictions,
+    patch_feature_magnitudes,
+)
 from config import Config, TrainingConfig
 from data.dataloaders import DatasetShard
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
@@ -26,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="e2e.jumprelu.shakespeare_64x4", help="Model name")
     parser.add_argument("--circuit", type=str, default="train.0.0.51", help="Circuit directory name")
-    parser.add_argument("--dirname", type=str, default="mars", help="Output directory name")
+    parser.add_argument("--dirname", type=str, default="mri", help="Output directory name")
     return parser.parse_args()
 
 
@@ -50,6 +58,7 @@ def main():
 
     # Load cached metrics and feature samples
     model_profile = ModelProfile(checkpoint_dir)
+    model_cache = ModelCache(checkpoint_dir)
     model_sample_set = ModelSampleSet(checkpoint_dir=TrainingConfig.checkpoints_dir / args.model)
 
     # Load sequence args
@@ -63,6 +72,9 @@ def main():
 
     # Load shard
     shard = DatasetShard(data_dir, split, shard_idx)
+
+    # Get tokens
+    tokens: list[int] = shard.tokens[sequence_idx : sequence_idx + model.config.block_size].tolist()
 
     # Gather circuit nodes
     nodes: set[Node] = set()
@@ -101,6 +113,7 @@ def main():
         base_dir / "samples" / str(sequence_idx + target_token_idx),
         model,
         model_profile,
+        model_cache,
         nodes,
         edges,
         shard,
@@ -109,14 +122,55 @@ def main():
     )
 
     # Export similar.json
-    export_similar_samples(base_dir / "samples" / str(sequence_idx + target_token_idx))
+    export_similar_samples(
+        base_dir / "samples" / str(sequence_idx + target_token_idx),
+        model,
+        model_profile,
+        model_cache,
+        nodes,
+        shard,
+        tokens,
+        target_token_idx,
+    )
 
 
-def export_similar_samples(samples_dir: Path):
+def export_similar_samples(
+    samples_dir: Path,
+    model: SparsifiedGPT,
+    model_profile: ModelProfile,
+    model_cache: ModelCache,
+    nodes: set[Node],
+    shard: DatasetShard,
+    tokens: list[int],
+    target_token_idx: int,
+):
     """
     Export similar samples to similar.json
     """
-    # TODO: Implement
+    # Convert tokens to tensor
+    input: torch.Tensor = torch.tensor(tokens, device=model.config.device).unsqueeze(0)  # Shape: (1, T)
+
+    # Get target feature magnitudes
+    with torch.no_grad():
+        output: SparsifiedGPTOutput = model(input)
+    last_layer_idx = model.gpt.config.n_layer
+    target_feature_magnitudes = output.feature_magnitudes[last_layer_idx][0, target_token_idx, :].cpu().numpy()
+    target_nodes = [n for n in nodes if n.token_idx == target_token_idx and n.layer_idx == last_layer_idx]
+    circuit_feature_idxs = np.array([node.feature_idx for node in nodes if node in target_nodes])
+
+    # Get samples that are similar to the target token
+    cluster_search = ClusterSearch(model_profile, model_cache)
+    cluster = cluster_search.get_cluster(
+        last_layer_idx,
+        target_token_idx,
+        target_feature_magnitudes,
+        circuit_feature_idxs,
+        k_nearest=25,
+        positional_coefficient=0.0,
+    )
+    cluster_samples = cluster.as_sample_set().samples
+
+    # Data to export
     data = {
         "samples": [],
         "decodedTokens": [],
@@ -125,6 +179,20 @@ def export_similar_samples(samples_dir: Path):
         "tokenMagnitudes": [],
         "maxActivation": 1.0,
     }
+
+    # Add samples
+    tokenizer = model.gpt.config.tokenizer
+    for sample in cluster_samples:
+        starting_idx = sample.block_idx * model.config.block_size
+        tokens = shard.tokens[starting_idx : starting_idx + model.config.block_size].tolist()
+        decoded_sample = tokenizer.decode_sequence(tokens)
+        decoded_tokens = [tokenizer.decode_token(token) for token in tokens]
+        data["samples"].append(decoded_sample)
+        data["decodedTokens"].append(decoded_tokens)
+        data["tokenIdxs"].append(sample.token_idx)
+        data["absoluteTokenIdxs"].append(starting_idx + sample.token_idx)
+        magnitudes = sample.magnitudes.toarray().squeeze(0).tolist()
+        data["tokenMagnitudes"].append([round(magnitude, 3) for magnitude in magnitudes])
 
     samples_dir.mkdir(parents=True, exist_ok=True)
     with open(samples_dir / "similar.json", "w") as f:
@@ -135,6 +203,7 @@ def export_circuit_data(
     sample_dir: Path,
     model: SparsifiedGPT,
     model_profile: ModelProfile,
+    model_cache: ModelCache,
     nodes: set[Node],
     edges: set[Edge],
     shard: DatasetShard,
@@ -177,18 +246,31 @@ def export_circuit_data(
     probabilities = get_predictions(model.gpt.config.tokenizer, logits, 128)
     data["probabilities"] = {k: round(v / 100.0, 3) for k, v in probabilities.items() if v > 0.1}
 
-    # Set SAE probabilities
-    num_layers = model.gpt.config.n_layer
-    x_reconstructed = model.saes[str(num_layers)].decode(output.feature_magnitudes[num_layers])  # type: ignore
-    predicted_logits = model.gpt.forward_with_patched_activations(
-        x_reconstructed, layer_idx=num_layers
-    )  # Shape: (1, T, V)
-    predicted_logits = predicted_logits[:, target_token_idx, :].squeeze(0)  # Shape: (V)
+    # Set circuit probabilities
+    ablator = ResampleAblator(model_profile, model_cache, 128, 0.0)
+    circuit = Circuit(frozenset(nodes), frozenset(edges))
+    last_layer_idx = model.gpt.config.n_layer
+    feature_magnitudes = output.feature_magnitudes[last_layer_idx][0]
+    patched_feature_magnitudes = patch_feature_magnitudes(
+        ablator,
+        last_layer_idx,
+        target_token_idx,
+        [circuit],
+        feature_magnitudes,
+        num_samples=128,
+    )
+    predicted_logits = get_predicted_logits(
+        model,
+        last_layer_idx,
+        patched_feature_magnitudes,
+        target_token_idx,
+    )[circuit]
     predicted_probabilities = get_predictions(model.gpt.config.tokenizer, predicted_logits, 128)
     data["circuit_probabilities"] = {k: round(v / 100.0, 3) for k, v in predicted_probabilities.items() if v > 0.1}
 
     # Set root features
     data["root_features"] = {}
+    num_layers = model.gpt.config.n_layer
     for feature_idx, magnitude in enumerate(output.feature_magnitudes[num_layers][0, target_token_idx, :].tolist()):
         if magnitude > 0:
             data["root_features"][feature_idx] = round(magnitude, 3)
@@ -259,13 +341,13 @@ def export_features(
         }
 
         # Load feature samples
-        samples: list[FeatureSample] = model_sample_set[layer_idx][feature_idx].samples
+        samples: list[Sample] = model_sample_set[layer_idx][feature_idx].samples
         block_size = int(samples[0].magnitudes.shape[-1])  # type: ignore
 
         # Load sample tokens
         sample_tokens: list[list[int]] = []
         for sample in samples:
-            starting_idx = sample.sample_idx * block_size
+            starting_idx = sample.block_idx * block_size
             tokens = shard.tokens[starting_idx : starting_idx + block_size].tolist()
             sample_tokens.append(tokens)
 
@@ -280,7 +362,7 @@ def export_features(
         # Add token idxs
         for sample in samples:
             data["tokenIdxs"].append(sample.token_idx)
-            data["absoluteTokenIdxs"].append(block_size * sample.sample_idx + sample.token_idx)
+            data["absoluteTokenIdxs"].append(block_size * sample.block_idx + sample.token_idx)
             pass
 
         # Add token magnitudes

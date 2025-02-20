@@ -217,7 +217,7 @@ class FeatureSampleSet:
     sample_magnitudes: sparse.csr_matrix  # Shape: (num_samples, block_size)
 
     @cached_property
-    def samples(self) -> list["FeatureSample"]:
+    def samples(self) -> list["Sample"]:
         """
         Return a list of feature samples.
         """
@@ -226,7 +226,7 @@ class FeatureSampleSet:
         for i, shard_token_idx in enumerate(self.sample_indices):
             sample_idx = int(shard_token_idx // block_size)
             token_idx = int(shard_token_idx % block_size)
-            sample = FeatureSample(self.layer_idx, self.feature_idx, sample_idx, token_idx, self.sample_magnitudes[i])
+            sample = Sample(self.layer_idx, sample_idx, token_idx, self.sample_magnitudes[i])
             feature_samples.append(sample)
         return feature_samples
 
@@ -242,11 +242,11 @@ class FeatureSampleSet:
         }
         for sample in self.samples:
             block_size = sample.magnitudes.shape[-1]  # type: ignore
-            starting_idx = sample.sample_idx * block_size
+            starting_idx = sample.block_idx * block_size
             tokens = shard.tokens[starting_idx : starting_idx + block_size].tolist()
             data["samples"].append(
                 {
-                    "sample_idx": sample.sample_idx,
+                    "block_idx": sample.block_idx,
                     "token_idx": sample.token_idx,
                     "text": tokenizer.decode_sequence(tokens),
                     "tokens": tokens,
@@ -260,13 +260,12 @@ class FeatureSampleSet:
 
 
 @dataclass
-class FeatureSample:
+class Sample:
     """
-    Contains feature magnitudes for a specific sample.
+    Contains magnitudes for a specific sample.
     """
 
     layer_idx: int
-    feature_idx: int
-    sample_idx: int  # Shard token idx // block_size
+    block_idx: int  # Shard token idx // block_size
     token_idx: int  # Shard token idx % block_size
     magnitudes: sparse.csr_matrix  # Shape: (1, block_size)

@@ -1,3 +1,4 @@
+import math
 from typing import Sequence
 
 import torch
@@ -67,6 +68,11 @@ class NodeSearch:
         # Get output for layer
         feature_magnitudes = output.feature_magnitudes[layer_idx].squeeze(0)  # Shape: (T, F)
 
+        # If searching for nodes in the last layer, set start_token_idx to target_token_idx.
+        # The last layer is special because its output for the target token is directly used to produce logits.
+        if layer_idx == self.model.gpt.config.n_layer:
+            start_token_idx = target_token_idx
+
         # Get non-zero features where token index is in [start_token_idx...target_token_idx]
         initial_nodes: set[Node] = set({})
         non_zero_indices = torch.nonzero(feature_magnitudes, as_tuple=True)
@@ -87,7 +93,7 @@ class NodeSearch:
             nodes_by_token_idx[token_idx] = set({node for node in initial_nodes if node.token_idx == token_idx})
 
         # Starting search states
-        search_threshold = threshold  # TODO: Use a lower threshold for coarse search
+        search_threshold = threshold * 0.9  # Use a lower threshold for coarse search
         discard_candidates: set[Node] = set({})
         circuit_kl_div: float = float("inf")
 
@@ -143,7 +149,7 @@ class NodeSearch:
                 break
 
         # Print results (grouped by token_idx)
-        print(f"\nCircuit after token search ({len(circuit_nodes)}):")
+        print(f"\nCircuit has {len(circuit_nodes)} nodes after token search on layer {layer_idx}:")
         for token_idx in range(max([node.token_idx for node in circuit_nodes]) + 1):
             nodes = [node for node in circuit_nodes if node.token_idx == token_idx]
             if len(nodes) > 0:
@@ -186,22 +192,16 @@ class NodeSearch:
                 # Update circuit
                 circuit_nodes = circuit_candidate.nodes
 
-                # Sort features by KL divergence (descending)
-                estimated_feature_ablation_effects = self.estimate_feature_ablation_effects(
+                # Find discard candidates
+                discard_candidates = self.find_least_important_nodes(
                     layer_idx,
                     target_token_idx,
                     target_logits,
                     feature_magnitudes,
                     circuit_nodes=circuit_nodes,
+                    # Remove 2% of nodes on each iteration
+                    max_count=int(math.ceil(len(circuit_nodes) * 0.02)),
                 )
-                least_important_feature = min(estimated_feature_ablation_effects.items(), key=lambda x: x[1])[0]
-                least_important_feature_kl_div = estimated_feature_ablation_effects[least_important_feature]
-                discard_candidates = {least_important_feature}
-
-                # Check for early stopping
-                if least_important_feature_kl_div > search_threshold:
-                    print("Stopping search - can't improve KL divergence.")
-                    break
 
             # If above threshold, stop search
             else:
@@ -209,7 +209,7 @@ class NodeSearch:
                 break
 
         # Print final results (grouped by token_idx)
-        print(f"\nCircuit after feature search ({len(circuit_nodes)}):")
+        print(f"\nCircuit has {len(circuit_nodes)} nodes after feature search on layer {layer_idx}:")
         for token_idx in range(max([f.token_idx for f in circuit_nodes]) + 1):
             nodes = [f for f in circuit_nodes if f.token_idx == token_idx]
             if len(nodes) > 0:
@@ -218,14 +218,15 @@ class NodeSearch:
         # Return circuit
         return frozenset(circuit_nodes)
 
-    def estimate_feature_ablation_effects(
+    def find_least_important_nodes(
         self,
         layer_idx: int,
         target_token_idx: int,
         target_logits: torch.Tensor,
         feature_magnitudes: torch.Tensor,
         circuit_nodes: frozenset[Node],
-    ) -> dict[Node, float]:
+        max_count: int,
+    ) -> set[Node]:
         """
         Map features to KL divergence.
         """
@@ -247,7 +248,12 @@ class NodeSearch:
         )
 
         # Map nodes to KL divergence
-        return {node: kld_results[variant].kl_divergence for node, variant in circuit_variants.items()}
+        node_to_kld = {node: kld_results[variant].kl_divergence for node, variant in circuit_variants.items()}
+
+        # Find least important nodes
+        sorted_nodes = sorted(node_to_kld.items(), key=lambda x: x[1])  # Sort by KL divergence (ascending)
+        least_important_nodes = set([node for node, _ in sorted_nodes[:max_count]])
+        return least_important_nodes
 
     def estimate_token_ablation_effects(
         self,

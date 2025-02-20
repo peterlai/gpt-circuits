@@ -5,6 +5,7 @@ from scipy import sparse
 
 from circuits.features.cache import LayerCache, ModelCache
 from circuits.features.profiles import ModelProfile
+from circuits.features.samples import Sample
 
 
 @dataclass(frozen=True)
@@ -30,12 +31,21 @@ class Cluster:
     layer_idx: int
     token_idx: int
     idxs: tuple[int, ...]
+    mses: tuple[float, ...]
 
-    def __init__(self, layer_cache: LayerCache, layer_idx: int, token_idx: int, idxs: tuple[int, ...]):
+    def __init__(
+        self,
+        layer_cache: LayerCache,
+        layer_idx: int,
+        token_idx: int,
+        idxs: tuple[int, ...],
+        mses: tuple[float, ...] = (),
+    ):
         self.layer_cache = layer_cache
         self.layer_idx = layer_idx
         self.token_idx = token_idx
         self.idxs = idxs
+        self.mses = mses
 
     def sample_magnitudes(self, num_samples: int) -> sparse.csr_matrix:
         """
@@ -57,6 +67,43 @@ class Cluster:
         # Get feature magnitudes
         feature_magnitudes = self.layer_cache.csr_matrix[sample_idxs, :].toarray()  # Shape: (num_samples, F)
         return feature_magnitudes
+
+    def as_sample_set(self) -> "ClusterSampleSet":
+        """
+        Return all nearest neighbors as a sample set.
+        """
+        return ClusterSampleSet(self)
+
+
+class ClusterSampleSet:
+    """
+    Set of samples representing a cluster of nearest neighbors.
+    """
+
+    samples: list[Sample]
+
+    def __init__(self, cluster: Cluster):
+        block_size = cluster.layer_cache.block_size
+        max_mse = max(cluster.mses)
+        min_mse = min(cluster.mses)
+
+        self.samples = []
+        for shard_token_idx, mse in zip(cluster.idxs, cluster.mses):
+            block_idx = shard_token_idx // block_size
+            token_idx = shard_token_idx % block_size
+
+            # TODO: Calculate magnitudes based on MSE
+            magnitudes = np.zeros(shape=(1, block_size))
+            magnitudes[0, token_idx] = 1.0 - (mse - min_mse) / (max_mse - min_mse) * 0.5
+            magnitudes = sparse.csr_matrix(magnitudes)
+
+            sample = Sample(
+                layer_idx=cluster.layer_idx,
+                block_idx=block_idx,
+                token_idx=token_idx,
+                magnitudes=magnitudes,
+            )
+            self.samples.append(sample)
 
 
 class ClusterSearch:
@@ -148,16 +195,24 @@ class ClusterSearch:
 
         # Calculate MSE
         errors = (candidate_samples - target_values) * norm_coefficients
-        mse = np.mean(errors**2, axis=-1)
+        mses = np.mean(errors**2, axis=-1)
 
         # Get nearest neighbors
         num_neighbors = min(k_nearest, len(row_idxs))
         # TODO: Consider removing first exact match to avoid duplicating original values
-        cluster_idxs = tuple(row_idxs[np.argsort(mse)[:num_neighbors]].tolist())
+        argsort_idxs = np.argsort(mses)[:num_neighbors]
+        cluster_idxs = tuple(row_idxs[argsort_idxs].tolist())
+        cluster_mses = tuple(mses[argsort_idxs].tolist())
 
-        # Cache cluster idxs
+        # Cache cluster data
         self.cached_cluster_idxs[cache_key] = cluster_idxs
-        return Cluster(layer_cache=layer_cache, layer_idx=layer_idx, token_idx=token_idx, idxs=cluster_idxs)
+        return Cluster(
+            layer_cache=layer_cache,
+            layer_idx=layer_idx,
+            token_idx=token_idx,
+            idxs=cluster_idxs,
+            mses=cluster_mses,
+        )
 
     def get_random_cluster(self, layer_idx: int, token_idx: int, num_samples: int) -> Cluster:
         """
@@ -176,7 +231,14 @@ class ClusterSearch:
 
         # Respect token position when choosing indices
         cluster_idxs = block_idxs * layer_cache.block_size + token_idx
-        return Cluster(layer_cache=layer_cache, layer_idx=layer_idx, token_idx=token_idx, idxs=cluster_idxs)
+        cluster_mses = (0.0,) * len(cluster_idxs)
+        return Cluster(
+            layer_cache=layer_cache,
+            layer_idx=layer_idx,
+            token_idx=token_idx,
+            idxs=cluster_idxs,
+            mses=cluster_mses,
+        )
 
     def get_cache_key(
         self,

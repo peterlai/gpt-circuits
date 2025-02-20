@@ -2,7 +2,7 @@
 Find and export all circuit nodes needed to reconstruct the output logits of a model to within a certain KL divergence
 threshold.
 
-$ python -m experiments.circuits.nodes --sequence_idx=0 --token_idx=51 --start_from=40 --layer_idx=0
+$ python -m experiments.circuits.nodes --sequence_idx=0 --token_idx=51 --layer_idx=0
 """
 
 import argparse
@@ -35,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--layer_idx", type=int, default=0, help="SAE layer to analyze")
     parser.add_argument("--threshold", type=float, default=0.2, help="Max threshold for KL divergence")
     parser.add_argument("--start_from", type=int, default=0, help="Index of token to start search from")
+    parser.add_argument("--resample", action=argparse.BooleanOptionalAction, default=True, help="Use resampling")
     return parser.parse_args()
 
 
@@ -65,16 +66,19 @@ if __name__ == "__main__":
     model_cache = ModelCache(checkpoint_dir)
 
     # Set feature ablation strategy
-    # ablator = ZeroAblator()
-    k_nearest = 256  # How many nearest neighbors to consider in resampling
-    num_samples = 256  # Number of samples to use for estimating KL divergence
-    positional_coefficient = 2.0  # How important is the position of a feature
-    ablator = ResampleAblator(
-        model_profile,
-        model_cache,
-        k_nearest=k_nearest,
-        positional_coefficient=positional_coefficient,
-    )
+    if not args.resample:
+        num_samples = 1  # Number of samples to use for estimating KL divergence
+        ablator = ZeroAblator()
+    else:
+        num_samples = 256  # Number of samples to use for estimating KL divergence
+        k_nearest = 256  # How many nearest neighbors to consider in resampling
+        positional_coefficient = 2.0  # How important is the position of a feature
+        ablator = ResampleAblator(
+            model_profile,
+            model_cache,
+            k_nearest=k_nearest,
+            positional_coefficient=positional_coefficient,
+        )
 
     # Load shard
     shard = DatasetShard(dir_path=args.data_dir, split=args.split, shard_idx=args.shard_idx)
