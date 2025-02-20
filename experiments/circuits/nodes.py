@@ -2,7 +2,7 @@
 Find and export all circuit nodes needed to reconstruct the output logits of a model to within a certain KL divergence
 threshold.
 
-$ python -m experiments.circuits.nodes --sequence_idx=0 --token_idx=51 --start_from=40 --layer_idx=0
+$ python -m experiments.circuits.nodes --sequence_idx=0 --token_idx=51 --layer_idx=0
 """
 
 import argparse
