@@ -13,19 +13,25 @@ class PredictionData {
     // Construct samples
     const maxActivation = data["maxActivation"] as number;
     const sampleTexts = data["samples"] as string[];
-    const samplesDecodedSamples =
-      "decodedTokens" in data
-        ? (data["decodedTokens"] as string[][])
-        : sampleTexts.map((text) => [...text]);
+    const samplesDecodedSamples = data["decodedTokens"] as string[][];
     const targetIdxs = data["tokenIdxs"] as number[];
     const absoluteTokenIdxs = data["absoluteTokenIdxs"] as number[];
-    const sampleActivations = data["tokenMagnitudes"] as number[][];
+    const sampleMagnitudeIdxs = data["magnitudeIdxs"] as number[][];
+    const sampleMagnitudeValues = data["magnitudeValues"] as number[][];
     for (let i = 0; i < sampleTexts.length; i++) {
       const sampleText = sampleTexts[i];
       const decodedTokens = samplesDecodedSamples[i];
       const targetIdx = targetIdxs[i];
       const absoluteTokenIdx = absoluteTokenIdxs[i];
-      const activations = sampleActivations[i];
+      // Build activations array from sparse representation
+      const magnitudeIdxs = sampleMagnitudeIdxs[i];
+      const magnitudeValues = sampleMagnitudeValues[i];
+      const activations = Array(decodedTokens.length).fill(0);
+      for (let j = 0; j < magnitudeIdxs.length; j++) {
+        const idx = magnitudeIdxs[j];
+        const value = magnitudeValues[j];
+        activations[idx] = value;
+      }
       const normalizedActivations = activations.map((a) => a / maxActivation);
       this.samples.push(
         new SampleData(

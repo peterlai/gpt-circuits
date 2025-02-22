@@ -1,7 +1,7 @@
 """
 Export circuit for visualization using Node app.
 
-$ python -m experiments.circuits.export --circuit=train.0.0.51 --dirname=mri
+$ python -m experiments.circuits.export --circuit=train.0.0.51 --dirname=toy-resample
 """
 
 import argparse
@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str, default="e2e.jumprelu.shakespeare_64x4", help="Model name")
     parser.add_argument("--circuit", type=str, default="train.0.0.51", help="Circuit directory name")
-    parser.add_argument("--dirname", type=str, default="mri", help="Output directory name")
+    parser.add_argument("--dirname", type=str, help="Output directory name")
     return parser.parse_args()
 
 
@@ -176,7 +176,8 @@ def export_similar_samples(
         "decodedTokens": [],
         "tokenIdxs": [],
         "absoluteTokenIdxs": [],
-        "tokenMagnitudes": [],
+        "magnitudeIdxs": [],
+        "magnitudeValues": [],
         "maxActivation": 1.0,
     }
 
@@ -191,8 +192,8 @@ def export_similar_samples(
         data["decodedTokens"].append(decoded_tokens)
         data["tokenIdxs"].append(sample.token_idx)
         data["absoluteTokenIdxs"].append(starting_idx + sample.token_idx)
-        magnitudes = sample.magnitudes.toarray().squeeze(0).tolist()
-        data["tokenMagnitudes"].append([round(magnitude, 3) for magnitude in magnitudes])
+        data["magnitudeIdxs"].append(sample.magnitudes.nonzero()[1].tolist())
+        data["magnitudeValues"].append([round(magnitude, 3) for magnitude in sample.magnitudes.data.tolist()])
 
     samples_dir.mkdir(parents=True, exist_ok=True)
     with open(samples_dir / "similar.json", "w") as f:
@@ -332,7 +333,8 @@ def export_features(
             "decodedTokens": [],
             "tokenIdxs": [],
             "absoluteTokenIdxs": [],
-            "tokenMagnitudes": [],
+            "magnitudeIdxs": [],
+            "magnitudeValues": [],
             "maxActivation": feature_profile.max,
             "activationHistogram": {
                 "counts": feature_profile.histogram_counts,
@@ -367,8 +369,8 @@ def export_features(
 
         # Add token magnitudes
         for sample in samples:
-            magnitudes = sample.magnitudes.toarray().squeeze(0).tolist()
-            data["tokenMagnitudes"].append([round(magnitude, 3) for magnitude in magnitudes])
+            data["magnitudeIdxs"].append(sample.magnitudes.nonzero()[1].tolist())
+            data["magnitudeValues"].append([round(magnitude, 3) for magnitude in sample.magnitudes.data.tolist()])
 
         # Create file for feature
         features_dir.mkdir(parents=True, exist_ok=True)
