@@ -1,0 +1,15 @@
+/* Probability distribution */
+table.probabilities {
+    th {
+        font-family: monospace;
+    }
+    td {
+        overflow: hidden;
+        --color: rgba(90,165,255,.75);
+    }
+    .data {
+        font-size: 10px;
+        padding-right: 5px;
+        white-space: nowrap;
+    }
+}

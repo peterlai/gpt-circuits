@@ -11,7 +11,7 @@ SHARD_TOKEN_IDS=(7010 17396 196593 221099 229218 300553 301857 352614 382875 393
 for SHARD_TOKEN_ID in "${SHARD_TOKEN_IDS[@]}"; do
   # Extract circuits using resampling ablation
   echo "Processing ${SHARD_TOKEN_ID} using resampling ablation"
-  TIMEOUT 60m ./experiments/circuits/extract.sh $SHARD_TOKEN_ID toy-resampling true
+  TIMEOUT 60m ./experiments/circuits/extract.sh $SHARD_TOKEN_ID toy-resample true
 
   # Extract circuits using zero ablation
   echo "Processing ${SHARD_TOKEN_ID} using zero ablation"

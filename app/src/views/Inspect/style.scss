@@ -1,0 +1,58 @@
+/* Icons */
+.spin {
+    animation: spin 2s infinite linear;
+}
+@keyframes spin {
+	0%  {transform: rotate(0deg);}
+	100% {transform: rotate(360deg);}
+}
+
+/* Inspect view */
+#Inspect {
+    --sidebar-min-width: 0;
+    --sidebar-max-width: 0;
+
+    display: grid;
+    grid-template-columns: 1fr minmax(var(--sidebar-min-width), var(--sidebar-max-width));
+    grid-template-rows: 50px 1fr;
+    grid-template-areas:
+        "nav nav"
+        "main aside";
+    width: 100%;
+    overflow: hidden;
+
+    /* Prevent mobile browsers from resizing text. */
+    text-size-adjust: none;
+    -webkit-text-size-adjust: none;
+
+    > nav {
+        grid-area: nav;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        background-color: #444;
+        overflow: hidden;
+    }
+    > main {
+        grid-area: main;
+        display: flex;
+        overflow-y: auto;
+        overflow-x: scroll;
+    }
+    > aside {
+        grid-area: aside;
+        background-color: #666;
+        position: relative;
+    }
+}
+
+/* Set sidebar width when open. */
+.sidebar-open #Inspect {
+    --sidebar-min-width: 280px;
+    --sidebar-max-width: 25%;
+}
+
+/* Allow animations for the menu once its been loaded. */
+.loaded #Inspect {
+    transition: 0.3s;
+}

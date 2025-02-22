@@ -1,0 +1,111 @@
+#root > menu {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    width: var(--menu-column-width);
+    background-color: #666;
+    box-sizing: border-box;
+    border-right: 1px solid rgba(0,0,0,0.7);
+    margin: 0;
+    padding: 0;
+    font-size: 14px;
+    line-height: 20px;
+
+    > .inner {
+        display: flex;
+        flex-direction: column;
+        width: var(--menu-width);
+        overflow: auto;
+    };
+
+    header {
+        display: flex;
+        flex: 0 0 50px;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0 15px;
+        background: #333;
+        color: #fff;
+        font-weight: bold;
+
+        .close-menu {
+            font-size: 20px;
+            cursor: pointer;
+        }
+    }
+
+    section {
+        flex: 1 1 auto;
+        overflow: auto;
+        padding: 0 15px;
+    }
+
+    h3 {
+        color: #fff;
+        font-size: 16px;
+        margin: 15px 0 5px;
+    }
+
+    p {
+        color: #fff;
+        margin: 0 0 15px;
+    }
+
+
+    ul.samples {
+        padding: 0;
+
+        li {
+            display: flex;
+            flex-direction: row;
+            justify-content: space-between;
+            align-items: center;
+            list-style: none;
+            padding: 0;
+            color: #fff;
+            border-top: 1px solid #333;
+            cursor: pointer;
+
+            &:last-child { border-bottom: 1px solid #333; }
+        }
+
+        .sample {
+            overflow: hidden;
+            font-size: 13px;
+            font-family: monospace;
+            margin: 0;
+            padding: 5px;
+            white-space: pre;
+
+            em {
+                font-style: normal;
+                background: rgba(0,0,0,0.3);
+            }
+        }
+
+        .links {
+            display: flex;
+            flex: 0 0 auto;
+            padding-right: 5px;
+
+            a {
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                margin-left: 5px;
+            }
+            a .icon {
+                margin-right: 2px;
+            }
+        }
+
+        li.selected {
+            background: rgba(0,0,0,0.3);
+
+            em { background: rgba(255,255,255,0.3); }
+            a.selected { color: #fff; }
+            a.selected .icon { fill: #fff; }
+            a.selected .stroked-icon { stroke: #fff; }
+        }
+    }
+}

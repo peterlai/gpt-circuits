@@ -1,0 +1,205 @@
+#Map {
+    --context-length: 0; /* Set by view */
+    --num-layers: 0; /* Set by view */
+    --header-height: 90px; /* Default header height */
+    --token-font-size: 36px; /* Default token font size */
+    min-width: 100%;
+    display: grid;
+    grid-template-columns: repeat(var(--context-length), 96px);
+    grid-template-rows: var(--header-height) repeat(var(--num-layers), minmax(90px, 150px));
+
+    .cell {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        container: cell / size;
+        z-index: 2;
+    }
+    .input {
+        position: sticky;
+        overflow: hidden;
+        top: 0;
+        background: #eee;
+        box-sizing: border-box;
+        box-shadow: 0px 1px 1px rgba(0,0,0,0.5);
+        z-index: 3;
+
+        &.target {
+            background: #ccc;
+        }
+    }
+
+    .connection {
+        top: 50%;
+        position: relative;
+        container: connection / size;
+        z-index: 1;
+    }
+}
+@container cell (width > 0) {
+    .token {
+        display: flex;
+        justify-content: center;
+        padding: 2px;
+        background: rgba(0,0,0,0.1);
+        font-family: monospace;
+        font-size: 14px;
+        word-spacing: 2px; /* Exaggerate space width */
+        white-space: pre; /* Preserve spaces */
+    }
+    .token.char { font-size: 24px; background: none; }
+    .token.return { font-family: monospace; }
+    .token.future { color: rgba(0,0,0,0.25); }
+    .block {
+        box-shadow:
+            inset 1px 1px rgba(0,0,0,0.1),
+            1px 1px 1px rgba(0,0,0,0.5);
+        width: 100%;
+        height: calc(100cqh - 50px);
+        box-sizing: border-box;
+        padding: 5px;
+        margin: auto 10px;
+        line-height: 1.3em;
+        text-align: center;
+        cursor: pointer;
+
+        &.bg-color-1 { background: #eee; }
+        &.bg-color-2 { background: #eef; }
+        &.ablations-hovered {
+            box-shadow: inset 0 0 0 2px gold;
+        }
+    }
+
+    .feature {
+        /* Using Open Sans because it supports a variety of font weights. */
+        font-family: "Open Sans";
+        display: inline-block;
+        padding: 0px 0.25ch;
+    }
+    /* The following feature rules are over-specific to avoid being overridden. */
+    .block span.feature {
+        &.highlighted { background: rgba(255,255,0,0.8); }
+        &.selected { background: rgba(255,255,0,0.6); }
+        &.related {
+            text-shadow:
+                rgba(255,255,0,0.6) 1px 1px,
+                rgba(255,255,0,0.6) -1px -1px,
+                rgba(255,255,0,0.6) 1px -1px,
+                rgba(255,255,0,0.6) -1px 1px;
+        }
+    }
+    .feature.text-weight-1 { font-weight: 300; }
+    .feature.text-weight-2 { font-weight: 500; }
+    .feature.text-weight-3 { font-weight: 700; }
+    .feature.text-color-1 { color: #333; }
+    .feature.text-color-2 { color: #33f; }
+    .feature.fill-weight-1 { background: rgba(255,0,0,0.1); }
+    .feature.fill-weight-2 { background: rgba(255,0,0,0.3); }
+    .feature.fill-weight-3 { background: rgba(255,0,0,0.6); }
+    .feature.fill-weight-1.fill-gray { background: rgba(0,0,0,0.1); }
+    .feature.fill-weight-2.fill-gray { background: rgba(0,0,0,0.2); }
+    .feature.fill-weight-3.fill-gray { background: rgba(0,0,0,0.3); }
+    .block:has(.feature:nth-child(1)) { font-size: min(12cqh, 15px); }
+    .block:has(.feature:nth-child(2)) { font-size: min(12cqh, 15px); }
+    .block:has(.feature:nth-child(4)) { font-size: min(8.5cqh, 15px); }
+    .block:has(.feature:nth-child(8)) { font-size: min(7cqh, 15px); }
+    .block:has(.feature:nth-child(16)) { font-size: min(5cqh, 15px); }
+    .block:has(.feature:nth-child(32)) { font-size: min(4cqh, 15px); }
+    .block:has(.feature:nth-child(64)) { font-size: min(3cqh, 15px); }
+    .block:has(.feature:nth-child(128)) { font-size: min(2cqh, 15px); }
+}
+
+@container connection (width > 0) {
+    .line {
+        position: relative;
+    }
+    .segment {
+        position: relative;
+        height: 50cqh;
+        border-style: solid;
+        box-sizing: border-box;
+    }
+    .upstream {
+        border-bottom-left-radius: 10px;
+        border-top-width: 0 !important;
+        border-right-width: 0 !important;
+    }
+    .downstream {
+        border-top-right-radius: 10px;
+        border-bottom-width: 0 !important;
+        border-left-width: 0 !important;
+
+    }
+    .span-1 .upstream { width: 50%; left: 50%; border-bottom: none; border-radius: 0; }
+    .span-1 .downstream { width: 50%; left: 0; border-top: none; border-radius: 0; }
+    .span-2 .upstream { width: 50%; left: 50%; }
+    .span-2 .downstream { width: 50%; left: 100%; }
+    .span-3 .upstream { width: 150%; left: 50%; }
+    .span-3 .downstream { width: 50%; left: 200%; }
+    .span-4 .upstream { width: 250%; left: 50%; }
+    .span-4 .downstream { width: 50%; left: 300%; }
+    .span-5 .upstream { width: 350%; left: 50%; }
+    .span-5 .downstream { width: 50%; left: 400%; }
+    .span-6 .upstream { width: 450%; left: 50%; }
+    .span-6 .downstream { width: 50%; left: 500%; }
+    .span-7 .upstream { width: 550%; left: 50%; }
+    .span-7 .downstream { width: 50%; left: 600%; }
+    .span-8 .upstream { width: 650%; left: 50%; }
+    .span-8 .downstream { width: 50%; left: 700%; }
+    .span-9 .upstream { width: 750%; left: 50%; }
+    .span-9 .downstream { width: 50%; left: 800%; }
+    .span-10 .upstream { width: 850%; left: 50%; }
+    .span-10 .downstream { width: 50%; left: 900%; }
+    .span-11 .upstream { width: 950%; left: 50%; }
+    .span-11 .downstream { width: 50%; left: 1000%; }
+    .span-12 .upstream { width: 1050%; left: 50%; }
+    .span-12 .downstream { width: 50%; left: 1100%; }
+    .span-13 .upstream { width: 1150%; left: 50%; }
+    .span-13 .downstream { width: 50%; left: 1200%; }
+    .span-14 .upstream { width: 1250%; left: 50%; }
+    .span-14 .downstream { width: 50%; left: 1300%; }
+    .span-15 .upstream { width: 1350%; left: 50%; }
+    .span-15 .downstream { width: 50%; left: 1400%; }
+    .span-16 .upstream { width: 1450%; left: 50%; }
+    .span-16 .downstream { width: 50%; left: 1500%; }
+    .span-17 .upstream { width: 1550%; left: 50%; }
+    .span-17 .downstream { width: 50%; left: 1600%; }
+    .offset-r1 .line { top: -4px; left: 4px; }
+    .offset-r2 .line { top: -8px; left: 8px; }
+    .offset-r3 .line { top: -12px; left: 12px; }
+    .offset-r4 .line { top: -16px; left: 16px; }
+    .offset-l1 .line { top: 4px; left: -4px; }
+    .offset-l2 .line { top: 8px; left: -8px; }
+    .offset-l3 .line { top: 12px; left: -12px; }
+    .offset-l4 .line { top: 16px; left: -16px; }
+    .weight-0 .segment { border-color: rgba(255,0,0,0.0); }
+    .weight-1 .segment { border-color: rgba(255,0,0,0.25); }
+    .weight-2 .segment { border-color: rgba(255,0,0,0.50); }
+    .weight-3 .segment { border-color: rgba(255,0,0,1.00); }
+    .width-0 .segment { border-width: 0px; }
+    .width-0 .downstream { top: 0px; }
+    .width-1 .segment { border-width: 1px; }
+    .width-1.span-1 .upstream { margin-left: -1px; }
+    .width-1:not(.span-1) .downstream { top: -1px; }
+    .width-2 .segment { border-width: 2px; }
+    .width-2.span-1 .upstream { margin-left: -2px; }
+    .width-2:not(.span-1) .downstream { top: -2px; }
+    .width-3 .segment { border-width: 3px; }
+    .width-3.span-1 .upstream { margin-left: -3px; }
+    .width-3:not(.span-1) .downstream { margin-top: -3px; }
+    .gray .segment { border-color: rgba(0,0,0,0.1); }
+}
+
+/* Tooltip */
+#PatchTooltip {
+    z-index: 4;
+}
+
+/* Embedded mode */
+#Map.embedded {
+    --header-height: 50px;
+
+    .input .token.char {
+        font-size: 24px;
+    }
+}

@@ -6,7 +6,6 @@ Repository for training toy GPT-2 models and experimenting with sparse autoencod
 * [config](config) - Model and training configurations
 * [data](data) - Datasets to be used for training
 * [experiments](experiments) - Scripts for experiments
-* exports - Exported JSON data
 * [models](models) - GPT and SAE model definitions
 * [training](training) - Model trainers
 

@@ -1,6 +1,12 @@
+# Training output
 checkpoints/
-exports/
 *.npy
+
+# Node app
+app/build/
+app/dist/
+app/node_modules/
+app/public/samples/
 
 # OS files
 .DS_Store

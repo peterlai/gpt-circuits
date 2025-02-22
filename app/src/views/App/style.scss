@@ -1,0 +1,70 @@
+html {
+    height: 100%;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    height: 100%;
+
+    --menu-width: 275px;
+    --menu-column-width: 0;
+    &.menu-open { --menu-column-width: var(--menu-width); }
+
+    /* Allow animations for the menu once its been loaded. */
+    &.loaded {
+        #root { transition: 0.3s; }
+        menu { transition: 0.3s; }
+    }
+}
+
+/* Link styles */
+a {
+    cursor: pointer;
+    text-decoration: none;
+
+    &:hover {
+        text-decoration: underline;
+    }
+}
+menu a, aside a {
+    color: rgba(90,165,255,1);
+
+    .icon { fill: rgba(90,165,255,1); }
+    .stroked-icon { stroke: rgba(90,165,255,1); fill: transparent; }
+    &:visited { color: plum; }
+    &:visited svg { fill: plum; }
+    &:visited svg.stroked-icon { stroke: plum; fill: transparent; }
+    &:hover { color: #fff; text-decoration: none; }
+    &:hover svg { fill: #fff; text-decoration: none; }
+    &:hover svg.stroked-icon { stroke: #fff; fill: transparent; }
+}
+
+#root {
+    height: 100%;
+    display: grid;
+    grid-template-columns: var(--menu-column-width) 1fr;
+    grid-template-rows: auto 1fr;
+    grid-template-areas:
+        "menu header"
+        "menu article";
+
+    > header {
+        grid-area: header;
+        background-color: #333;
+        color: white;
+        padding: 0 15px;
+    }
+
+    > article {
+        grid-area: article;
+        display: flex;
+        overflow: auto;
+        background: #fff;
+    }
+
+    > menu {
+        grid-area: menu;
+    }
+}

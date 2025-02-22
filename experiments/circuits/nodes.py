@@ -7,7 +7,6 @@ $ python -m experiments.circuits.nodes --sequence_idx=0 --token_idx=51 --layer_i
 
 import argparse
 from collections import defaultdict
-from pathlib import Path
 
 import torch
 
@@ -50,7 +49,7 @@ if __name__ == "__main__":
     # Set paths
     checkpoint_dir = TrainingConfig.checkpoints_dir / args.model
     dirname = f"{args.split}.{args.shard_idx}.{args.sequence_idx}.{args.token_idx}"
-    circuit_dir = Path("exports") / args.model / "circuits" / dirname
+    circuit_dir = checkpoint_dir / "circuits" / dirname
 
     # Load model
     defaults = Config()

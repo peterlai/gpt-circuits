@@ -8,7 +8,6 @@ $ python -m experiments.circuits.edges --circuit=train.0.0.51 --upstream_layer=0
 import argparse
 import json
 from collections import defaultdict
-from pathlib import Path
 
 import torch
 
@@ -42,7 +41,7 @@ if __name__ == "__main__":
 
     # Set paths
     checkpoint_dir = TrainingConfig.checkpoints_dir / args.model
-    circuit_dir = Path("exports") / args.model / "circuits" / args.circuit
+    circuit_dir = checkpoint_dir / "circuits" / args.circuit
     upstream_path = circuit_dir / f"nodes.{args.upstream_layer}.json"
     downstream_path = circuit_dir / f"nodes.{args.upstream_layer + 1}.json"
 
