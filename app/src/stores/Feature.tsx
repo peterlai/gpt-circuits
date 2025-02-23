@@ -181,27 +181,6 @@ class FeatureProfile {
         )
       );
     }
-
-    // For debugging purposes
-    // const similarSamples = [];
-    // for (let i = 0; i < 5; i++) {
-    //   const sampleText = sampleTexts[i];
-    //   const decodedTokens = samplesDecodedSamples[i];
-    //   const targetIdx = targetIdxs[i];
-    //   const absoluteTokenIdx = absoluteTokenIdxs[i];
-    //   const activations = sampleActivations[i];
-    //   const normalizedActivations = activations.map((a) => a / maxActivation);
-    //   similarSamples.push({
-    //     sampleText,
-    //     decodedTokens,
-    //     activations,
-    //     normalizedActivations,
-    //     targetIdx,
-    //     absoluteTokenIdx,
-    //     modelId,
-    //   });
-    // }
-    // console.log(JSON.stringify(similarSamples));
   }
 }
 

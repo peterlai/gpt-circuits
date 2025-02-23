@@ -105,6 +105,10 @@
             font-weight: normal;
             color: #ccc;
         }
+        th:hover {
+            font-weight: bold;
+            cursor: pointer;
+        }
         td {
             padding: 5px;
             --color: rgba(255, 191, 0, 1);

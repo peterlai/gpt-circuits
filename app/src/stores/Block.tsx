@@ -1,7 +1,10 @@
 import { atom } from "jotai";
 import { selectAtom } from "jotai/utils";
 
-import { sampleDataAtom } from "./Graph";
+import { atomWithQuery } from "jotai-tanstack-query";
+import { SAMPLES_ROOT_URL } from "../views/App/urls";
+import { modelIdAtom, sampleDataAtom, sampleIdAtom } from "./Graph";
+import { SampleData } from "./Sample";
 import { SelectionState, selectionStateAtom } from "./Selection";
 
 // Represents a transformer block (or embedding) in the ablation graph
@@ -216,4 +219,65 @@ function createBlockModifierAtom(block: BlockData) {
   );
 }
 
-export { BlockData, BlockFeatureData, blocksAtom, createBlockModifierAtom };
+// Represents supplementary data for a specific block
+class BlockProfile {
+  public maxActivation: number = 0;
+  public samples: SampleData[] = [];
+
+  constructor(data: { [key: string]: number | [] }, modelId: string) {
+    this.maxActivation = data["maxActivation"] as number;
+
+    // Construct samples
+    const maxActivation = data["maxActivation"] as number;
+    const sampleTexts = data["samples"] as string[];
+    const samplesDecodedSamples = data["decodedTokens"] as string[][];
+    const targetIdxs = data["tokenIdxs"] as number[];
+    const absoluteTokenIdxs = data["absoluteTokenIdxs"] as number[];
+    const sampleMagnitudeIdxs = data["magnitudeIdxs"] as number[][];
+    const sampleMagnitudeValues = data["magnitudeValues"] as number[][];
+    for (let i = 0; i < sampleTexts.length; i++) {
+      const sampleText = sampleTexts[i];
+      const decodedTokens = samplesDecodedSamples[i];
+      const targetIdx = targetIdxs[i];
+      const absoluteTokenIdx = absoluteTokenIdxs[i];
+      // Build activations array from sparse representation
+      const magnitudeIdxs = sampleMagnitudeIdxs[i];
+      const magnitudeValues = sampleMagnitudeValues[i];
+      const activations = Array(decodedTokens.length).fill(0);
+      for (let j = 0; j < magnitudeIdxs.length; j++) {
+        const idx = magnitudeIdxs[j];
+        const value = magnitudeValues[j];
+        activations[idx] = value;
+      }
+      const normalizedActivations = activations.map((a) => a / maxActivation);
+      this.samples.push(
+        new SampleData(
+          sampleText,
+          decodedTokens,
+          activations,
+          normalizedActivations,
+          targetIdx,
+          absoluteTokenIdx,
+          modelId
+        )
+      );
+    }
+  }
+}
+
+// Creates a block profile data atom for a specific feature
+function createBlockProfileAtom(block: BlockData) {
+  return atomWithQuery((get) => ({
+    // TODO: Replace with query for real data
+    queryKey: ["predictions-data", get(modelIdAtom), get(sampleIdAtom)],
+    queryFn: async ({ queryKey: [, modelId, sampleId] }) => {
+      if (!modelId || !sampleId) return null;
+      const res = await fetch(`${SAMPLES_ROOT_URL}/${modelId}/samples/${sampleId}/similar.json`);
+      const data = await res.json();
+      return new BlockProfile(data, modelId as string);
+    },
+    staleTime: Infinity,
+  }));
+}
+
+export { BlockData, BlockFeatureData, blocksAtom, createBlockModifierAtom, createBlockProfileAtom };

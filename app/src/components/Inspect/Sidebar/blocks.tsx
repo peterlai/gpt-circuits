@@ -1,8 +1,9 @@
-import { useAtom, useAtomValue } from "jotai";
+import { useAtom, useAtomValue, useSetAtom } from "jotai";
+import { useMemo } from "react";
 import { FaLayerGroup } from "react-icons/fa6";
-import { BlockData } from "../../../stores/Block";
+import { BlockData, createBlockProfileAtom } from "../../../stores/Block";
 import { printableTokensAtom, targetIdxAtom } from "../../../stores/Graph";
-import { predictionDataAtom } from "../../../stores/Prediction";
+import { toggleSelectionAtom } from "../../../stores/Selection";
 import { CloseButton } from "./close";
 import { ErrorMessage, LoadingMessage } from "./loading";
 import { SearchableSamples } from "./samples";
@@ -37,6 +38,8 @@ function BlockHeader({ block }: { block: BlockData }) {
 }
 
 function BlockProfile({ block }: { block: BlockData }) {
+  const toggleSelection = useSetAtom(toggleSelectionAtom);
+
   return (
     <section className="block-profile">
       <h3>Features</h3>
@@ -45,8 +48,15 @@ function BlockProfile({ block }: { block: BlockData }) {
           {Object.values(block.features).map((feature) => {
             return (
               <tr key={feature.featureId}>
-                <th scope="row">
-                  <span>#{feature.featureId}</span>
+                <th>
+                  <span
+                    onClick={() => {
+                      // Select feature if clicked
+                      toggleSelection(feature);
+                    }}
+                  >
+                    #{feature.featureId}
+                  </span>
                 </th>
                 <td style={{ "--size": feature.normalizedActivation } as React.CSSProperties}>
                   <span className="data"> {feature.activation.toFixed(2)}</span>
@@ -68,19 +78,20 @@ function BlockSamplesTitle() {
 }
 
 function BlockSamplesSection({ block }: { block: BlockData }) {
-  // TODO: Switch to block-specific samples
-  const [{ data: predictionData, isPending, isError }] = useAtom(predictionDataAtom);
+  const [{ data: blockProfile, isPending, isError }] = useAtom(
+    useMemo(() => createBlockProfileAtom(block), [block])
+  );
 
   if (isPending) {
     return <LoadingMessage />;
   }
 
-  if (isError || !predictionData) {
+  if (isError || !blockProfile) {
     return <ErrorMessage />;
   }
 
   return (
-    <SearchableSamples samples={predictionData.samples} titleComponent={<BlockSamplesTitle />} />
+    <SearchableSamples samples={blockProfile.samples} titleComponent={<BlockSamplesTitle />} />
   );
 }
 
