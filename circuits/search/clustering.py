@@ -94,7 +94,8 @@ class ClusterSampleSet:
 
             # TODO: Calculate magnitudes based on MSE
             magnitudes = np.zeros(shape=(1, block_size))
-            magnitudes[0, token_idx] = 1.0 - (mse - min_mse) / (max_mse - min_mse) * 0.5
+            divisor = max(1e-10, (max_mse - min_mse))  # Avoid division by zero
+            magnitudes[0, token_idx] = 1.0 - (mse - min_mse) / divisor * 0.5
             magnitudes = sparse.csr_matrix(magnitudes)
 
             sample = Sample(

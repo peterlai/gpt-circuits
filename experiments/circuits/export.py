@@ -100,12 +100,25 @@ def main():
 
     # Export features
     export_features(
-        base_dir / "features",
+        base_dir / "samples" / str(sequence_idx + target_token_idx),
         nodes,
         model,
         model_profile,
         model_sample_set,
         shard,
+        target_token_idx,
+    )
+
+    # Export blocks
+    export_blocks(
+        base_dir / "samples" / str(sequence_idx + target_token_idx),
+        model,
+        model_profile,
+        model_cache,
+        nodes,
+        shard,
+        tokens,
+        target_token_idx,
     )
 
     # Export data.json
@@ -121,20 +134,8 @@ def main():
         target_token_idx,
     )
 
-    # Export similar.json
-    export_similar_samples(
-        base_dir / "samples" / str(sequence_idx + target_token_idx),
-        model,
-        model_profile,
-        model_cache,
-        nodes,
-        shard,
-        tokens,
-        target_token_idx,
-    )
 
-
-def export_similar_samples(
+def export_blocks(
     samples_dir: Path,
     model: SparsifiedGPT,
     model_profile: ModelProfile,
@@ -145,7 +146,7 @@ def export_similar_samples(
     target_token_idx: int,
 ):
     """
-    Export similar samples to similar.json
+    Create a JSON file with samples for every block in the circuit.
     """
     # Convert tokens to tensor
     input: torch.Tensor = torch.tensor(tokens, device=model.config.device).unsqueeze(0)  # Shape: (1, T)
@@ -153,16 +154,52 @@ def export_similar_samples(
     # Get target feature magnitudes
     with torch.no_grad():
         output: SparsifiedGPTOutput = model(input)
-    last_layer_idx = model.gpt.config.n_layer
-    target_feature_magnitudes = output.feature_magnitudes[last_layer_idx][0, target_token_idx, :].cpu().numpy()
-    target_nodes = [n for n in nodes if n.token_idx == target_token_idx and n.layer_idx == last_layer_idx]
+
+    # Get unique blocks from nodes
+    blocks: set[tuple[int, int]] = set()
+    for node in nodes:
+        blocks.add((node.layer_idx, node.token_idx))
+
+    # Export each block
+    for layer_idx, token_idx in blocks:
+        export_block(
+            samples_dir,
+            model,
+            model_profile,
+            model_cache,
+            nodes,
+            output,
+            shard,
+            layer_idx,
+            token_idx,
+            target_token_idx,
+        )
+
+
+def export_block(
+    samples_dir: Path,
+    model: SparsifiedGPT,
+    model_profile: ModelProfile,
+    model_cache: ModelCache,
+    nodes: set[Node],
+    output: SparsifiedGPTOutput,
+    shard: DatasetShard,
+    layer_idx: int,
+    token_idx: int,
+    target_token_idx: int,
+):
+    """
+    Create a JSON file with samples for a specific block in the circuit.
+    """
+    target_feature_magnitudes = output.feature_magnitudes[layer_idx][0, token_idx, :].cpu().numpy()
+    target_nodes = [n for n in nodes if n.token_idx == token_idx and n.layer_idx == layer_idx]
     circuit_feature_idxs = np.array([node.feature_idx for node in nodes if node in target_nodes])
 
     # Get samples that are similar to the target token
     cluster_search = ClusterSearch(model_profile, model_cache)
     cluster = cluster_search.get_cluster(
-        last_layer_idx,
-        target_token_idx,
+        layer_idx,
+        token_idx,
         target_feature_magnitudes,
         circuit_feature_idxs,
         k_nearest=25,
@@ -196,8 +233,81 @@ def export_similar_samples(
         data["magnitudeValues"].append([round(magnitude, 3) for magnitude in sample.magnitudes.data.tolist()])
 
     samples_dir.mkdir(parents=True, exist_ok=True)
-    with open(samples_dir / "similar.json", "w") as f:
+    offset = target_token_idx - token_idx
+    with open(samples_dir / f"{offset}.{layer_idx}.json", "w") as f:
         f.write(json_prettyprint(data))
+
+
+def export_features(
+    features_dir,
+    nodes: set[Node],
+    model: SparsifiedGPT,
+    model_profile: ModelProfile,
+    model_sample_set: ModelSampleSet,
+    shard: DatasetShard,
+    target_token_idx: int,
+):
+    """
+    Create a JSON file with feature metrics for every feature in the circuit.
+    """
+    for node in nodes:
+        layer_idx = node.layer_idx
+        token_idx = node.token_idx
+        feature_idx = node.feature_idx
+        offset = target_token_idx - token_idx
+
+        # Load feature metrics
+        feature_profile: FeatureProfile = model_profile[layer_idx][feature_idx]
+
+        # Data to export
+        data = {
+            "samples": [],
+            "decodedTokens": [],
+            "tokenIdxs": [],
+            "absoluteTokenIdxs": [],
+            "magnitudeIdxs": [],
+            "magnitudeValues": [],
+            "maxActivation": feature_profile.max,
+            "activationHistogram": {
+                "counts": feature_profile.histogram_counts,
+                "binEdges": feature_profile.histogram_edges,
+            },
+        }
+
+        # Load feature samples
+        samples: list[Sample] = model_sample_set[layer_idx][feature_idx].samples
+        block_size = int(samples[0].magnitudes.shape[-1])  # type: ignore
+
+        # Load sample tokens
+        sample_tokens: list[list[int]] = []
+        for sample in samples:
+            starting_idx = sample.block_idx * block_size
+            tokens = shard.tokens[starting_idx : starting_idx + block_size].tolist()
+            sample_tokens.append(tokens)
+
+        # Add decoded samples
+        tokenizer = model.gpt.config.tokenizer
+        for tokens in sample_tokens:
+            decoded_sample = tokenizer.decode_sequence(tokens)
+            decoded_tokens = [tokenizer.decode_token(token) for token in tokens]
+            data["samples"].append(decoded_sample)
+            data["decodedTokens"].append(decoded_tokens)
+
+        # Add token idxs
+        for sample in samples:
+            data["tokenIdxs"].append(sample.token_idx)
+            data["absoluteTokenIdxs"].append(block_size * sample.block_idx + sample.token_idx)
+            pass
+
+        # Add token magnitudes
+        for sample in samples:
+            data["magnitudeIdxs"].append(sample.magnitudes.nonzero()[1].tolist())
+            data["magnitudeValues"].append([round(magnitude, 3) for magnitude in sample.magnitudes.data.tolist()])
+
+        # Create file for feature
+        features_dir.mkdir(parents=True, exist_ok=True)
+        with open(features_dir / f"{offset}.{layer_idx}.{feature_idx}.json", "w") as f:
+            f.write(json_prettyprint(data))
 
 
 def export_circuit_data(
@@ -304,78 +414,6 @@ def export_circuit_data(
     sample_dir.mkdir(parents=True, exist_ok=True)
     with open(sample_dir / "data.json", "w") as f:
         f.write(json_prettyprint(data))
-
-
-def export_features(
-    features_dir,
-    nodes: set[Node],
-    model: SparsifiedGPT,
-    model_profile: ModelProfile,
-    model_sample_set: ModelSampleSet,
-    shard: DatasetShard,
-):
-    """
-    Create a JSON file with feature metrics for every feature in the circuit.
-    """
-    # Find unique features
-    features: set[tuple[int, int]] = set()
-    for node in nodes:
-        features.add((node.layer_idx, node.feature_idx))
-    sorted_features = sorted(list(features))
-
-    for layer_idx, feature_idx in sorted_features:
-        # Load feature metrics
-        feature_profile: FeatureProfile = model_profile[layer_idx][feature_idx]
-
-        # Data to export
-        data = {
-            "samples": [],
-            "decodedTokens": [],
-            "tokenIdxs": [],
-            "absoluteTokenIdxs": [],
-            "magnitudeIdxs": [],
-            "magnitudeValues": [],
-            "maxActivation": feature_profile.max,
-            "activationHistogram": {
-                "counts": feature_profile.histogram_counts,
-                "binEdges": feature_profile.histogram_edges,
-            },
-        }
-
-        # Load feature samples
-        samples: list[Sample] = model_sample_set[layer_idx][feature_idx].samples
-        block_size = int(samples[0].magnitudes.shape[-1])  # type: ignore
-
-        # Load sample tokens
-        sample_tokens: list[list[int]] = []
-        for sample in samples:
-            starting_idx = sample.block_idx * block_size
-            tokens = shard.tokens[starting_idx : starting_idx + block_size].tolist()
-            sample_tokens.append(tokens)
-
-        # Add decoded samples
-        tokenizer = model.gpt.config.tokenizer
-        for tokens in sample_tokens:
-            decoded_sample = tokenizer.decode_sequence(tokens)
-            decoded_tokens = [tokenizer.decode_token(token) for token in tokens]
-            data["samples"].append(decoded_sample)
-            data["decodedTokens"].append(decoded_tokens)
-
-        # Add token idxs
-        for sample in samples:
-            data["tokenIdxs"].append(sample.token_idx)
-            data["absoluteTokenIdxs"].append(block_size * sample.block_idx + sample.token_idx)
-            pass
-
-        # Add token magnitudes
-        for sample in samples:
-            data["magnitudeIdxs"].append(sample.magnitudes.nonzero()[1].tolist())
-            data["magnitudeValues"].append([round(magnitude, 3) for magnitude in sample.magnitudes.data.tolist()])
-
-        # Create file for feature
-        features_dir.mkdir(parents=True, exist_ok=True)
-        with open(features_dir / f"{layer_idx}.{feature_idx}.json", "w") as f:
-            f.write(json_prettyprint(data))
 
 
 def node_to_key(node: Node, target_token_idx: int) -> str:

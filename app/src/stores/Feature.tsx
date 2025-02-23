@@ -3,7 +3,7 @@ import { selectAtom } from "jotai/utils";
 
 import { SAMPLES_ROOT_URL } from "../views/App/urls";
 import { BlockFeatureData } from "./Block";
-import { modelIdAtom } from "./Graph";
+import { modelIdAtom, sampleIdAtom } from "./Graph";
 import { SampleData } from "./Sample";
 import { SelectionState, selectionStateAtom } from "./Selection";
 
@@ -221,13 +221,10 @@ type HistogramBin = {
 // Creates a feature profile data atom for a specific feature
 function createFeatureProfileAtom(feature: BlockFeatureData) {
   return atomWithQuery((get) => ({
-    queryKey: [
-      get(modelIdAtom),
-      "feature-profile-data",
-      `${feature.layerIdx}.${feature.featureId}`,
-    ],
-    queryFn: async ({ queryKey: [modelId, , featureKey] }) => {
-      const res = await fetch(`${SAMPLES_ROOT_URL}/${modelId}/features/${featureKey}.json`);
+    queryKey: [get(modelIdAtom), "feature-profile-data", get(sampleIdAtom), feature.key],
+    queryFn: async ({ queryKey: [modelId, , sampleId, featureKey] }) => {
+      const url = `${SAMPLES_ROOT_URL}/${modelId}/samples/${sampleId}/${featureKey}.json`;
+      const res = await fetch(url);
       const data = await res.json();
       return new FeatureProfile(data, modelId as string);
     },

@@ -55,7 +55,7 @@ function trimTokens(tokens: string[], targetIdx: number, leftChars: number, righ
   }
   const isTrimmedLeft = leftTokens.length < targetIdx;
   const isTrimmedRight = rightTokens.length < tokens.length - targetIdx - 1;
-  return {leftTokens, rightTokens, isTrimmedLeft, isTrimmedRight};
+  return { leftTokens, rightTokens, isTrimmedLeft, isTrimmedRight };
 }
 
 function NavbarContent() {
@@ -66,15 +66,25 @@ function NavbarContent() {
   const layerCount = ModelOption.getLayerCount(modelId);
 
   // Replace newlines with a return symbol
-  const printableTokens = sampleTokens.map(t => t.replaceAll("\n", "⏎"));
+  const printableTokens = sampleTokens.map((t) => t.replaceAll("\n", "⏎"));
 
   // Truncate the original context
-  const {leftTokens, rightTokens, isTrimmedLeft, isTrimmedRight} = trimTokens(printableTokens, targetIdx, 50, 10);
+  const { leftTokens, rightTokens, isTrimmedLeft, isTrimmedRight } = trimTokens(
+    printableTokens,
+    targetIdx,
+    50,
+    10
+  );
 
   useEffect(() => {
     // Set document title
-    const {leftTokens, rightTokens, isTrimmedLeft, isTrimmedRight} = trimTokens(printableTokens, targetIdx, 10, 10);
-    const text = `${leftTokens.join("")}[${printableTokens[targetIdx]}]${rightTokens.join("")}`
+    const { leftTokens, rightTokens, isTrimmedLeft, isTrimmedRight } = trimTokens(
+      printableTokens,
+      targetIdx,
+      10,
+      10
+    );
+    const text = `${leftTokens.join("")}[${printableTokens[targetIdx]}]${rightTokens.join("")}`;
     const titleText = `${isTrimmedLeft ? "…" : ""}${text}${isTrimmedRight ? "…" : ""}`;
     const modelDescriptor = layerCount ? modelId[0].toUpperCase() : modelId.toUpperCase();
     document.title = `GPT Circuit | ${modelDescriptor}-${sampleId} | "${titleText}"`;

@@ -269,10 +269,10 @@ class BlockProfile {
 function createBlockProfileAtom(block: BlockData) {
   return atomWithQuery((get) => ({
     // TODO: Replace with query for real data
-    queryKey: ["predictions-data", get(modelIdAtom), get(sampleIdAtom)],
-    queryFn: async ({ queryKey: [, modelId, sampleId] }) => {
-      if (!modelId || !sampleId) return null;
-      const res = await fetch(`${SAMPLES_ROOT_URL}/${modelId}/samples/${sampleId}/similar.json`);
+    queryKey: ["predictions-data", get(modelIdAtom), get(sampleIdAtom), block.key],
+    queryFn: async ({ queryKey: [, modelId, sampleId, blockKey] }) => {
+      const url = `${SAMPLES_ROOT_URL}/${modelId}/samples/${sampleId}/${blockKey}.json`;
+      const res = await fetch(url);
       const data = await res.json();
       return new BlockProfile(data, modelId as string);
     },
