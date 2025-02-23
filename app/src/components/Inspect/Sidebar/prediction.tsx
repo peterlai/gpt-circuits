@@ -55,7 +55,7 @@ function CircuitPrediction() {
 
   return (
     <section className="circuit-prediction">
-      <h3>Reconstructed Prediction</h3>
+      <h3>Circuit Prediction</h3>
       <ProbabilitiesTable probabilities={probabilities} />
     </section>
   );

@@ -2,17 +2,12 @@ import classNames from "classnames";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useMemo } from "react";
 import { FaLayerGroup } from "react-icons/fa6";
-import { MdClose } from "react-icons/md";
 
 import { BlockFeatureData } from "../../../stores/Block";
 import { createFeatureProfileAtom, FeatureProfile } from "../../../stores/Feature";
 import { printableTokensAtom, targetIdxAtom } from "../../../stores/Graph";
-import { isMobile, isSidebarOpenAtom } from "../../../stores/Navigation";
-import {
-  hoveredUpstreamOffsetAtom,
-  selectionStateAtom,
-  toggleSelectionAtom,
-} from "../../../stores/Selection";
+import { hoveredUpstreamOffsetAtom, selectionStateAtom } from "../../../stores/Selection";
+import { CloseButton } from "./close";
 import { ErrorMessage, LoadingMessage } from "./loading";
 import { SearchableSamples } from "./samples";
 
@@ -54,21 +49,6 @@ function FeatureSidebar({ feature }: { feature: BlockFeatureData }) {
 }
 
 function FeatureSidebarHeader({ feature }: { feature: BlockFeatureData }) {
-  const setIsSidebarOpen = useSetAtom(isSidebarOpenAtom);
-  const toggleSelection = useSetAtom(toggleSelectionAtom);
-
-  const closeHandler = () => {
-    if (isMobile()) {
-      // Wait for animation to finish before clearing the selection.
-      setIsSidebarOpen(false);
-      setTimeout(() => {
-        toggleSelection(null);
-      }, 300);
-    } else {
-      toggleSelection(null);
-    }
-  };
-
   return (
     <header>
       <span className="feature-location">
@@ -78,7 +58,7 @@ function FeatureSidebarHeader({ feature }: { feature: BlockFeatureData }) {
           {feature.layerIdx > 0 ? `${feature.layerIdx}` : "Embedding"}
         </span>
       </span>
-      <MdClose className="close" onClick={closeHandler} />
+      <CloseButton />
     </header>
   );
 }

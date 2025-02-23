@@ -9,17 +9,19 @@ import { FeatureSidebar } from "./features";
 import { PredictionSidebar } from "./prediction";
 
 import "charts.css";
+import { BlockSidebar } from "./blocks";
 import "./style.scss";
 
 function Sidebar() {
-  const { focusedFeature, selectedFeature } = useAtomValue(selectionStateAtom);
+  const { focusedBlock, selectedBlock, focusedFeature, selectedFeature } =
+    useAtomValue(selectionStateAtom);
   const [{ isPending, isError }] = useAtom(predictionDataAtom);
   const setIsSidebarOpen = useSetAtom(isSidebarOpenAtom);
   const setIsMenuOpen = useSetAtom(isMenuOpenAtom);
 
   // Open the sidebar when a feature is selected
   useEffect(() => {
-    if (selectedFeature) {
+    if (selectedBlock || selectedFeature) {
       setIsSidebarOpen(true);
 
       // Also close the menu on mobile
@@ -27,7 +29,7 @@ function Sidebar() {
         setIsMenuOpen(false);
       }
     }
-  }, [selectedFeature, setIsSidebarOpen, setIsMenuOpen]);
+  }, [selectedBlock, selectedFeature, setIsSidebarOpen, setIsMenuOpen]);
 
   if (isPending || isError) {
     return <></>;
@@ -35,10 +37,12 @@ function Sidebar() {
 
   return (
     <div id="Sidebar">
-      {!focusedFeature && (
+      {focusedBlock || focusedFeature ? null : (
         <BiArrowFromLeft className="close-sidebar" onClick={() => setIsSidebarOpen(false)} />
       )}
-      {focusedFeature ? <FeatureSidebar feature={focusedFeature} /> : <PredictionSidebar />}
+      {focusedBlock ? <BlockSidebar block={focusedBlock} /> : null}
+      {focusedFeature ? <FeatureSidebar feature={focusedFeature} /> : null}
+      {!focusedBlock && !focusedFeature ? <PredictionSidebar /> : null}
     </div>
   );
 }
