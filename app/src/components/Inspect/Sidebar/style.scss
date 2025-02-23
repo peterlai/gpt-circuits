@@ -96,21 +96,35 @@
         }
     }
 
+    /* Block profile */
+    .block-profile {
+        table { --labels-size: 6ch; }
+        th {
+            font-size: 13px;
+            font-family: monospace;
+            font-weight: normal;
+            color: #ccc;
+        }
+        td {
+            padding: 5px;
+            --color: rgba(255, 191, 0, 1);
+        }
+        td:last-child { --color: #ddd; }
+        td .data {
+            font-size: 10px;
+            padding-right: 2px;
+            white-space: nowrap;
+        }
+    }
+
     /* Feature activations */
     .activations {
         .percentage {
             margin-left: 5px;
             color: #aaa;
         }
-        td:nth-child(1) {
-            --color: rgba(255, 191, 0, 1);;
-        }
-        td:nth-child(2) {
-            --color: rgba(255, 191, 0, 0.5);
-        }
-        td:last-child {
-            --color: #ddd;
-        }
+        td { --color: rgba(255, 191, 0, 1); }
+        td:last-child { --color: #ddd; }
     }
 
     /* Upstream ablations */
