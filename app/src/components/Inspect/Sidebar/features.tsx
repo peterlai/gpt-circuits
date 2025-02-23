@@ -8,7 +8,11 @@ import { BlockFeatureData } from "../../../stores/Block";
 import { createFeatureProfileAtom, FeatureProfile } from "../../../stores/Feature";
 import { printableTokensAtom, targetIdxAtom } from "../../../stores/Graph";
 import { isMobile, isSidebarOpenAtom } from "../../../stores/Navigation";
-import { featureSelectionsAtom, hoveredUpstreamOffsetAtom, toggleSelectedFeatureAtom } from "../../../stores/Selection";
+import {
+  hoveredUpstreamOffsetAtom,
+  selectionStateAtom,
+  toggleSelectionAtom,
+} from "../../../stores/Selection";
 import { ErrorMessage, LoadingMessage } from "./loading";
 import { SearchableSamples } from "./samples";
 
@@ -51,17 +55,17 @@ function FeatureSidebar({ feature }: { feature: BlockFeatureData }) {
 
 function FeatureSidebarHeader({ feature }: { feature: BlockFeatureData }) {
   const setIsSidebarOpen = useSetAtom(isSidebarOpenAtom);
-  const toggleSelectedFeature = useSetAtom(toggleSelectedFeatureAtom);
+  const toggleSelection = useSetAtom(toggleSelectionAtom);
 
   const closeHandler = () => {
     if (isMobile()) {
       // Wait for animation to finish before clearing the selection.
       setIsSidebarOpen(false);
       setTimeout(() => {
-        toggleSelectedFeature(null);
+        toggleSelection(null);
       }, 300);
     } else {
-      toggleSelectedFeature(null);
+      toggleSelection(null);
     }
   };
 
@@ -124,7 +128,7 @@ function UpstreamAblationsSection({
   feature: BlockFeatureData;
   featureProfile: FeatureProfile;
 }) {
-  const featureSelections = useAtomValue(featureSelectionsAtom);
+  const selectionState = useAtomValue(selectionStateAtom);
   const printableTokens = useAtomValue(printableTokensAtom);
   const targetIdx = useAtomValue(targetIdxAtom);
   const setHoveredUpstreamOffset = useSetAtom(hoveredUpstreamOffsetAtom);
@@ -156,7 +160,7 @@ function UpstreamAblationsSection({
               key={offset}
               className={classNames({
                 ablation: true,
-                hovered: offset === featureSelections.hoveredUpstreamOffset,
+                hovered: offset === selectionState.hoveredUpstreamOffset,
               })}
               onMouseEnter={() => setHoveredUpstreamOffset(offset)}
               onMouseLeave={() => setHoveredUpstreamOffset(null)}

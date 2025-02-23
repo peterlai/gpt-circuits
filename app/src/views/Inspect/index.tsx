@@ -7,7 +7,7 @@ import { Sidebar } from "../../components/Inspect/Sidebar";
 import { Navbar } from "../../components/Navbar";
 import { modelIdAtom, sampleIdAtom } from "../../stores/Graph";
 import { isSidebarOpenAtom } from "../../stores/Navigation";
-import { toggleSelectedFeatureAtom } from "../../stores/Selection";
+import { toggleSelectionAtom } from "../../stores/Selection";
 
 import "./style.scss";
 
@@ -15,17 +15,17 @@ function Inspect() {
   const {
     modelId: modelIdFromUrl,
     sampleId: sampleIdFromUrl,
-    featureKey: featureKeyFromUrl,
+    selectionKey: selectionKeyFromUrl,
   } = useParams();
   const setSampleId = useSetAtom(sampleIdAtom);
   const setModelId = useSetAtom(modelIdAtom);
-  const toggleSelectedFeature = useSetAtom(toggleSelectedFeatureAtom);
+  const toggleSelection = useSetAtom(toggleSelectionAtom);
   const isSidebarOpen = useAtomValue(isSidebarOpenAtom);
 
   // Reset selection state if sample ID changes.
   useEffect(() => {
-    toggleSelectedFeature(null);
-  }, [sampleIdFromUrl, toggleSelectedFeature]);
+    toggleSelection(null);
+  }, [sampleIdFromUrl, toggleSelection]);
 
   // Set sample ID and feature from URL params.
   useEffect(() => {
@@ -53,7 +53,7 @@ function Inspect() {
           <Navbar />
         </nav>
         <main>
-          <AblationMap featureKeyFromUrl={featureKeyFromUrl} />
+          <AblationMap selectionKeyFromUrl={selectionKeyFromUrl} />
         </main>
         <aside>
           <Sidebar />

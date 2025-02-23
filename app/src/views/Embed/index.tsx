@@ -11,7 +11,7 @@ function Embed() {
   const {
     modelId: modelIdFromUrl,
     sampleId: sampleIdFromUrl,
-    featureKey: featureKeyFromUrl,
+    selectionKey: selectionKeyFromUrl,
   } = useParams();
   const setSampleId = useSetAtom(sampleIdAtom);
   const setModelId = useSetAtom(modelIdAtom);
@@ -27,7 +27,7 @@ function Embed() {
     document.body.classList.toggle("embedded", true);
   }, []);
 
-  return <AblationMap featureKeyFromUrl={featureKeyFromUrl} isEmbedded={true} />;
+  return <AblationMap selectionKeyFromUrl={selectionKeyFromUrl} isEmbedded={true} />;
 }
 
 export default Embed;

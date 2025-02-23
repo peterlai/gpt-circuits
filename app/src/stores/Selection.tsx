@@ -2,59 +2,87 @@ import { atom } from "jotai";
 import { atomWithHash } from "jotai-location";
 
 import { getInspectSamplePath } from "../views/App/urls";
-import { BlockFeatureData } from "./Block";
+import { BlockData, BlockFeatureData } from "./Block";
 import { alignmentAtom, AlignmentOptions, searchQueryAtom } from "./Search";
 
-interface FeatureSelections {
+interface SelectionState {
+  hoveredBlock: BlockData | null;
+  selectedBlock: BlockData | null;
+  focusedBlock: BlockData | null;
   hoveredFeature: BlockFeatureData | null;
   selectedFeature: BlockFeatureData | null;
   focusedFeature: BlockFeatureData | null;
   hoveredUpstreamOffset: number | null;
 }
 
-const hashFeatureAtom = atomWithHash("feature", "", {
+const hashSelectionAtom = atomWithHash("selection", "", {
   setHash: (searchParams: string) => {
     // NOTE: Changing the URL hash triggers re-render. I'm not sure if this can be avoided.
-    const featureKey = new URLSearchParams(searchParams).get("feature")?.replaceAll('"', "");
+    const selectionKey = new URLSearchParams(searchParams).get("selection")?.replaceAll('"', "");
     const [modelId, sampleId] = window.location.hash?.replace("#", "").split("/").slice(1, 3);
     window.history.replaceState(
       null,
       "",
-      `#${getInspectSamplePath(modelId, sampleId, featureKey)}`
+      `#${getInspectSamplePath(modelId, sampleId, selectionKey)}`
     );
   },
 });
+
+const hoveredBlockAtom = atom<BlockData | null>(null);
+const selectedBlockAtom = atom<BlockData | null>(null);
 const hoveredFeatureAtom = atom<BlockFeatureData | null>(null);
 const selectedFeatureAtom = atom<BlockFeatureData | null>(null);
 const hoveredUpstreamOffsetAtom = atom<number | null>(null);
 
-// Atom for toggling the selected feature
-const toggleSelectedFeatureAtom = atom(null, (get, set, feature: BlockFeatureData | null) => {
-  const selectedFeature = get(selectedFeatureAtom);
+// Atom for toggling the selected block or feature.
+const toggleSelectionAtom = atom(null, (get, set, object: BlockData | BlockFeatureData | null) => {
+  let selectedBlock = get(selectedBlockAtom);
+  let selectedFeature = get(selectedFeatureAtom);
+  let selectedObject = selectedBlock || selectedFeature;
 
-  if (feature !== selectedFeature) {
-    // Update the selected feature
-    set(selectedFeatureAtom, feature);
+  // If the selection should change, update selections.
+  if (selectedObject !== object) {
+    let hashKey: string;
+    if (object instanceof BlockData) {
+      set(selectedBlockAtom, object);
+      set(selectedFeatureAtom, null);
+      hashKey = object.key;
+    } else if (object instanceof BlockFeatureData) {
+      set(selectedBlockAtom, null);
+      set(selectedFeatureAtom, object);
+      hashKey = object.key;
+    } else {
+      set(selectedBlockAtom, null);
+      set(selectedFeatureAtom, null);
+      hashKey = "";
+    }
 
     // Clear search options
     set(searchQueryAtom, "");
     set(alignmentAtom, AlignmentOptions.Token);
 
     // Update the URL location
-    const featureKey = feature ? feature.key : "";
-    set(hashFeatureAtom, (f) => featureKey);
+    set(hashSelectionAtom, (f) => hashKey);
   }
 });
 
-// Represents the current feature selection state
-const featureSelectionsAtom = atom<FeatureSelections>((get) => {
+// Represents the current selection state
+const selectionStateAtom = atom<SelectionState>((get) => {
+  const hoveredBlock = get(hoveredBlockAtom);
+  const selectedBlock = get(selectedBlockAtom);
   const hoveredFeature = get(hoveredFeatureAtom);
   const selectedFeature = get(selectedFeatureAtom);
   const hoveredUpstreamOffset = get(hoveredUpstreamOffsetAtom);
 
   // Focus is on the hovered feature if it exists, otherwise the selected feature
   const focusedFeature = hoveredFeature || selectedFeature;
+  // Block can only be focused if no feature is focused.
+  const focusedBlock = focusedFeature ? null : selectedBlock;
+
   return {
+    hoveredBlock: hoveredBlock,
+    selectedBlock: selectedBlock,
+    focusedBlock: focusedBlock,
     hoveredFeature: hoveredFeature,
     selectedFeature: selectedFeature,
     focusedFeature: focusedFeature,
@@ -63,10 +91,12 @@ const featureSelectionsAtom = atom<FeatureSelections>((get) => {
 });
 
 export {
-  featureSelectionsAtom,
+  hoveredBlockAtom,
   hoveredFeatureAtom,
   hoveredUpstreamOffsetAtom,
+  selectedBlockAtom,
   selectedFeatureAtom,
-  toggleSelectedFeatureAtom,
+  selectionStateAtom,
+  toggleSelectionAtom,
 };
-export type { FeatureSelections };
+export type { SelectionState };

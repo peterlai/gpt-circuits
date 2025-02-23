@@ -22,7 +22,7 @@ import {
   sampleTokensAtom,
   targetIdxAtom,
 } from "../../stores/Graph";
-import { hoveredFeatureAtom, toggleSelectedFeatureAtom } from "../../stores/Selection";
+import { hoveredBlockAtom, hoveredFeatureAtom, toggleSelectionAtom } from "../../stores/Selection";
 import { getInspectSamplePath } from "../../views/App/urls";
 
 import "@fontsource/open-sans";
@@ -32,17 +32,17 @@ import "@fontsource/open-sans/700.css";
 import "./AblationMap.scss";
 
 function AblationMap({
-  featureKeyFromUrl,
+  selectionKeyFromUrl,
   isEmbedded,
 }: {
-  featureKeyFromUrl?: string;
+  selectionKeyFromUrl?: string;
   isEmbedded?: boolean;
 }) {
   const targetIdx = useAtomValue(targetIdxAtom);
   const contextLength = useAtomValue(contextLengthAtom);
   const numLayers = useAtomValue(numLayersAtom);
   const blocks = useAtomValue(blocksAtom);
-  const toggleSelectedFeature = useSetAtom(toggleSelectedFeatureAtom);
+  const toggleSelection = useSetAtom(toggleSelectionAtom);
   const mapRef = useRef(null);
 
   useEffect(() => {
@@ -78,13 +78,13 @@ function AblationMap({
     };
   }, [contextLength, targetIdx]);
 
-  // Set the selected feature from the URL if it exists.
+  // Set the selected block or feature from the URL if it exists.
   useEffect(() => {
-    if (featureKeyFromUrl) {
-      const [tokenOffset, layerIdx] = featureKeyFromUrl.split(".").map(Number);
+    if (selectionKeyFromUrl) {
+      const [tokenOffset, layerIdx, featureIdx] = selectionKeyFromUrl.split(".").map(Number);
       const block = blocks[BlockData.getKey(tokenOffset, layerIdx)];
-      const feature = block?.features[featureKeyFromUrl];
-      toggleSelectedFeature(feature);
+      const objectToSelect = featureIdx ? block?.features[selectionKeyFromUrl] : block;
+      toggleSelection(objectToSelect);
 
       // Make sure the selected layer is in view.
       const mapHolderEl = mapRef.current ? (mapRef.current as HTMLDivElement).parentElement : null;
@@ -96,7 +96,7 @@ function AblationMap({
         mapHolderEl.scrollTop = targetScrollTop;
       }
     }
-  }, [featureKeyFromUrl, blocks, toggleSelectedFeature, numLayers]);
+  }, [selectionKeyFromUrl, blocks, toggleSelection, numLayers]);
 
   // Set CSS variables
   const style = {
@@ -112,6 +112,10 @@ function AblationMap({
       })}
       style={style as React.CSSProperties}
       ref={mapRef}
+      onClick={() => {
+        // Clear selection
+        toggleSelection(null);
+      }}
     >
       <SampleText />
       <Blocks isEmbedded={isEmbedded || false} />
@@ -175,11 +179,14 @@ function Blocks({ isEmbedded }: { isEmbedded: boolean }) {
 function Block({ block, isEmbedded }: { block: BlockData; isEmbedded: boolean }) {
   const targetIdx = useAtomValue(targetIdxAtom);
   const blockModifier = useAtomValue(useMemo(() => createBlockModifierAtom(block), [block]));
+  const setHoveredBlock = useSetAtom(hoveredBlockAtom);
+  const toggleSelection = useSetAtom(toggleSelectionAtom);
 
   const classes = classNames({
     block: true,
-    "ablations-hovered": blockModifier.isHovered,
-    [`bg-color-${blockModifier.color}`]: true,
+    hovered: blockModifier.isHovered,
+    selected: blockModifier.isSelected,
+    emphasized: blockModifier.isEmphasized,
   });
 
   // Offset is a positive number relative to last token in sample text
@@ -188,7 +195,18 @@ function Block({ block, isEmbedded }: { block: BlockData; isEmbedded: boolean })
   const gridRow = block.layerIdx + 2;
   return (
     <div className="cell" style={{ gridColumn: gridColumn, gridRow: gridRow }}>
-      <div className={classes}>
+      <div
+        className={classes}
+        onMouseEnter={() => setHoveredBlock(block)}
+        onMouseLeave={() => setHoveredBlock(null)}
+        onClick={(e: React.MouseEvent) => {
+          // Toggle block selection.
+          toggleSelection(blockModifier.isSelected ? null : block);
+
+          // Prevent event from bubbling up to parent elements
+          e.stopPropagation();
+        }}
+      >
         {Object.values(block.features)
           .sort((a, b) => a.featureId - b.featureId)
           .map((feature) => (
@@ -203,7 +221,7 @@ function Feature({ feature, isEmbedded }: { feature: BlockFeatureData; isEmbedde
   const modelId = useAtomValue(modelIdAtom);
   const sampleId = useAtomValue(sampleIdAtom);
   const setHoveredFeature = useSetAtom(hoveredFeatureAtom);
-  const toggleSelectedFeature = useSetAtom(toggleSelectedFeatureAtom);
+  const toggleSelection = useSetAtom(toggleSelectionAtom);
   const featureModifier = useAtomValue(
     useMemo(() => createFeatureModifierAtom(feature), [feature])
   );
@@ -220,10 +238,13 @@ function Feature({ feature, isEmbedded }: { feature: BlockFeatureData; isEmbedde
     [`text-color-${featureModifier.textColor}`]: true,
   });
 
-  const onClick = () => {
+  const onClick = (e: React.MouseEvent) => {
     if (!isEmbedded) {
       // Select the feature.
-      toggleSelectedFeature(featureModifier.isSelected ? null : feature);
+      toggleSelection(featureModifier.isSelected ? null : feature);
+
+      // Prevent event from bubbling up to parent elements.
+      e.stopPropagation();
     } else {
       // Open the feature in a new tab.
       const sampleUrl = `#${getInspectSamplePath(modelId, sampleId, feature.key)}`;
@@ -237,7 +258,7 @@ function Feature({ feature, isEmbedded }: { feature: BlockFeatureData; isEmbedde
       className={classes}
       onMouseEnter={() => setHoveredFeature(feature)}
       onMouseLeave={() => setHoveredFeature(null)}
-      onClick={() => onClick()}
+      onClick={onClick}
     >
       {feature.featureId}
       {featureModifier.isNeighborFocused && <FeatureProfilePreloader feature={feature} />}

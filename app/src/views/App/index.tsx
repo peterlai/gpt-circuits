@@ -33,8 +33,8 @@ function App() {
       <article>
         <Routes>
           <Route path="/" element=<Home /> />
-          <Route path="/samples/:modelId/:sampleId/:featureKey?" element=<Inspect /> />
-          <Route path="/embedded/:modelId/:sampleId/:featureKey?" element=<Embed /> />
+          <Route path="/samples/:modelId/:sampleId/:selectionKey?" element=<Inspect /> />
+          <Route path="/embedded/:modelId/:sampleId/:selectionKey?" element=<Embed /> />
           <Route path="*" element=<NotFound /> />
         </Routes>
       </article>

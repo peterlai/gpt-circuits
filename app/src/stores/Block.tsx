@@ -2,7 +2,7 @@ import { atom } from "jotai";
 import { selectAtom } from "jotai/utils";
 
 import { sampleDataAtom } from "./Graph";
-import { FeatureSelections, featureSelectionsAtom } from "./Selection";
+import { SelectionState, selectionStateAtom } from "./Selection";
 
 // Represents a transformer block (or embedding) in the ablation graph
 class BlockData {
@@ -176,36 +176,41 @@ const blocksAtom = atom((get) => {
   return blocks;
 });
 
-// Block background color options
-enum BlockColorOptions {
-  Default = 1,
-  Blue = 2,
-}
-
 // Represents modifiers to apply to a specific block
 class BlockModifier {
+  public isEmphasized: boolean = false;
   public isHovered: boolean = false;
-  public color: BlockColorOptions = BlockColorOptions.Default;
+  public isSelected: boolean = false;
+  public isFocused: boolean = false;
 
-  constructor(block: BlockData, featureSelections: FeatureSelections) {
-    // Show the hover state if the block is at the hovered upstream offset
-    this.isHovered =
-      featureSelections.focusedFeature?.layerIdx === block.layerIdx + 1 &&
-      featureSelections.hoveredUpstreamOffset === block.tokenOffset;
+  constructor(block: BlockData, selectionState: SelectionState) {
+    // Show outline if the block is at the hovered upstream offset
+    this.isEmphasized =
+      selectionState.focusedFeature?.layerIdx === block.layerIdx + 1 &&
+      selectionState.hoveredUpstreamOffset === block.tokenOffset;
+    // Update selection state
+    this.isHovered = block.key === selectionState.hoveredBlock?.key;
+    this.isSelected = block.key === selectionState.selectedBlock?.key;
+    this.isFocused = block.key === selectionState.focusedBlock?.key;
   }
 
   // Used to avoid re-rendering when the modifier hasn't changed
   static areEqual(a: BlockModifier, b: BlockModifier) {
-    return a.isHovered === b.isHovered && a.color === b.color;
+    return (
+      a.isEmphasized === b.isEmphasized &&
+      a.isHovered === b.isHovered &&
+      a.isSelected === b.isSelected &&
+      a.isFocused === b.isFocused
+    );
   }
 }
 
 // Creates a block modifier atom for a specific block
 function createBlockModifierAtom(block: BlockData) {
   return selectAtom(
-    featureSelectionsAtom,
-    (featureSelections) => {
-      return new BlockModifier(block, featureSelections);
+    selectionStateAtom,
+    (selectionState) => {
+      return new BlockModifier(block, selectionState);
     },
     BlockModifier.areEqual
   );

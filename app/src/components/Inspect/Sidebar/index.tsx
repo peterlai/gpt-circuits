@@ -4,7 +4,7 @@ import { BiArrowFromLeft } from "react-icons/bi";
 
 import { isMenuOpenAtom, isMobile, isSidebarOpenAtom } from "../../../stores/Navigation";
 import { predictionDataAtom } from "../../../stores/Prediction";
-import { featureSelectionsAtom } from "../../../stores/Selection";
+import { selectionStateAtom } from "../../../stores/Selection";
 import { FeatureSidebar } from "./features";
 import { PredictionSidebar } from "./prediction";
 
@@ -12,7 +12,7 @@ import "charts.css";
 import "./style.scss";
 
 function Sidebar() {
-  const { focusedFeature, selectedFeature } = useAtomValue(featureSelectionsAtom);
+  const { focusedFeature, selectedFeature } = useAtomValue(selectionStateAtom);
   const [{ isPending, isError }] = useAtom(predictionDataAtom);
   const setIsSidebarOpen = useSetAtom(isSidebarOpenAtom);
   const setIsMenuOpen = useSetAtom(isMenuOpenAtom);

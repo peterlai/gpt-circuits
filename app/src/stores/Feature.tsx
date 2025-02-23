@@ -5,7 +5,7 @@ import { SAMPLES_ROOT_URL } from "../views/App/urls";
 import { BlockFeatureData } from "./Block";
 import { modelIdAtom } from "./Graph";
 import { SampleData } from "./Sample";
-import { FeatureSelections, featureSelectionsAtom } from "./Selection";
+import { SelectionState, selectionStateAtom } from "./Selection";
 
 // Feature text color options
 enum TextColorOptions {
@@ -27,9 +27,9 @@ class FeatureModifier {
   public textWeight: number = 0;
   public textColor: TextColorOptions = TextColorOptions.Default;
 
-  constructor(feature: BlockFeatureData, featureSelections: FeatureSelections) {
-    this.isHovered = feature.key === featureSelections.hoveredFeature?.key;
-    this.isSelected = feature.key === featureSelections.selectedFeature?.key;
+  constructor(feature: BlockFeatureData, selectionState: SelectionState) {
+    this.isHovered = feature.key === selectionState.hoveredFeature?.key;
+    this.isSelected = feature.key === selectionState.selectedFeature?.key;
 
     // Set text weight using normalized activation
     if (feature.normalizedActivation < 0.5) {
@@ -42,7 +42,7 @@ class FeatureModifier {
 
     if (!this.isHovered && !this.isSelected) {
       // Does the focused feature share the same feature ID and is on the same layer?
-      const focusedFeature = featureSelections.focusedFeature;
+      const focusedFeature = selectionState.focusedFeature;
       if (
         focusedFeature &&
         focusedFeature.tokenOffset !== feature.tokenOffset &&
@@ -80,7 +80,7 @@ class FeatureModifier {
       }
 
       // If not active, check if selected feature is upstream or downstream
-      const selectedFeature = featureSelections.selectedFeature;
+      const selectedFeature = selectionState.selectedFeature;
       if (!this.isActive && selectedFeature) {
         // If selected feature is upstream, activate feature
         if (Object.keys(feature.ablatedBy).includes(selectedFeature.key)) {
@@ -128,9 +128,9 @@ class FeatureModifier {
 // Creates a feature modifier atom for a specific feature key
 function createFeatureModifierAtom(feature: BlockFeatureData) {
   return selectAtom(
-    featureSelectionsAtom,
-    (featureSelections) => {
-      return new FeatureModifier(feature, featureSelections);
+    selectionStateAtom,
+    (selectionState) => {
+      return new FeatureModifier(feature, selectionState);
     },
     FeatureModifier.areEqual
   );

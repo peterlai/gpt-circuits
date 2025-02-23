@@ -2,7 +2,7 @@ import { atom } from "jotai";
 import { selectAtom } from "jotai/utils";
 
 import { BlockFeatureData, blocksAtom } from "./Block";
-import { FeatureSelections, featureSelectionsAtom } from "./Selection";
+import { SelectionState, selectionStateAtom } from "./Selection";
 
 class ConnectionData {
   public upstreamLayerIdx: number;
@@ -99,15 +99,15 @@ class ConnectionModifier {
   public width: number = 0;
   public isGray: boolean = false;
 
-  constructor(connection: ConnectionData, featureSelections: FeatureSelections) {
+  constructor(connection: ConnectionData, selectionState: SelectionState) {
     this.weight = 1;
     this.width = 1;
 
     // Filter ablations based on feature selection
     let countScale: number = 1;
     let ablations: AblationData[];
-    let focusedFeature = featureSelections.focusedFeature;
-    let selectedFeature = featureSelections.selectedFeature;
+    let focusedFeature = selectionState.focusedFeature;
+    let selectedFeature = selectionState.selectedFeature;
     if (focusedFeature || selectedFeature) {
       // If a feature is focused or selected, show ablations related to the feature
       ablations = connection.ablations.filter((ablation) => {
@@ -214,9 +214,9 @@ const connectionsAtom = atom((get) => {
 // Creates a connection modifier atom for a specific connection
 function createConnectionModifierAtom(connection: ConnectionData) {
   return selectAtom(
-    featureSelectionsAtom,
-    (featureSelections) => {
-      return new ConnectionModifier(connection, featureSelections);
+    selectionStateAtom,
+    (selectionState) => {
+      return new ConnectionModifier(connection, selectionState);
     },
     ConnectionModifier.areEqual
   );
