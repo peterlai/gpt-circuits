@@ -1,7 +1,7 @@
 import { atom } from "jotai";
 import { selectAtom } from "jotai/utils";
 
-import { BlockFeatureData, blocksAtom } from "./Block";
+import { BlockData, BlockFeatureData, blocksAtom } from "./Block";
 import { SelectionState, selectionStateAtom } from "./Selection";
 
 class ConnectionData {
@@ -76,6 +76,14 @@ class AblationData {
     return this.upstreamLayerIdx + 1;
   }
 
+  get upstreamBlockKey() {
+    return BlockData.getKey(this.upstreamTokenOffset, this.upstreamLayerIdx);
+  }
+
+  get downstreamBlockKey() {
+    return BlockData.getKey(this.downstreamTokenOffset, this.downstreamLayerIdx);
+  }
+
   get upstreamFeatureKey() {
     return BlockFeatureData.getKey(
       this.upstreamTokenOffset,
@@ -106,12 +114,18 @@ class ConnectionModifier {
     // Filter ablations based on feature selection
     let countScale: number = 1;
     let ablations: AblationData[];
+    let focusedBlock = selectionState.focusedBlock;
+    let selectedBlock = selectionState.selectedBlock;
     let focusedFeature = selectionState.focusedFeature;
     let selectedFeature = selectionState.selectedFeature;
-    if (focusedFeature || selectedFeature) {
-      // If a feature is focused or selected, show ablations related to the feature
+    if (focusedBlock || selectedBlock || focusedFeature || selectedFeature) {
+      // If a block/feature is focused or selected, show ablations related to the block/feature
       ablations = connection.ablations.filter((ablation) => {
         return (
+          ablation.upstreamBlockKey === focusedBlock?.key ||
+          ablation.downstreamBlockKey === focusedBlock?.key ||
+          ablation.upstreamBlockKey === selectedBlock?.key ||
+          ablation.downstreamBlockKey === selectedBlock?.key ||
           ablation.upstreamFeatureKey === focusedFeature?.key ||
           ablation.downstreamFeatureKey === focusedFeature?.key ||
           ablation.upstreamFeatureKey === selectedFeature?.key ||
@@ -152,11 +166,13 @@ class ConnectionModifier {
       this.weight = 3;
     }
 
-    // Gray out connection if nor related to focused featured.
+    // Gray out connection if not related to focused block/feature.
     if (
       focusedFeature &&
       ablations.filter(
         (ablation) =>
+          ablation.upstreamBlockKey === focusedBlock?.key ||
+          ablation.downstreamBlockKey === focusedBlock?.key ||
           ablation.upstreamFeatureKey === focusedFeature?.key ||
           ablation.downstreamFeatureKey === focusedFeature?.key
       ).length === 0
