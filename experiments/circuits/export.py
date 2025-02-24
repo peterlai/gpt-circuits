@@ -202,6 +202,7 @@ def export_block(
         target_feature_magnitudes,
         circuit_feature_idxs,
         k_nearest=25,
+        feature_coefficients=np.ones_like(circuit_feature_idxs),
         positional_coefficient=0.0,
     )
     cluster_samples = cluster.as_sample_set().samples
@@ -297,6 +298,10 @@ def export_feature(
     target_nodes = [n for n in nodes if n.token_idx == token_idx and n.layer_idx == layer_idx]
     circuit_feature_idxs = np.array([node.feature_idx for node in nodes if node in target_nodes])
 
+    # Magnify the importance of the targeted feature
+    feature_coefficients = np.full_like(circuit_feature_idxs, 0.01, dtype=np.float32)
+    feature_coefficients[np.where(circuit_feature_idxs == feature_idx)[0]] = 1.0
+
     # Get samples that are similar to the target token
     cluster_search = ClusterSearch(model_profile, model_cache)
     cluster = cluster_search.get_cluster(
@@ -304,7 +309,8 @@ def export_feature(
         token_idx,
         target_feature_magnitudes,
         circuit_feature_idxs,
-        k_nearest=250,
+        k_nearest=25,
+        feature_coefficients=feature_coefficients,
         positional_coefficient=0.0,
     )
 

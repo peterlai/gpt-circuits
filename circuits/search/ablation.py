@@ -118,6 +118,7 @@ class ResampleAblator(Ablator):
                 token_feature_magnitudes,
                 circuit_feature_idxs,
                 k_nearest=self.k_nearest,
+                feature_coefficients=np.ones_like(circuit_feature_idxs),
                 positional_coefficient=self.positional_coefficient,
             )
         else:

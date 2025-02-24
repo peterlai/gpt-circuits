@@ -19,6 +19,7 @@ class ClusterCacheKey:
     circuit_feature_idxs: tuple[int, ...]
     circuit_feature_magnitudes: tuple[float, ...]
     k_nearest: int
+    feature_coefficients: tuple[float, ...]
     positional_coefficient: float
 
 
@@ -126,6 +127,7 @@ class ClusterSearch:
         feature_magnitudes: np.ndarray,  # Shape: (F)
         circuit_feature_idxs: np.ndarray,
         k_nearest: int,
+        feature_coefficients: np.ndarray,  # Length must match len(circuit_feature_idxs)
         positional_coefficient: float,
     ) -> Cluster:
         """
@@ -135,10 +137,15 @@ class ClusterSearch:
         :param token_idx: Token index from which features are sampled.
         :param feature_magnitudes: Feature magnitudes for the token. Shape: (F)
         :param circuit_feature_idxs: Indices of features to preserve for this token.
+        :param k_nearest: Number of nearest neighbors to return.
+        :param feature_coefficients: Coefficients representing the importance of each circuit feature.
+        :param positional_coefficient: Coefficient representing the importance of positional information.
 
         :return: Cluster representing nearest neighbor.
         """
         assert k_nearest > 0
+        assert len(circuit_feature_idxs) == len(feature_coefficients), "Each coefficient must correspond to an idx"
+
         layer_profile = self.model_profile[layer_idx]
         layer_cache = self.model_cache[layer_idx]
         block_size = layer_cache.block_size
@@ -153,6 +160,7 @@ class ClusterSearch:
             circuit_feature_idxs,
             circuit_feature_magnitudes,
             k_nearest,
+            feature_coefficients,
             positional_coefficient,
         )
         if cluster_idxs := self.cached_cluster_idxs.get(cache_key):
@@ -192,10 +200,11 @@ class ClusterSearch:
         positional_distances = positional_distances / block_size  # Scale to [0, 1]
         candidate_samples = np.column_stack((candidate_samples, positional_distances))  # Add column
         target_values = np.append(target_values, 0)  # Add target
-        norm_coefficients = np.append(norm_coefficients, positional_coefficient)  # Add coefficient
+        norm_coefficients = np.append(norm_coefficients, 1)
 
         # Calculate MSE
-        errors = (candidate_samples - target_values) * norm_coefficients
+        multipliers = np.append(feature_coefficients, positional_coefficient)  # How important is each dimension?
+        errors = (candidate_samples - target_values) * norm_coefficients * multipliers
         mses = np.mean(errors**2, axis=-1)
 
         # Get nearest neighbors
@@ -248,6 +257,7 @@ class ClusterSearch:
         circuit_feature_idxs: np.ndarray,
         circuit_feature_magnitudes: np.ndarray,
         k_nearest: int,
+        feature_coefficients: np.ndarray,
         positional_coefficient: float,
     ) -> ClusterCacheKey:
         """
@@ -259,5 +269,6 @@ class ClusterSearch:
             tuple([int(f) for f in circuit_feature_idxs]),
             tuple([float(f) for f in circuit_feature_magnitudes]),
             k_nearest,
+            tuple([float(f) for f in feature_coefficients]),
             positional_coefficient,
         )
