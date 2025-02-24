@@ -162,11 +162,17 @@ class NodeSearch:
             previous_kl_divs.append(circuit_analysis.kl_divergence)
 
             # If below threshold, stop search
-            if circuit_analysis.kl_divergence < threshold:
+            if circuit_analysis.kl_divergence < threshold and len(circuit_nodes) > 0:
                 print("Stopping search - Reached target KL divergence.")
                 break
 
-            # Sort tokens by KL divergence (descending)
+            # If no remaining nodes, stop search
+            remaining_nodes = frozenset(all_nodes - circuit_nodes)
+            if not remaining_nodes:
+                print("Stopping search - No remaining nodes to add.")
+                break
+
+            # Sort remaining tokens by KL divergence (descending)
             estimated_token_importance = self.estimate_token_importance(
                 layer_idx,
                 target_token_idx,
