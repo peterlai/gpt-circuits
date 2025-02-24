@@ -110,6 +110,9 @@ class ResampleAblator(Ablator):
         """
         circuit_feature_idxs = np.array([f.feature_idx for f in token_nodes]).astype(np.int32)
 
+        # Set the importance of each feature
+        feature_coefficients = np.ones_like(circuit_feature_idxs)
+
         if self.k_nearest is not None:
             # Get cluster representing nearest neighbors
             cluster = self.cluster_search.get_cluster(
@@ -118,12 +121,18 @@ class ResampleAblator(Ablator):
                 token_feature_magnitudes,
                 circuit_feature_idxs,
                 k_nearest=self.k_nearest,
-                feature_coefficients=np.ones_like(circuit_feature_idxs),
+                feature_coefficients=feature_coefficients,
                 positional_coefficient=self.positional_coefficient,
             )
         else:
             # Create a random cluster using tokens with the same token position
-            cluster = self.cluster_search.get_random_cluster(layer_idx, token_idx, num_samples)
+            cluster = self.cluster_search.get_random_cluster(
+                layer_idx,
+                token_idx,
+                num_samples,
+                feature_coefficients,
+                self.positional_coefficient,
+            )
 
         # Randomly draw sample magnitudes from the cluster
         token_samples = cluster.sample_magnitudes(num_samples)

@@ -33,6 +33,7 @@ class Cluster:
     token_idx: int
     idxs: tuple[int, ...]
     mses: tuple[float, ...]
+    max_mse: float  # Max MSE that is possible based on the coefficients used as multipliers
 
     def __init__(
         self,
@@ -40,13 +41,15 @@ class Cluster:
         layer_idx: int,
         token_idx: int,
         idxs: tuple[int, ...],
-        mses: tuple[float, ...] = (),
+        mses: tuple[float, ...],
+        max_mse: float,
     ):
         self.layer_cache = layer_cache
         self.layer_idx = layer_idx
         self.token_idx = token_idx
         self.idxs = idxs
         self.mses = mses
+        self.max_mse = max_mse
 
     def sample_magnitudes(self, num_samples: int) -> sparse.csr_matrix:
         """
@@ -85,8 +88,6 @@ class ClusterSampleSet:
 
     def __init__(self, cluster: Cluster):
         block_size = cluster.layer_cache.block_size
-        max_mse = max(cluster.mses)
-        min_mse = min(cluster.mses)
 
         self.samples = []
         for shard_token_idx, mse in zip(cluster.idxs, cluster.mses):
@@ -95,8 +96,8 @@ class ClusterSampleSet:
 
             # TODO: Calculate magnitudes based on MSE
             magnitudes = np.zeros(shape=(1, block_size))
-            divisor = max(1e-10, (max_mse - min_mse))  # Avoid division by zero
-            magnitudes[0, token_idx] = 1.0 - (mse - min_mse) / divisor * 0.5
+            divisor = max(1e-10, cluster.max_mse)  # Avoid division by zero
+            magnitudes[0, token_idx] = 1.0 - mse / divisor
             magnitudes = sparse.csr_matrix(magnitudes)
 
             sample = Sample(
@@ -151,6 +152,9 @@ class ClusterSearch:
         block_size = layer_cache.block_size
         num_features = len(circuit_feature_idxs)
 
+        # Calculate max MSE by averaging the squares of all coefficients
+        max_mse = np.append(feature_coefficients**2, positional_coefficient**2).mean()
+
         # Check if nearest neighbors are cached
         # TODO: Consider purging unused cache entries
         circuit_feature_magnitudes = feature_magnitudes[circuit_feature_idxs]
@@ -164,7 +168,14 @@ class ClusterSearch:
             positional_coefficient,
         )
         if cluster_idxs := self.cached_cluster_idxs.get(cache_key):
-            return Cluster(layer_cache=layer_cache, layer_idx=layer_idx, token_idx=token_idx, idxs=cluster_idxs)
+            return Cluster(
+                layer_cache=layer_cache,
+                layer_idx=layer_idx,
+                token_idx=token_idx,
+                idxs=cluster_idxs,
+                mses=(0.0,) * len(cluster_idxs),
+                max_mse=max_mse,
+            )
 
         if num_features == 0:
             # No features to use for sampling
@@ -199,8 +210,8 @@ class ClusterSearch:
         positional_distances = np.abs((row_idxs % block_size) - token_idx).astype(np.float32)
         positional_distances = positional_distances / block_size  # Scale to [0, 1]
         candidate_samples = np.column_stack((candidate_samples, positional_distances))  # Add column
-        target_values = np.append(target_values, 0)  # Add target
-        norm_coefficients = np.append(norm_coefficients, 1)
+        target_values = np.append(target_values, 0.0)  # Add target
+        norm_coefficients = np.append(norm_coefficients, 1.0)
 
         # Calculate MSE
         multipliers = np.append(feature_coefficients, positional_coefficient)  # How important is each dimension?
@@ -222,15 +233,25 @@ class ClusterSearch:
             token_idx=token_idx,
             idxs=cluster_idxs,
             mses=cluster_mses,
+            max_mse=max_mse,
         )
 
-    def get_random_cluster(self, layer_idx: int, token_idx: int, num_samples: int) -> Cluster:
+    def get_random_cluster(
+        self,
+        layer_idx: int,
+        token_idx: int,
+        num_samples: int,
+        feature_coefficients: np.ndarray,
+        positional_coefficient: float,
+    ) -> Cluster:
         """
         Get random cluster for a given layer and token position.
 
         :param layer_idx: Layer index from which features are sampled.
         :param token_idx: Token index from which features are sampled.
         :param num_samples: Number of samples to include in the cluster.
+        :param feature_coefficients: Coefficients representing the importance of each circuit feature.
+        :param positional_coefficient: Coefficient representing the importance of positional information.
 
         :return: Cluster representing random samples.
         """
@@ -238,6 +259,9 @@ class ClusterSearch:
         block_size = layer_cache.block_size
         num_shard_tokens: int = layer_cache.magnitudes.shape[0]  # type: ignore
         block_idxs = np.random.choice(range(num_shard_tokens // block_size), size=num_samples, replace=False)
+
+        # Calculate max MSE by averaging the squares of all coefficients
+        max_mse = np.append(feature_coefficients**2, positional_coefficient**2).mean()
 
         # Respect token position when choosing indices
         cluster_idxs = block_idxs * layer_cache.block_size + token_idx
@@ -248,6 +272,7 @@ class ClusterSearch:
             token_idx=token_idx,
             idxs=cluster_idxs,
             mses=cluster_mses,
+            max_mse=max_mse,
         )
 
     def get_cache_key(

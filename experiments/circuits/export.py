@@ -316,11 +316,9 @@ def export_feature(
 
     # Pick samples from cluster
     samples: list[Sample] = []
-    num_samples = min(len(cluster.idxs), 25)
-    sample_idxs: list[int] = np.random.choice(cluster.idxs, num_samples, replace=False).tolist()  # type: ignore
     block_size = model_cache.block_size
     layer_cache = model_cache[layer_idx]
-    for shard_token_idx in sample_idxs:
+    for shard_token_idx in cluster.idxs:  # type: ignore
         sample_block_idx = shard_token_idx // block_size
         sample_token_idx = shard_token_idx % block_size
         starting_idx = sample_block_idx * block_size
