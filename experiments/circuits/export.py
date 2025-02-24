@@ -294,16 +294,21 @@ def export_feature(
     """
     Create a JSON file with feature metrics for a specific feature in the circuit.
     """
-    num_samples = 25
+    # Load feature metrics
+    feature_profile: FeatureProfile = model_profile[layer_idx][feature_idx]
+
+    # Get target feature magnitudes
     target_feature_magnitudes = output.feature_magnitudes[layer_idx][0, token_idx, :].cpu().numpy()
     target_nodes = [n for n in nodes if n.token_idx == token_idx and n.layer_idx == layer_idx]
     circuit_feature_idxs = np.array([node.feature_idx for node in nodes if node in target_nodes])
 
     # Magnify the importance of the targeted feature
-    feature_coefficients = np.full_like(circuit_feature_idxs, 0.01, dtype=np.float32)
+    feature_coefficients = np.full_like(circuit_feature_idxs, 0.05, dtype=np.float32)
     feature_coefficients[np.where(circuit_feature_idxs == feature_idx)[0]] = 1.0
 
     # Get samples that are similar to the target token
+    num_samples = 25
+    k_nearest = min(1000, int(feature_profile.count / 20)) if len(circuit_feature_idxs) > 1 else num_samples
     cluster_search = ClusterSearch(model_profile, model_cache)
     cluster = cluster_search.get_cluster(
         layer_idx,
@@ -311,7 +316,7 @@ def export_feature(
         target_feature_magnitudes,
         circuit_feature_idxs,
         # Use more neighbors if more than one feature dimension
-        k_nearest=num_samples**2 if len(circuit_feature_idxs) > 1 else num_samples,
+        k_nearest=k_nearest,
         feature_coefficients=feature_coefficients,
         positional_coefficient=0.0,
     )
@@ -338,9 +343,6 @@ def export_feature(
             magnitudes=magnitudes,
         )
         samples.append(sample)
-
-    # Load feature metrics
-    feature_profile: FeatureProfile = model_profile[layer_idx][feature_idx]
 
     # Data to export
     data = {
