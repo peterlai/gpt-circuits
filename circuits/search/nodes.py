@@ -86,8 +86,41 @@ class NodeSearch:
 
         ### Part 1: Start by searching for important tokens
         print("Starting search for important tokens...")
+        circuit_nodes = self.prune_tokens(
+            layer_idx,
+            target_token_idx,
+            target_logits,
+            feature_magnitudes,
+            circuit_nodes=circuit_nodes,
+            threshold=threshold,
+        )
 
+        ### Part 2: Search for important features
+        print("\nStarting search for important features...")
+        circuit_nodes = self.prune_features(
+            layer_idx,
+            target_token_idx,
+            target_logits,
+            feature_magnitudes,
+            circuit_nodes=circuit_nodes,
+            threshold=threshold,
+        )
+        return circuit_nodes
+
+    def prune_tokens(
+        self,
+        layer_idx: int,
+        target_token_idx: int,
+        target_logits: torch.Tensor,
+        feature_magnitudes: torch.Tensor,
+        circuit_nodes: frozenset[Node],
+        threshold: float,
+    ) -> frozenset[Node]:
+        """
+        Prune tokens from the circuit.
+        """
         # Group features by token index
+        initial_nodes = circuit_nodes
         nodes_by_token_idx: dict[int, set[Node]] = {}
         for token_idx in range(target_token_idx + 1):
             nodes_by_token_idx[token_idx] = set({node for node in initial_nodes if node.token_idx == token_idx})
@@ -154,12 +187,24 @@ class NodeSearch:
             nodes = [node for node in circuit_nodes if node.token_idx == token_idx]
             if len(nodes) > 0:
                 print(f"Token {token_idx}: {', '.join([str(node.feature_idx) for node in nodes])}")
-        print("")
 
-        ### Part 2: Search for important features
-        print("Starting search for important features...")
+        # Return circuit
+        return circuit_nodes
 
+    def prune_features(
+        self,
+        layer_idx: int,
+        target_token_idx: int,
+        target_logits: torch.Tensor,
+        feature_magnitudes: torch.Tensor,
+        circuit_nodes: frozenset[Node],
+        threshold: float,
+    ) -> frozenset[Node]:
+        """
+        Prune features from the circuit.
+        """
         # Starting search states
+        initial_nodes = circuit_nodes
         search_threshold = threshold  # Use full threshold for fine-grained search
         discard_candidates: set[Node] = set({})
         circuit_kl_div: float = float("inf")
@@ -216,7 +261,7 @@ class NodeSearch:
                 print(f"Token {token_idx}: {', '.join([str(f.feature_idx) for f in nodes])}")
 
         # Return circuit
-        return frozenset(circuit_nodes)
+        return circuit_nodes
 
     def find_least_important_nodes(
         self,
