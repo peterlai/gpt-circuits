@@ -3,7 +3,6 @@
     --num-layers: 0; /* Set by view */
     --header-height: 90px; /* Default header height */
     --token-font-size: 36px; /* Default token font size */
-    min-width: 100%;
     display: grid;
     grid-template-columns: repeat(var(--context-length), 96px);
     grid-template-rows: var(--header-height) repeat(var(--num-layers), minmax(90px, 150px));
@@ -81,8 +80,8 @@
     }
     /* The following feature rules are over-specific to avoid being overridden. */
     .block span.feature {
-        &.highlighted { background: rgba(255,255,0,0.8); }
-        &.selected { background: rgba(255,255,0,0.6); }
+        &.hovered { background: rgba(255,255,0,0.6); }
+        &.selected { background: rgba(255,255,0,0.8); }
         &.related {
             text-shadow:
                 rgba(255,255,0,0.6) 1px 1px,

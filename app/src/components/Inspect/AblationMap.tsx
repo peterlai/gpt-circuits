@@ -228,7 +228,7 @@ function Feature({ feature, isEmbedded }: { feature: BlockFeatureData; isEmbedde
 
   const classes = classNames({
     feature: true,
-    highlighted: featureModifier.isHovered,
+    hovered: featureModifier.isHovered,
     selected: featureModifier.isSelected,
     related: featureModifier.isRelatedToFocused,
     active: featureModifier.isActive,
