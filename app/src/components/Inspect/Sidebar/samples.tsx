@@ -26,17 +26,6 @@ function SearchableSamples({
   const [searchQuery, setSearchQuery] = useAtom(searchQueryAtom);
   const [alignment, setAlignment] = useAtom(alignmentAtom);
 
-  // Find samples with the closest feature activation.
-  if (feature) {
-    samples = samples
-      .sort(
-        (a, b) =>
-          Math.abs(a.tokens[a.targetIdx].activation - feature.activation) -
-          Math.abs(b.tokens[b.targetIdx].activation - feature.activation)
-      )
-      .slice(0, 25);
-  }
-
   // Function to check if sample should be shown based on search query.
   function filterSamples(sample: SampleData) {
     if (searchQuery === "") {
