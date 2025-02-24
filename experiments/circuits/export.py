@@ -294,6 +294,7 @@ def export_feature(
     """
     Create a JSON file with feature metrics for a specific feature in the circuit.
     """
+    num_samples = 25
     target_feature_magnitudes = output.feature_magnitudes[layer_idx][0, token_idx, :].cpu().numpy()
     target_nodes = [n for n in nodes if n.token_idx == token_idx and n.layer_idx == layer_idx]
     circuit_feature_idxs = np.array([node.feature_idx for node in nodes if node in target_nodes])
@@ -309,16 +310,21 @@ def export_feature(
         token_idx,
         target_feature_magnitudes,
         circuit_feature_idxs,
-        k_nearest=25,
+        # Use more neighbors if more than one feature dimension
+        k_nearest=num_samples**2 if len(circuit_feature_idxs) > 1 else num_samples,
         feature_coefficients=feature_coefficients,
         positional_coefficient=0.0,
     )
+
+    # Choose random samples from the cluster
+    sample_size = min(num_samples, len(cluster.idxs))
+    sample_idxs = np.random.choice(cluster.idxs, size=sample_size, replace=False).tolist()
 
     # Pick samples from cluster
     samples: list[Sample] = []
     block_size = model_cache.block_size
     layer_cache = model_cache[layer_idx]
-    for shard_token_idx in cluster.idxs:  # type: ignore
+    for shard_token_idx in sample_idxs:  # type: ignore
         sample_block_idx = shard_token_idx // block_size
         sample_token_idx = shard_token_idx % block_size
         starting_idx = sample_block_idx * block_size
