@@ -111,13 +111,14 @@ if __name__ == "__main__":
 
     # Start search
     edge_search = EdgeSearch(model, model_profile, ablator, num_samples)
-    edge_to_impact: dict[Edge, float] = edge_search.search(tokens, target_token_idx, upstream_nodes, downstream_nodes)
-    print(f"Analyzed {len(edge_to_impact)} edges between layers {upstream_layer_idx} and {upstream_layer_idx + 1}")
+    search_result = edge_search.search(tokens, target_token_idx, upstream_nodes, downstream_nodes)
+    edge_importance: dict[Edge, float] = search_result.edge_importance
+    print(f"Analyzed {len(edge_importance)} edges between layers {upstream_layer_idx} and {upstream_layer_idx + 1}")
 
     # Group edges by downstream token
     grouped_edges = {}
     for downstream_node in sorted(downstream_nodes):
-        edges = [(edge, value) for edge, value in edge_to_impact.items() if edge.downstream == downstream_node]
+        edges = [(edge, value) for edge, value in edge_importance.items() if edge.downstream == downstream_node]
         upstream_to_value = {}
         for edge, value in sorted(edges, key=lambda x: x[0]):
             upstream_to_value[".".join(map(str, edge.upstream.as_tuple()))] = round(value, 4)

@@ -261,10 +261,15 @@ class NodeSearch:
 
         # Walk backwards through ranked nodes and stop when KL divergence is below threshold.
         # NOTE: KL divergence does not monotonically decrease, which is why we need to walk backwards.
+        previous_klds = []
         for node, kld in reversed(ranked_nodes):
             node_to_kld[node] = kld
             if kld < threshold:
                 break
+            # Also stop if KLD is greater than average of previous 8 values
+            elif len(previous_klds) >= 8 and kld > sum(previous_klds[-8:]) / 8:
+                break
+            previous_klds.append(kld)
 
         # Print results (grouped by token_idx)
         print(f"\nCircuit has {len(node_to_kld.keys())} nodes after feature search on layer {layer_idx}:")

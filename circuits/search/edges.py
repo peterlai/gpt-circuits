@@ -1,4 +1,5 @@
 from collections import defaultdict
+from dataclasses import dataclass
 
 import torch
 
@@ -10,6 +11,20 @@ from circuits.search.divergence import (
     patch_feature_magnitudes,
 )
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
+
+
+@dataclass(frozen=True)
+class EdgeSearchResult:
+    """
+    Result of an edge search.
+    """
+
+    # Maps an edge to a normalized MSE increase
+    edge_importance: dict[Edge, float]
+
+    # Maps a downstream node to the normalized MSE increase that results from ablating all features at each upstream
+    # token index.
+    token_importance: dict[Node, dict[int, float]]
 
 
 class EdgeSearch:
@@ -35,7 +50,7 @@ class EdgeSearch:
         target_token_idx: int,
         upstream_nodes: frozenset[Node],
         downstream_nodes: frozenset[Node],
-    ) -> dict[Edge, float]:
+    ) -> EdgeSearchResult:
         """
         Map each edge in a sparsified model to a normalized MSE increase that results from its ablation.
 
@@ -88,7 +103,7 @@ class EdgeSearch:
             print(f"Edge {edge} - Baseline MSE: {baseline_mse:.4f} - Ablation MSE: {mse:.4f}")
             edge_importance[edge] = (mse - baseline_mse) / baseline_mse  # normalized MSE increase
 
-        return edge_importance
+        return EdgeSearchResult(edge_importance=edge_importance, token_importance={})
 
     def estimate_edge_ablation_effects(
         self,
@@ -193,4 +208,6 @@ class EdgeSearch:
             original_magnitude = original_downstream_magnitudes[node.token_idx, node.feature_idx]
             normalized_mse = torch.mean((norm_coefficients[i] * (sampled_magnitudes - original_magnitude)) ** 2)
             downstream_mses[node] = normalized_mse.item()
+        return downstream_mses
+        return downstream_mses
         return downstream_mses
