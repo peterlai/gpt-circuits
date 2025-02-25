@@ -124,6 +124,14 @@ if __name__ == "__main__":
             upstream_to_value[".".join(map(str, edge.upstream.as_tuple()))] = round(value, 4)
         grouped_edges[".".join(map(str, downstream_node.as_tuple()))] = upstream_to_value
 
+    # Upstream token importance
+    upstream_tokens = {}
+    for node, token_to_value in search_result.token_importance.items():
+        node_key = ".".join(map(str, node.as_tuple()))
+        upstream_tokens[node_key] = {}
+        for token_idx, value in token_to_value.items():
+            upstream_tokens[node_key][token_idx] = round(value, 4)
+
     # Export circuit features
     data = {
         "data_dir": data_dir,
@@ -133,6 +141,7 @@ if __name__ == "__main__":
         "token_idx": target_token_idx,
         "layer_idx": upstream_layer_idx + 1,
         "edges": grouped_edges,
+        "upstream_tokens": upstream_tokens,
     }
     circuit_dir.mkdir(parents=True, exist_ok=True)
     with open(circuit_dir / f"edges.{upstream_layer_idx + 1}.json", "w") as f:

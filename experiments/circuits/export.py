@@ -91,15 +91,25 @@ def main():
 
     # Gather circuit edges
     edge_importance: dict[Edge, float] = {}
+    token_importance: dict[Node, dict[int, float]] = {}
     for layer in range(1, model.gpt.config.n_layer + 1):
         with open(circuit_dir / f"edges.{layer}.json", "r") as f:
             data = json.load(f)
+            # Get edge importance
             for edge_key, upstream_nodes in data["edges"].items():
                 downstream_node = Node(*map(int, edge_key.split(".")))
                 for upstream_node_key, importance in upstream_nodes.items():
                     upstream_node = Node(*map(int, upstream_node_key.split(".")))
                     edge = Edge(upstream_node, downstream_node)
                     edge_importance[edge] = importance
+            # Get token importance
+            for edge_key, upstream_tokens in data["upstream_tokens"].items():
+                downstream_node = Node(*map(int, edge_key.split(".")))
+                for token_str, importance in upstream_tokens.items():
+                    token_idx = int(token_str)
+                    if downstream_node not in token_importance:
+                        token_importance[downstream_node] = {}
+                    token_importance[downstream_node][token_idx] = importance
 
     # Construct circuit
     circuit = construct_circuit(model.gpt.config, node_importance, edge_importance, args.threshold)
@@ -135,6 +145,7 @@ def main():
         model_cache,
         circuit,
         edge_importance,
+        token_importance,
         shard,
         sequence_idx,
         target_token_idx,
@@ -467,6 +478,7 @@ def export_circuit_data(
     model_cache: ModelCache,
     circuit: Circuit,
     edge_importance: dict[Edge, float],
+    token_importance: dict[Node, dict[int, float]],
     shard: DatasetShard,
     sequence_idx: int,
     target_token_idx: int,
@@ -549,13 +561,10 @@ def export_circuit_data(
     data["group_ablation_graph"] = {}
     for downstream_node in sorted(set(edge.downstream for edge in circuit.edges)):
         groups = []
-        downstream_feature_magnitude = output.feature_magnitudes[downstream_node.layer_idx][
-            0, downstream_node.token_idx, downstream_node.feature_idx
-        ].item()
         upstream_edges = [edge for edge in circuit.edges if edge.downstream == downstream_node]
         upstream_blocks = set((edge.upstream.layer_idx, edge.upstream.token_idx) for edge in upstream_edges)
         for layer_idx, token_idx in sorted(upstream_blocks):
-            block_weight = downstream_feature_magnitude  # TODO: Calculate block weight
+            block_weight = token_importance[downstream_node].get(token_idx, 0.0)
             groups.append([f"{target_token_idx - token_idx}.{layer_idx}", block_weight])
         data["group_ablation_graph"][node_to_key(downstream_node, target_token_idx)] = groups
 

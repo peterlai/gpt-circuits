@@ -103,7 +103,14 @@ class EdgeSearch:
             print(f"Edge {edge} - Baseline MSE: {baseline_mse:.4f} - Ablation MSE: {mse:.4f}")
             edge_importance[edge] = (mse - baseline_mse) / baseline_mse  # normalized MSE increase
 
-        return EdgeSearchResult(edge_importance=edge_importance, token_importance={})
+        # For each downstream node, map upstream token indicies to a normalized MSE increase
+        token_importance = defaultdict(dict)
+        for node in sorted(downstream_nodes):
+            for token_idx in {edge.upstream.token_idx for edge in all_edges if edge.downstream == node}:
+                # TODO: Implement
+                token_importance[node][token_idx] = 1.0
+
+        return EdgeSearchResult(edge_importance=edge_importance, token_importance=token_importance)
 
     def estimate_edge_ablation_effects(
         self,
