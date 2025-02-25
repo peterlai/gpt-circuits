@@ -115,6 +115,7 @@
         }
         td:last-child { --color: #ddd; }
         td .data {
+            color: rgba(0,0,0,0.5);
             font-size: 10px;
             padding-right: 2px;
             white-space: nowrap;

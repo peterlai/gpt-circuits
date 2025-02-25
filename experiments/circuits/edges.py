@@ -1,13 +1,11 @@
 """
-Find and export all circuit edges between two layers needed to reconstruct the output logits of a model to within a
-certain KL divergence threshold.
+Analyze edge importance in a circuit by computing the effect of ablating each edge between two adjacent layers.
 
 $ python -m experiments.circuits.edges --circuit=train.0.0.51 --upstream_layer=0
 """
 
 import argparse
 import json
-from collections import defaultdict
 
 import torch
 
@@ -29,7 +27,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", type=str, default="e2e.jumprelu.shakespeare_64x4", help="Model to analyze")
     parser.add_argument("--circuit", type=str, default="train.0.0.51", help="Circuit directory name")
     parser.add_argument("--upstream_layer", type=int, default=0, help="Find edges from this layer")
-    parser.add_argument("--threshold", type=float, default=0.1, help="Threshold for MSE increase (e.g.: 0.1 = 10%)")
     parser.add_argument("--resample", action=argparse.BooleanOptionalAction, default=True, help="Use resampling")
     return parser.parse_args()
 
@@ -37,7 +34,6 @@ def parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     # Parse command line arguments
     args = parse_args()
-    threshold = args.threshold
 
     # Set paths
     checkpoint_dir = TrainingConfig.checkpoints_dir / args.model
@@ -94,7 +90,6 @@ if __name__ == "__main__":
     print(f'Using sequence: "{decoded_tokens.replace("\n", "\\n")}"')
     print(f"Target token: `{decoded_target}` at index {target_token_idx}")
     print(f"Target layer: {upstream_layer_idx}")
-    print(f"Target threshold: {threshold}")
 
     # Load upstream nodes
     upstream_nodes = set()
@@ -116,17 +111,17 @@ if __name__ == "__main__":
 
     # Start search
     edge_search = EdgeSearch(model, model_profile, ablator, num_samples)
-    circuit_edges: frozenset[Edge] = edge_search.search(
-        tokens, target_token_idx, upstream_nodes, downstream_nodes, threshold
-    )
+    edge_to_impact: dict[Edge, float] = edge_search.search(tokens, target_token_idx, upstream_nodes, downstream_nodes)
+    print(f"Analyzed {len(edge_to_impact)} edges between layers {upstream_layer_idx} and {upstream_layer_idx + 1}")
 
     # Group edges by downstream token
-    grouped_edges = defaultdict(list)
+    grouped_edges = {}
     for downstream_node in sorted(downstream_nodes):
-        edges = [edge for edge in circuit_edges if edge.downstream == downstream_node]
-        grouped_edges[".".join(map(str, downstream_node.as_tuple()))] = [
-            ".".join(map(str, edge.upstream.as_tuple())) for edge in sorted(edges)
-        ]
+        edges = [(edge, value) for edge, value in edge_to_impact.items() if edge.downstream == downstream_node]
+        upstream_to_value = {}
+        for edge, value in sorted(edges, key=lambda x: x[0]):
+            upstream_to_value[".".join(map(str, edge.upstream.as_tuple()))] = round(value, 4)
+        grouped_edges[".".join(map(str, downstream_node.as_tuple()))] = upstream_to_value
 
     # Export circuit features
     data = {
@@ -136,7 +131,6 @@ if __name__ == "__main__":
         "sequence_idx": sequence_idx,
         "token_idx": target_token_idx,
         "layer_idx": upstream_layer_idx + 1,
-        "threshold": threshold,
         "edges": grouped_edges,
     }
     circuit_dir.mkdir(parents=True, exist_ok=True)

@@ -1,6 +1,4 @@
-import math
 from collections import defaultdict
-from typing import Optional
 
 import torch
 
@@ -16,14 +14,14 @@ from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
 
 class EdgeSearch:
     """
-    Search for circuit edges in a sparsified model.
+    Analyze edge importance in a circuit by ablating each edge between two adjacent layers.
     """
 
     def __init__(self, model: SparsifiedGPT, model_profile: ModelProfile, ablator: Ablator, num_samples: int):
         """
-        :param model: The sparsified model to use for circuit extraction.
+        :param model: The sparsified model to use for circuit analysis.
         :param model_profile: The model profile containing cache feature metrics.
-        :param ablator: Ablation tecnique to use for circuit extraction.
+        :param ablator: Ablation tecnique to use for circuit analysis.
         :param num_samples: The number of samples to use for ablation.
         """
         self.model = model
@@ -37,15 +35,13 @@ class EdgeSearch:
         target_token_idx: int,
         upstream_nodes: frozenset[Node],
         downstream_nodes: frozenset[Node],
-        threshold: float,
-    ) -> frozenset[Edge]:
+    ) -> dict[Edge, float]:
         """
-        Search for circuit edges in a sparsified model.
+        Map each edge in a sparsified model to a normalized MSE increase that results from its ablation.
 
         :param tokens: The token sequence to use for circuit extraction.
-        :param upstream_nodes: The upstream nodes to use for circuit extraction.
-        :param downstream_nodes: The downstream nodes to use for circuit extraction.
-        :param threshold: Mean-squared increase to use as search threshold (e.g. 0.1 = 10% increase).
+        :param upstream_nodes: The upstream nodes to use for circuit analysis.
+        :param downstream_nodes: The downstream nodes to use for circuit analsysi.
         """
         assert len(downstream_nodes) > 0
         downstream_idx = next(iter(downstream_nodes)).layer_idx
@@ -60,125 +56,39 @@ class EdgeSearch:
         upstream_magnitudes = output.feature_magnitudes[upstream_idx].squeeze(0)  # Shape: (T, F)
         original_downstream_magnitudes = output.feature_magnitudes[downstream_idx].squeeze(0)  # Shape: (T, F)
 
-        # Set initial edges as all edges that could exist between upstream and downstream nodes
-        initial_edges = set()
+        # Find all edges that could exist between upstream and downstream nodes
+        all_edges = set()
         for upstream in sorted(upstream_nodes):
             for downstream in sorted(downstream_nodes):
                 if upstream.token_idx <= downstream.token_idx:
-                    initial_edges.add(Edge(upstream, downstream))
+                    all_edges.add(Edge(upstream, downstream))
 
-        # Set baseline MSE to use for computing search threshold
-        baseline_error = self.estimate_downstream_mse(
+        # Set baseline MSE to use for comparisons
+        baseline_mses = self.estimate_downstream_mses(
             downstream_nodes,
-            frozenset(initial_edges),
+            frozenset(all_edges),
             upstream_magnitudes,
             original_downstream_magnitudes,
             target_token_idx,
         )
-        print(f"MSE baseline: {baseline_error:.4f}")
 
-        # Starting search states
-        search_threshold = baseline_error * (threshold + 1.0)  # Threshold parameter defines MSE increase fraction
-        circuit_edges: frozenset[Edge] = frozenset(initial_edges)  # Circuit to start pruning
-        discard_candidates: frozenset[Edge] = frozenset()
-        downstream_error: float = float("inf")
-        print(f"MSE threshold: {search_threshold:.4f}")
-
-        # Start search
-        for _ in range(len(initial_edges)):
-            # Derive downstream magnitudes from upstream magnitudes and edges to produce a mean-squared error
-            circuit_candidate = Circuit(downstream_nodes, edges=frozenset(circuit_edges - discard_candidates))
-            downstream_error = self.estimate_downstream_mse(
-                downstream_nodes,
-                circuit_candidate.edges,
-                upstream_magnitudes,
-                original_downstream_magnitudes,
-                target_token_idx,
-            )
-
-            # Print results
-            print(
-                f"Edges: {len(circuit_candidate.edges)}/{len(initial_edges)} - "
-                f"Downstream MSE: {downstream_error:.4f}"
-            )
-
-            # If below threshold, continue search
-            if downstream_error < search_threshold:
-                # Update circuit
-                circuit_edges = circuit_candidate.edges
-
-                # Find least important edges
-                if least_important_edges := self.find_least_important_edges(
-                    downstream_nodes,
-                    circuit_edges,
-                    upstream_magnitudes,
-                    original_downstream_magnitudes,
-                    target_token_idx,
-                    # Remove 4% of edges on each iteration
-                    max_count=int(math.ceil(len(circuit_edges) * 0.04)),
-                ):
-                    discard_candidates = frozenset(least_important_edges)
-                else:
-                    print("Stopping search - No more edges can be removed.")
-                    break
-
-            # If above threshold, stop search
-            else:
-                print("Stopping search - Downstream error is too high.")
-                break
-
-        # Print final edges (grouped by downstream token)
-        print(f"\nCircuit after edge search ({len(circuit_edges)}):")
-        for downstream_node in sorted(downstream_nodes):
-            edges = [edge for edge in circuit_edges if edge.downstream == downstream_node]
-            print(f"{downstream_node}: {', '.join([str(edge.upstream) for edge in sorted(edges)])}")
-
-        return circuit_edges
-
-    def find_least_important_edges(
-        self,
-        downstream_nodes: frozenset[Node],
-        edges: frozenset[Edge],
-        upstream_magnitudes: torch.Tensor,  # Shape: (T, F)
-        original_downstream_magnitudes: torch.Tensor,  # Shape: (T, F)
-        target_token_idx: int,
-        max_count: int = 1,
-    ) -> Optional[set[Edge]]:
-        """
-        Find the least important edge in a circuit. Returns the edge and its mean-squared error.
-        To avoid having unconnected nodes, the last edge to a node will not be considered.
-
-        :param max_count: The maximum number of edges to return.
-        """
         # Map edges to ablation effects
-        edge_to_error = self.estimate_edge_ablation_effects(
+        ablation_mses = self.estimate_edge_ablation_effects(
             downstream_nodes,
-            edges,
+            frozenset(all_edges),
             upstream_magnitudes,
             original_downstream_magnitudes,
             target_token_idx,
         )
 
-        # Sort edges by mean-squared error (ascending)
-        sorted_edges = sorted(edge_to_error.items(), key=lambda x: x[1])
+        # Calculate MSE increase from baseline
+        edge_importance = {}
+        for edge, mse in sorted(ablation_mses.items(), key=lambda x: x[0]):
+            baseline_mse = baseline_mses[edge.downstream]
+            print(f"Edge {edge} - Baseline MSE: {baseline_mse:.4f} - Ablation MSE: {mse:.4f}")
+            edge_importance[edge] = (mse - baseline_mse) / baseline_mse  # normalized MSE increase
 
-        # Edges to be discarded
-        discard_candidates: set[Edge] = set()
-
-        # Ignore edges that would leave a node unconnected
-        for edge, _ in sorted_edges:
-            if len([e for e in edges if e.downstream == edge.downstream]) > 1:
-                if len([e for e in edges if e.upstream == edge.upstream]) > 1:
-                    discard_candidates.add(edge)
-                    if len(discard_candidates) >= max_count:
-                        break
-
-        # Return least important edges
-        if discard_candidates:
-            return discard_candidates
-
-        # If no discard candidates, all edges are required
-        return None
+        return edge_importance
 
     def estimate_edge_ablation_effects(
         self,
@@ -196,46 +106,46 @@ class EdgeSearch:
         :param upstream_magnitudes: The upstream feature magnitudes.
         :param original_downstream_magnitudes: The original downstream feature magnitudes.
         """
+        # Maps edge to downstream mean-squared error
+        edge_to_mse: dict[Edge, float] = {}
 
         # Create a set of circuit variants with one edge removed
-        circuit_variants: list[Circuit] = []
         edge_to_circuit_variant: dict[Edge, Circuit] = {}
         for edge in edges:
             circuit_variant = Circuit(downstream_nodes, edges=frozenset(edges - {edge}))
-            circuit_variants.append(circuit_variant)
             edge_to_circuit_variant[edge] = circuit_variant
 
-        # Compute downstream feature magnitude errors for each circuit variant
-        downstream_errors: dict[Circuit, float] = {}
-        for circuit_variant in circuit_variants:
-            error = self.estimate_downstream_mse(
+        # Compute downstream feature magnitude errors that results from ablating each edge
+        for edge, circuit_variant in edge_to_circuit_variant.items():
+            downstream_errors = self.estimate_downstream_mses(
                 downstream_nodes,
                 circuit_variant.edges,
                 upstream_magnitudes,
                 original_downstream_magnitudes,
                 target_token_idx,
             )
-            downstream_errors[circuit_variant] = error
+            edge_to_mse[edge] = downstream_errors[edge.downstream]
+        return edge_to_mse
 
-        # Map edges to mean-squared errors
-        return {edge: downstream_errors[variant] for edge, variant in edge_to_circuit_variant.items()}
-
-    def estimate_downstream_mse(
+    def estimate_downstream_mses(
         self,
         downstream_nodes: frozenset[Node],
         edges: frozenset[Edge],
         upstream_magnitudes: torch.Tensor,  # Shape: (T, F)
         original_downstream_magnitudes: torch.Tensor,  # Shape: (T, F)
         target_token_idx: int,
-    ) -> float:
+    ) -> dict[Node, float]:
         """
-        Use downstream feature magnitudes derived from upstream feature magnitudes and edges to produce a mean-squared error.
+        Use downstream feature magnitudes derived from upstream feature magnitudes and edges to produce a mean-squared
+        error per downstream node.
 
         :param downstream_nodes: The downstream nodes to use for deriving downstream feature magnitudes.
         :param edges: The edges to use for deriving downstream feature magnitudes.
         :param upstream_magnitudes: The upstream feature magnitudes.
         :param original_downstream_magnitudes: The original downstream feature magnitudes.
         :param target_token_idx: The target token index.
+
+        :return: The mean-squared error per downstream node.
         """
         # Map downstream nodes to upstream dependencies
         node_to_dependencies: dict[Node, frozenset[Node]] = {}
@@ -278,9 +188,9 @@ class EdgeSearch:
             norm_coefficients[i] = 1.0 / feature_profile.max
 
         # Calculate mean-squared error from original downstream feature magnitudes
-        downstream_mses = torch.zeros(len(downstream_nodes))
-        for i, (node, sampled_magnitudes) in enumerate(node_to_sampled_magnitudes.items()):
+        downstream_mses = {}
+        for node, sampled_magnitudes in node_to_sampled_magnitudes.items():
             original_magnitude = original_downstream_magnitudes[node.token_idx, node.feature_idx]
-            downstream_mses[i] = torch.mean((norm_coefficients[i] * (sampled_magnitudes - original_magnitude)) ** 2)
-
-        return downstream_mses.mean().item()
+            normalized_mse = torch.mean((norm_coefficients[i] * (sampled_magnitudes - original_magnitude)) ** 2)
+            downstream_mses[node] = normalized_mse.item()
+        return downstream_mses
