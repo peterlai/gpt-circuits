@@ -114,8 +114,8 @@ class EdgeSearch:
                     upstream_magnitudes,
                     original_downstream_magnitudes,
                     target_token_idx,
-                    # Remove 3% of edges on each iteration
-                    max_count=int(math.ceil(len(circuit_edges) * 0.03)),
+                    # Remove 4% of edges on each iteration
+                    max_count=int(math.ceil(len(circuit_edges) * 0.04)),
                 ):
                     discard_candidates = frozenset(least_important_edges)
                 else:

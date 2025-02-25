@@ -101,8 +101,8 @@ if __name__ == "__main__":
     with open(upstream_path) as f:
         data = json.load(f)
         for token_idx, feature_idxs in data["nodes"].items():
-            for feature_idx in feature_idxs:
-                upstream_nodes.add(Node(upstream_layer_idx, int(token_idx), feature_idx))
+            for feature_idx, kld in feature_idxs.items():
+                upstream_nodes.add(Node(upstream_layer_idx, int(token_idx), int(feature_idx)))
     upstream_nodes = frozenset(upstream_nodes)
 
     # Load downstream nodes
@@ -110,8 +110,8 @@ if __name__ == "__main__":
     with open(downstream_path) as f:
         data = json.load(f)
         for token_idx, feature_idxs in data["nodes"].items():
-            for feature_idx in feature_idxs:
-                downstream_nodes.add(Node(upstream_layer_idx + 1, int(token_idx), feature_idx))
+            for feature_idx, kld in feature_idxs.items():
+                downstream_nodes.add(Node(upstream_layer_idx + 1, int(token_idx), int(feature_idx)))
     downstream_nodes = frozenset(downstream_nodes)
 
     # Start search

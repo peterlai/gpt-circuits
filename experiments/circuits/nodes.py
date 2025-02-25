@@ -10,7 +10,7 @@ from collections import defaultdict
 
 import torch
 
-from circuits import json_prettyprint
+from circuits import Node, json_prettyprint
 from circuits.features.cache import ModelCache
 from circuits.features.profiles import ModelProfile
 from circuits.search.ablation import ResampleAblator, ZeroAblator  # noqa: F401
@@ -32,7 +32,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", type=str, default="train", help="Dataset split to use")
     parser.add_argument("--model", type=str, default="e2e.jumprelu.shakespeare_64x4", help="Model to analyze")
     parser.add_argument("--layer_idx", type=int, default=0, help="SAE layer to analyze")
-    parser.add_argument("--threshold", type=float, default=0.2, help="Max threshold for KL divergence")
+    parser.add_argument("--threshold", type=float, default=0.1, help="Max threshold for KL divergence")
     parser.add_argument("--start_from", type=int, default=0, help="Index of token to start search from")
     parser.add_argument("--resample", action=argparse.BooleanOptionalAction, default=True, help="Use resampling")
     return parser.parse_args()
@@ -94,12 +94,19 @@ if __name__ == "__main__":
 
     # Start search
     node_search = NodeSearch(model, ablator, num_samples)
-    circuit_nodes = node_search.search(tokens, layer_idx, start_token_idx, target_token_idx, threshold)
+    node_to_kld: dict[Node, float] = node_search.search(
+        tokens,
+        layer_idx,
+        start_token_idx,
+        target_token_idx,
+        threshold,
+    )
 
     # Group features by token idx
-    grouped_nodes = defaultdict(list)
-    for node in sorted(circuit_nodes):
-        grouped_nodes[node.token_idx].append(node.feature_idx)
+    grouped_nodes = defaultdict(dict)
+    for node, kld in sorted(node_to_kld.items(), key=lambda x: x[0]):
+        # Map feature indices to KL divergence
+        grouped_nodes[node.token_idx][node.feature_idx] = round(kld, 4)
 
     # Export circuit features
     data = {
