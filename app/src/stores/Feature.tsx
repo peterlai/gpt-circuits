@@ -97,10 +97,10 @@ class FeatureModifier {
       }
 
       // If ablation weight exists, set weight
-      if (ablationWeight > 0) {
-        if (ablationWeight < 0.03) {
+      if (ablationWeight !== 0) {
+        if (ablationWeight < 0.1) {
           this.fillWeight = 1;
-        } else if (ablationWeight < 0.1) {
+        } else if (ablationWeight < 5.0) {
           this.fillWeight = 2;
         } else {
           this.fillWeight = 3;

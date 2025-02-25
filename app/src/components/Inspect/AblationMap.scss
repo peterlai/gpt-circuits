@@ -183,12 +183,12 @@
     .width-1 .segment { border-width: 1px; }
     .width-1.span-1 .upstream { margin-left: -1px; }
     .width-1:not(.span-1) .downstream { top: -1px; }
-    .width-2 .segment { border-width: 2px; }
-    .width-2.span-1 .upstream { margin-left: -2px; }
-    .width-2:not(.span-1) .downstream { top: -2px; }
-    .width-3 .segment { border-width: 3px; }
-    .width-3.span-1 .upstream { margin-left: -3px; }
-    .width-3:not(.span-1) .downstream { margin-top: -3px; }
+    .width-2 .segment { border-width: 1.5px; }
+    .width-2.span-1 .upstream { margin-left: -1.5px; }
+    .width-2:not(.span-1) .downstream { top: -1.5px; }
+    .width-3 .segment { border-width: 2px; }
+    .width-3.span-1 .upstream { margin-left: -2px; }
+    .width-3:not(.span-1) .downstream { margin-top: -2px; }
     .gray .segment { border-color: rgba(0,0,0,0.1); }
 }
 

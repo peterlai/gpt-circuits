@@ -134,6 +134,7 @@ def main():
         model_profile,
         model_cache,
         circuit,
+        edge_importance,
         shard,
         sequence_idx,
         target_token_idx,
@@ -465,6 +466,7 @@ def export_circuit_data(
     model_profile: ModelProfile,
     model_cache: ModelCache,
     circuit: Circuit,
+    edge_importance: dict[Edge, float],
     shard: DatasetShard,
     sequence_idx: int,
     target_token_idx: int,
@@ -539,7 +541,7 @@ def export_circuit_data(
         dependencies = []
         upstream_edges = [edge for edge in circuit.edges if edge.downstream == downstream_node]
         for edge in sorted(upstream_edges):
-            edge_weight = 1.0  # TODO: Calculate edge weight
+            edge_weight = edge_importance[edge]
             dependencies.append([node_to_key(edge.upstream, target_token_idx), edge_weight])
         data["ablation_graph"][node_to_key(downstream_node, target_token_idx)] = dependencies
 

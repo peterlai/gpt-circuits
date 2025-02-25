@@ -111,72 +111,53 @@ class ConnectionModifier {
     this.weight = 1;
     this.width = 1;
 
-    // Filter ablations based on feature selection
-    let countScale: number = 1;
-    let ablations: AblationData[];
-    let focusedBlock = selectionState.focusedBlock;
-    let selectedBlock = selectionState.selectedBlock;
-    let focusedFeature = selectionState.focusedFeature;
-    let selectedFeature = selectionState.selectedFeature;
-    if (focusedBlock || selectedBlock || focusedFeature || selectedFeature) {
-      // If a block/feature is focused or selected, show ablations related to the block/feature
-      ablations = connection.ablations.filter((ablation) => {
-        return (
-          ablation.upstreamBlockKey === focusedBlock?.key ||
-          ablation.downstreamBlockKey === focusedBlock?.key ||
-          ablation.upstreamBlockKey === selectedBlock?.key ||
-          ablation.downstreamBlockKey === selectedBlock?.key ||
-          ablation.upstreamFeatureKey === focusedFeature?.key ||
-          ablation.downstreamFeatureKey === focusedFeature?.key ||
-          ablation.upstreamFeatureKey === selectedFeature?.key ||
-          ablation.downstreamFeatureKey === selectedFeature?.key
-        );
-      });
+    // Is this connection attached to anything with focus?
+    const isAnythingFocused = !!(selectionState.focusedBlock || selectionState.focusedFeature);
+    const focusedAblations = connection.ablations.filter(
+      (ablation) =>
+        ablation.upstreamBlockKey === selectionState.focusedBlock?.key ||
+        ablation.downstreamBlockKey === selectionState.focusedBlock?.key ||
+        ablation.upstreamFeatureKey === selectionState.focusedFeature?.key ||
+        ablation.downstreamFeatureKey === selectionState.focusedFeature?.key
+    );
+    const hasFocus = isAnythingFocused && focusedAblations.length > 0;
+
+    if (hasFocus) {
+      // Emphasize connection if it is related to a focused block/feature
+      const ablationWeights = focusedAblations.map((ablation) => ablation.weight);
+      const maxAblationWeight = Math.max(...ablationWeights);
+      if (maxAblationWeight > 5.0) {
+        this.width = 2;
+        this.weight = 3;
+      } else if (maxAblationWeight > 1.0) {
+        this.width = 1;
+        this.weight = 3;
+      } else if (maxAblationWeight > 0.1) {
+        this.width = 1;
+        this.weight = 2;
+      } else {
+        this.width = 1;
+        this.weight = 1;
+      }
+    } else if (!isAnythingFocused) {
+      // Show default connection weight and width based on edge importance.
+      const ablationWeights = connection.ablations.map((ablation) => ablation.weight);
+      const maxAblationWeight = Math.max(...ablationWeights);
+      if (maxAblationWeight > 5.0) {
+        this.width = 2;
+        this.weight = 3;
+      } else if (maxAblationWeight > 1.0) {
+        this.width = 1;
+        this.weight = 2;
+      } else if (maxAblationWeight > 0.1) {
+        this.width = 1;
+        this.weight = 1;
+      } else {
+        this.width = 1;
+        this.weight = 1;
+      }
     } else {
-      // If no feature is focused, show all ablations
-      ablations = connection.ablations;
-      // Scale down ablation count
-      countScale = 0.5;
-    }
-
-    // Calculate ablation weight statistics
-    const ablationCount = ablations.length * countScale;
-    const ablationWeights = ablations.map((ablation) => ablation.weight);
-    const maxAblationWeight = Math.max(...ablationWeights);
-
-    // Set width based on number of ablations
-    if (ablationCount === 0) {
-      this.width = 0;
-    } else if (ablationCount <= 10) {
-      this.width = 1;
-    } else if (ablationCount <= 20) {
-      this.width = 2;
-    } else {
-      this.width = 3;
-    }
-
-    // Set weight based on max ablation weight
-    if (maxAblationWeight === 0) {
-      this.weight = 0;
-    } else if (maxAblationWeight <= 0.03) {
-      this.weight = 1;
-    } else if (maxAblationWeight <= 0.1) {
-      this.weight = 2;
-    } else {
-      this.weight = 3;
-    }
-
-    // Gray out connection if not related to focused block/feature.
-    if (
-      focusedFeature &&
-      ablations.filter(
-        (ablation) =>
-          ablation.upstreamBlockKey === focusedBlock?.key ||
-          ablation.downstreamBlockKey === focusedBlock?.key ||
-          ablation.upstreamFeatureKey === focusedFeature?.key ||
-          ablation.downstreamFeatureKey === focusedFeature?.key
-      ).length === 0
-    ) {
+      // Gray out connection if not related to any focused block/feature.
       this.isGray = true;
     }
   }
