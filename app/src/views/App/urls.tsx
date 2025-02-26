@@ -1,15 +1,25 @@
 const SAMPLES_ROOT_URL = `${process.env.PUBLIC_URL}/samples`;
 
-function getInspectSamplePath(modelId: string, sampleId: string, selectionKey?: string) {
+function getInspectSamplePath(
+  modelId: string,
+  sampleId: string,
+  version: string,
+  selectionKey?: string
+) {
   if (selectionKey && selectionKey !== "") {
-    return `samples/${modelId}/${sampleId}/${selectionKey}`;
+    return `samples/${modelId}/${sampleId}/${version}/${selectionKey}`;
   } else {
-    return `samples/${modelId}/${sampleId}`;
+    return `samples/${modelId}/${sampleId}/${version}`;
   }
 }
 
-function getEmbeddedSamplePath(modelId: string, sampleId: string, selectionKey?: string) {
-  const samplePath = getInspectSamplePath(modelId, sampleId, selectionKey);
+function getEmbeddedSamplePath(
+  modelId: string,
+  sampleId: string,
+  version: string,
+  selectionKey?: string
+) {
+  const samplePath = getInspectSamplePath(modelId, sampleId, version, selectionKey);
   return samplePath.replace("samples", "embedded");
 }
 

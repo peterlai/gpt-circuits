@@ -3,7 +3,7 @@ import { selectAtom } from "jotai/utils";
 
 import { SAMPLES_ROOT_URL } from "../views/App/urls";
 import { BlockFeatureData } from "./Block";
-import { modelIdAtom, sampleIdAtom } from "./Graph";
+import { modelIdAtom, sampleIdAtom, versionAtom } from "./Graph";
 import { SampleData } from "./Sample";
 import { SamplingStrategies, samplingStrategyAtom } from "./Search";
 import { SelectionState, selectionStateAtom } from "./Selection";
@@ -226,14 +226,15 @@ function createFeatureProfileAtom(feature: BlockFeatureData) {
       get(modelIdAtom),
       "feature-profile-data",
       get(sampleIdAtom),
+      get(versionAtom),
       get(samplingStrategyAtom),
       feature.key,
     ],
-    queryFn: async ({ queryKey: [modelId, , sampleId, samplingStrategy, featureKey] }) => {
+    queryFn: async ({ queryKey: [modelId, , sampleId, version, samplingStrategy, featureKey] }) => {
       let url: string;
       switch (samplingStrategy) {
         case SamplingStrategies.Cluster:
-          url = `${SAMPLES_ROOT_URL}/${modelId}/samples/${sampleId}/${featureKey}.json`;
+          url = `${SAMPLES_ROOT_URL}/${modelId}/samples/${sampleId}/${version}/${featureKey}.json`;
           break;
         default:
           const [, layerIdx, featureIdx] = (featureKey as string).split(".");

@@ -3,7 +3,7 @@ import { selectAtom } from "jotai/utils";
 
 import { atomWithQuery } from "jotai-tanstack-query";
 import { SAMPLES_ROOT_URL } from "../views/App/urls";
-import { modelIdAtom, sampleDataAtom, sampleIdAtom } from "./Graph";
+import { modelIdAtom, sampleDataAtom, sampleIdAtom, versionAtom } from "./Graph";
 import { SampleData } from "./Sample";
 import { SelectionState, selectionStateAtom } from "./Selection";
 
@@ -268,9 +268,15 @@ class BlockProfile {
 function createBlockProfileAtom(block: BlockData) {
   return atomWithQuery((get) => ({
     // TODO: Replace with query for real data
-    queryKey: ["predictions-data", get(modelIdAtom), get(sampleIdAtom), block.key],
-    queryFn: async ({ queryKey: [, modelId, sampleId, blockKey] }) => {
-      const url = `${SAMPLES_ROOT_URL}/${modelId}/samples/${sampleId}/${blockKey}.json`;
+    queryKey: [
+      "predictions-data",
+      get(modelIdAtom),
+      get(sampleIdAtom),
+      get(versionAtom),
+      block.key,
+    ],
+    queryFn: async ({ queryKey: [, modelId, sampleId, version, blockKey] }) => {
+      const url = `${SAMPLES_ROOT_URL}/${modelId}/samples/${sampleId}/${version}/${blockKey}.json`;
       const res = await fetch(url);
       const data = await res.json();
       return new BlockProfile(data, modelId as string);

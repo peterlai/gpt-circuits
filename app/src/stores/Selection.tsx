@@ -19,12 +19,12 @@ const hashSelectionAtom = atomWithHash("selection", "", {
   setHash: (searchParams: string) => {
     // NOTE: Changing the URL hash triggers re-render. I'm not sure if this can be avoided.
     const selectionKey = new URLSearchParams(searchParams).get("selection")?.replaceAll('"', "");
-    const [modelId, sampleId] = window.location.hash?.replace("#", "").split("/").slice(1, 3);
-    window.history.replaceState(
-      null,
-      "",
-      `#${getInspectSamplePath(modelId, sampleId, selectionKey)}`
-    );
+    const [modelId, sampleId, version] = window.location.hash
+      ?.replace("#", "")
+      .split("/")
+      .slice(1, 4);
+    const url = `#${getInspectSamplePath(modelId, sampleId, version, selectionKey)}`;
+    window.history.replaceState(null, "", url);
   },
 });
 

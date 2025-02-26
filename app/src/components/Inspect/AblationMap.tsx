@@ -21,6 +21,7 @@ import {
   sampleIdAtom,
   sampleTokensAtom,
   targetIdxAtom,
+  versionAtom,
 } from "../../stores/Graph";
 import { hoveredBlockAtom, hoveredFeatureAtom, toggleSelectionAtom } from "../../stores/Selection";
 import { getInspectSamplePath } from "../../views/App/urls";
@@ -220,6 +221,7 @@ function Block({ block, isEmbedded }: { block: BlockData; isEmbedded: boolean })
 function Feature({ feature, isEmbedded }: { feature: BlockFeatureData; isEmbedded: boolean }) {
   const modelId = useAtomValue(modelIdAtom);
   const sampleId = useAtomValue(sampleIdAtom);
+  const version = useAtomValue(versionAtom);
   const setHoveredFeature = useSetAtom(hoveredFeatureAtom);
   const toggleSelection = useSetAtom(toggleSelectionAtom);
   const featureModifier = useAtomValue(
@@ -247,7 +249,7 @@ function Feature({ feature, isEmbedded }: { feature: BlockFeatureData; isEmbedde
       e.stopPropagation();
     } else {
       // Open the feature in a new tab.
-      const sampleUrl = `#${getInspectSamplePath(modelId, sampleId, feature.key)}`;
+      const sampleUrl = `#${getInspectSamplePath(modelId, sampleId, version, feature.key)}`;
       window.open(sampleUrl, "child");
     }
   };

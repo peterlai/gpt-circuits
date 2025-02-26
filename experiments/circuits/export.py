@@ -36,6 +36,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", type=str, default="e2e.jumprelu.shakespeare_64x4", help="Model name")
     parser.add_argument("--circuit", type=str, default="train.0.0.51", help="Circuit directory name")
     parser.add_argument("--dirname", type=str, help="Output directory name")
+    parser.add_argument("--name", type=str, default="", help="Sample name")
+    parser.add_argument("--version", type=str, default="", help="Sample version")
     parser.add_argument("--threshold", type=float, default=0.2, help="Circuit KL divergence")
     return parser.parse_args()
 
@@ -43,11 +45,15 @@ def parse_args() -> argparse.Namespace:
 def main():
     # Parse command line arguments
     args = parse_args()
+    sample_name = args.name if args.name else args.circuit
+    sample_version = args.version if args.version else str(args.threshold)
 
     # Set paths
     checkpoint_dir = TrainingConfig.checkpoints_dir / args.model
     circuit_dir = checkpoint_dir / "circuits" / args.circuit
     base_dir = Path("app/public/samples") / args.dirname
+    features_dir = base_dir / "features"
+    sample_dir = base_dir / "samples" / sample_name / sample_version
 
     # Load model
     defaults = Config()
@@ -117,7 +123,7 @@ def main():
 
     # Export blocks
     export_blocks(
-        base_dir / "samples" / str(sequence_idx + target_token_idx),
+        sample_dir,
         model,
         model_profile,
         model_cache,
@@ -128,8 +134,8 @@ def main():
     )
     # Export features
     export_features(
-        base_dir / "samples" / str(sequence_idx + target_token_idx),
-        base_dir / "features",
+        sample_dir,
+        features_dir,
         circuit.nodes,
         model,
         model_profile,
@@ -142,7 +148,7 @@ def main():
 
     # Export data.json
     export_circuit_data(
-        base_dir / "samples" / str(sequence_idx + target_token_idx),
+        sample_dir,
         model,
         model_profile,
         model_cache,
@@ -152,6 +158,7 @@ def main():
         shard,
         sequence_idx,
         target_token_idx,
+        args.threshold,
     )
 
 
@@ -570,6 +577,7 @@ def export_circuit_data(
     shard: DatasetShard,
     sequence_idx: int,
     target_token_idx: int,
+    threshold: float,
 ):
     """
     Export sample data to data.json
@@ -590,6 +598,7 @@ def export_circuit_data(
         "text": tokenizer.decode_sequence(tokens),
         "decodedTokens": [tokenizer.decode_token(token) for token in tokens],
         "targetIdx": target_token_idx,
+        "kldThreshold": threshold,
     }
 
     # Set feature magnitudes

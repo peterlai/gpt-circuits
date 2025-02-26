@@ -18,6 +18,7 @@ const isSidebarOpenAtom = atom(!isMobile());
 class SampleOption {
   public modelId: string;
   public id: string;
+  public versions: string[];
   public text: string;
   public decodedTokens: string[];
   public targetIdx: number;
@@ -25,15 +26,21 @@ class SampleOption {
   constructor(
     modelId: string,
     id: string,
+    versions: string[],
     text: string,
     decodedTokens: string[],
     targetIdx: number
   ) {
     this.modelId = modelId;
     this.id = id;
+    this.versions = versions;
     this.text = text;
     this.decodedTokens = decodedTokens;
     this.targetIdx = targetIdx;
+  }
+
+  get defaultVersion(): string {
+    return this.versions[0];
   }
 
   get layerCount(): number {
@@ -83,6 +90,7 @@ const modelOptionsAtom = atomWithQuery((get) => ({
             new SampleOption(
               modelId,
               sample.name,
+              sample.versions,
               sample.text,
               sample.decodedTokens,
               sample.targetIdx

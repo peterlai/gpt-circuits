@@ -83,6 +83,7 @@ function SampleMenuItem({ sampleOptions }: { sampleOptions: SampleOption[] }) {
   const sortedSampleOptions = sampleOptions.sort((a, b) => a.layerCount - b.layerCount);
   const lastSampleOption = sortedSampleOptions[sortedSampleOptions.length - 1];
   const sampleId = lastSampleOption.id;
+  const sampleVersion = lastSampleOption.defaultVersion;
 
   const targetIdx = lastSampleOption.targetIdx;
   const padLeft = 10;
@@ -99,10 +100,10 @@ function SampleMenuItem({ sampleOptions }: { sampleOptions: SampleOption[] }) {
   let defaultSampleUrl: string;
   if (hasSampleOption || isCustomModel) {
     // If a sample option exist for the selected model (or if using custom model), use selected model.
-    defaultSampleUrl = getInspectSamplePath(selectedModelId, sampleId);
+    defaultSampleUrl = getInspectSamplePath(selectedModelId, sampleId, sampleVersion);
   } else {
     // Otherwise, use the last sample option.
-    defaultSampleUrl = getInspectSamplePath(lastSampleOption.modelId, sampleId);
+    defaultSampleUrl = getInspectSamplePath(lastSampleOption.modelId, sampleId, sampleVersion);
   }
 
   return (
@@ -139,7 +140,11 @@ function SampleOptionLink({ sampleOption }: { sampleOption: SampleOption }) {
       className={classNames({
         selected: isSelected,
       })}
-      href={`#${getInspectSamplePath(sampleOption.modelId, sampleOption.id)}`}
+      href={`#${getInspectSamplePath(
+        sampleOption.modelId,
+        sampleOption.id,
+        sampleOption.defaultVersion
+      )}`}
     >
       <FaLayerGroup className="icon" />
       <span>{sampleOption.layerCount}</span>

@@ -11,6 +11,7 @@ import {
   sampleIdAtom,
   sampleTokensAtom,
   targetIdxAtom,
+  versionAtom,
 } from "../stores/Graph";
 import { isSidebarOpenAtom, ModelOption } from "../stores/Navigation";
 
@@ -19,6 +20,10 @@ import "./Navbar.scss";
 function Navbar() {
   const setIsSidebarOpen = useSetAtom(isSidebarOpenAtom);
   const [{ isPending, isError }] = useAtom(sampleDataAtom);
+  const modelId = useAtomValue(modelIdAtom);
+  const sampleId = useAtomValue(sampleIdAtom);
+  const version = useAtomValue(versionAtom);
+
   const Loader = () => (
     <span className="loading">
       <CgSpinner className="spinner spin" />
@@ -29,7 +34,12 @@ function Navbar() {
   const Error = () => (
     <span className="error">
       <FaX className="icon" />
-      Example doesn't exist
+      <span>Couldn't find&nbsp;</span>
+      <pre>
+        {sampleId}:{version}
+      </pre>
+      <span>&nbsp;in&nbsp;</span>
+      <pre>{modelId}</pre>
     </span>
   );
 
@@ -61,6 +71,7 @@ function trimTokens(tokens: string[], targetIdx: number, leftChars: number, righ
 function NavbarContent() {
   const modelId = useAtomValue(modelIdAtom);
   const sampleId = useAtomValue(sampleIdAtom);
+  const version = useAtomValue(versionAtom);
   const sampleTokens = useAtomValue(sampleTokensAtom);
   const targetIdx = useAtomValue(targetIdxAtom);
   const layerCount = ModelOption.getLayerCount(modelId);
@@ -87,8 +98,8 @@ function NavbarContent() {
     const text = `${leftTokens.join("")}[${printableTokens[targetIdx]}]${rightTokens.join("")}`;
     const titleText = `${isTrimmedLeft ? "…" : ""}${text}${isTrimmedRight ? "…" : ""}`;
     const modelDescriptor = layerCount ? modelId[0].toUpperCase() : modelId.toUpperCase();
-    document.title = `GPT Circuit | ${modelDescriptor}-${sampleId} | "${titleText}"`;
-  }, [modelId, sampleId, targetIdx, printableTokens, layerCount]);
+    document.title = `GPT Circuit | ${modelDescriptor}-${sampleId}-${version} | "${titleText}"`;
+  }, [modelId, sampleId, version, targetIdx, printableTokens, layerCount]);
 
   return (
     <>
@@ -103,7 +114,9 @@ function NavbarContent() {
             modelId
           )}
         </span>
-        <span className="sample-id">{sampleId}</span>
+        <span className="sample-id">
+          {sampleId}:{version}
+        </span>
       </span>
       <span className="context">
         &ldquo;

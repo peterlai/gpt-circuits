@@ -1,12 +1,8 @@
 import classNames from "classnames";
-import { useAtom } from "jotai";
-import { FaExternalLinkAlt } from "react-icons/fa";
 import { TbBlockquote } from "react-icons/tb";
 
-import { modelOptionsAtom } from "../stores/Navigation";
 import { SampleData, SampleTokenData } from "../stores/Sample";
 import { AlignmentOptions } from "../stores/Search";
-import { getInspectSamplePath } from "../views/App/urls";
 
 import "./SamplesList.scss";
 
@@ -56,8 +52,6 @@ function Sample({
   hideActivation: boolean;
   showIcon: boolean;
 }) {
-  const [{ data: modelOptions }] = useAtom(modelOptionsAtom);
-
   // Modify tokens based on alignment
   let tokens: SampleTokenData[] = [];
   switch (alignment) {
@@ -113,15 +107,6 @@ function Sample({
       break;
   }
 
-  // Construct the URL for the sample
-  let sampleUrl: string | null = null;
-  if (modelOptions && modelOptions[sample.modelId]) {
-    const sampleOption = modelOptions[sample.modelId].sampleOptions[sample.absoluteTokenIdx];
-    if (sampleOption) {
-      sampleUrl = `#${getInspectSamplePath(sample.modelId, String(sample.absoluteTokenIdx))}`;
-    }
-  }
-
   // How many tokens have been clipped from the right?
   const remainder = Math.max(0, sample.tokens.length - ((tokens.at(-1)?.index ?? 0) + 1));
 
@@ -148,11 +133,6 @@ function Sample({
     <li className="sample" data-sample-id={sample.absoluteTokenIdx}>
       {showIcon && <TbBlockquote className="icon" />}
       {alignment === AlignmentOptions.Token && <span className="index">{sample.targetIdx}</span>}
-      {sampleUrl && (
-        <a href={sampleUrl} target="_blank" rel="noreferrer">
-          <FaExternalLinkAlt />
-        </a>
-      )}
       <span
         className={classNames({
           tokens: true,

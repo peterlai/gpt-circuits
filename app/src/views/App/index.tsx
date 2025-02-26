@@ -32,10 +32,10 @@ function App() {
       <Header />
       <article>
         <Routes>
-          <Route path="/" element=<Home /> />
-          <Route path="/samples/:modelId/:sampleId/:selectionKey?" element=<Inspect /> />
-          <Route path="/embedded/:modelId/:sampleId/:selectionKey?" element=<Embed /> />
-          <Route path="*" element=<NotFound /> />
+          <Route path="/" element={<Home />} />
+          <Route path="/samples/:modelId/:sampleId/:version/:selectionKey?" element={<Inspect />} />
+          <Route path="/embedded/:modelId/:sampleId/:version/:selectionKey?" element={<Embed />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </article>
       <Menu />

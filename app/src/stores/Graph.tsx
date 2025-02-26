@@ -4,16 +4,18 @@ import { atomWithQuery } from "jotai-tanstack-query";
 import { SAMPLES_ROOT_URL } from "../views/App/urls";
 import { blocksAtom } from "./Block";
 
-// Model/Sample ID (set by view)
+// Sample identifiers (set by view)
 const modelIdAtom = atom("");
 const sampleIdAtom = atom("");
+const versionAtom = atom("");
 
 // Raw sample data
 const sampleDataAtom = atomWithQuery((get) => ({
-  queryKey: [get(modelIdAtom), "sample-data", get(sampleIdAtom)],
-  queryFn: async ({ queryKey: [modelId, , sampleId] }) => {
-    if (!modelId || !sampleId) return null;
-    const res = await fetch(`${SAMPLES_ROOT_URL}/${modelId}/samples/${sampleId}/data.json`);
+  queryKey: [get(modelIdAtom), "sample-data", get(sampleIdAtom), get(versionAtom)],
+  queryFn: async ({ queryKey: [modelId, , sampleId, version] }) => {
+    if (!modelId || !sampleId || !version) return null;
+    const url = `${SAMPLES_ROOT_URL}/${modelId}/samples/${sampleId}/${version}/data.json`;
+    const res = await fetch(url);
     return res.json();
   },
   retry: 1,
@@ -73,4 +75,5 @@ export {
   sampleTokensAtom,
   targetIdxAtom,
   targetTokenAtom,
+  versionAtom,
 };

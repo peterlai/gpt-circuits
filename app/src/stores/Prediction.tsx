@@ -1,7 +1,7 @@
 import { atomWithQuery } from "jotai-tanstack-query";
 
 import { SAMPLES_ROOT_URL } from "../views/App/urls";
-import { modelIdAtom, numLayersAtom, sampleIdAtom } from "./Graph";
+import { modelIdAtom, numLayersAtom, sampleIdAtom, versionAtom } from "./Graph";
 import { SampleData } from "./Sample";
 
 // Represents similar samples to a given sample.
@@ -70,12 +70,17 @@ class PredictionData {
 
 // Prediction data, which includes similar samples to a given sample.
 const predictionDataAtom = atomWithQuery((get) => ({
-  queryKey: ["predictions-data", get(modelIdAtom), get(sampleIdAtom), get(numLayersAtom) - 1],
-  queryFn: async ({ queryKey: [, modelId, sampleId, layerIdx] }) => {
-    if (!modelId || !sampleId || Number(layerIdx) < 0) return null;
-    const res = await fetch(
-      `${SAMPLES_ROOT_URL}/${modelId}/samples/${sampleId}/0.${layerIdx}.json`
-    );
+  queryKey: [
+    "predictions-data",
+    get(modelIdAtom),
+    get(sampleIdAtom),
+    get(versionAtom),
+    get(numLayersAtom) - 1,
+  ],
+  queryFn: async ({ queryKey: [, modelId, sampleId, version, layerIdx] }) => {
+    if (!modelId || !sampleId || !version || Number(layerIdx) < 0) return null;
+    const url = `${SAMPLES_ROOT_URL}/${modelId}/samples/${sampleId}/${version}/0.${layerIdx}.json`;
+    const res = await fetch(url);
     const data = await res.json();
     return new PredictionData(data, modelId as string);
   },

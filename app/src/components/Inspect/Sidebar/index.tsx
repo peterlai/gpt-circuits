@@ -15,7 +15,7 @@ import "./style.scss";
 function Sidebar() {
   const { focusedBlock, selectedBlock, focusedFeature, selectedFeature } =
     useAtomValue(selectionStateAtom);
-  const [{ isPending, isError }] = useAtom(predictionDataAtom);
+  const [{ data, isPending, isError }] = useAtom(predictionDataAtom);
   const setIsSidebarOpen = useSetAtom(isSidebarOpenAtom);
   const setIsMenuOpen = useSetAtom(isMenuOpenAtom);
 
@@ -30,8 +30,7 @@ function Sidebar() {
       }
     }
   }, [selectedBlock, selectedFeature, setIsSidebarOpen, setIsMenuOpen]);
-
-  if (isPending || isError) {
+  if (isPending || isError || !data) {
     return <></>;
   }
 
