@@ -11,4 +11,19 @@ enum AlignmentOptions {
 }
 const alignmentAtom = atom(AlignmentOptions.Token);
 
-export { alignmentAtom, AlignmentOptions, searchQueryAtom };
+// Sampling strategies
+enum SamplingStrategies {
+  Top = 1,
+  Similar = 2,
+  Cluster = 3,
+}
+
+const samplingStrategyAtom = atom(SamplingStrategies.Cluster);
+
+export {
+  alignmentAtom,
+  AlignmentOptions,
+  SamplingStrategies,
+  samplingStrategyAtom,
+  searchQueryAtom,
+};

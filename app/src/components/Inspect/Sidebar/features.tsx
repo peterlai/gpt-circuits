@@ -1,11 +1,12 @@
 import classNames from "classnames";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
-import { useMemo } from "react";
-import { FaLayerGroup } from "react-icons/fa6";
+import { useMemo, useState } from "react";
+import { FaChevronDown, FaLayerGroup } from "react-icons/fa6";
 
 import { BlockData, BlockFeatureData, blocksAtom } from "../../../stores/Block";
 import { createFeatureProfileAtom, FeatureProfile } from "../../../stores/Feature";
 import { printableTokensAtom, targetIdxAtom } from "../../../stores/Graph";
+import { SamplingStrategies, samplingStrategyAtom } from "../../../stores/Search";
 import {
   hoveredUpstreamOffsetAtom,
   selectionStateAtom,
@@ -43,12 +44,57 @@ function FeatureSidebar({ feature }: { feature: BlockFeatureData }) {
       <FeatureSidebarHeader feature={feature} />
       <FeatureActivationsSection feature={feature} featureProfile={featureProfile} />
       <UpstreamAblationsSection feature={feature} featureProfile={featureProfile} />
+      <FeatureSidebarSamplesHeader />
       <SearchableSamples
         samples={featureProfile.samples}
         feature={feature}
         activationHistogram={featureProfile.activationHistogram}
+        titleComponent={<FeatureSidebarSamplingStrategy />}
       />
     </>
+  );
+}
+
+function FeatureSidebarSamplingStrategy() {
+  const [isOpen, setIsOpen] = useState(false);
+  const [strategy, setStrategy] = useAtom(samplingStrategyAtom);
+
+  return (
+    <div
+      className="feature-sampling-strategy"
+      onClick={() => setIsOpen(!isOpen)}
+      onBlur={() => setIsOpen(false)}
+      tabIndex={0}
+    >
+      <span className="selected-option">
+        <span>
+          {strategy === SamplingStrategies.Cluster ? "Circuit Cluster" : null}
+          {strategy === SamplingStrategies.Similar ? "Similar Activations" : null}
+          {strategy === SamplingStrategies.Top ? "Top Activations" : null}
+        </span>
+        <FaChevronDown className="icon" />
+      </span>
+
+      {isOpen && (
+        <ul>
+          <li onClick={() => setStrategy(SamplingStrategies.Cluster)}>
+            <h4>Circuit Cluster</h4>
+            <p>
+              Cluster dataset samples using circuit features and boost the importance of the
+              selected one.
+            </p>
+          </li>
+          <li onClick={() => setStrategy(SamplingStrategies.Similar)}>
+            <h4>Similar Activations</h4>
+            <p>Show dataset samples for tokens with similar feature magnitudes.</p>
+          </li>
+          <li onClick={() => setStrategy(SamplingStrategies.Top)}>
+            <h4>Top Activations</h4>
+            <p>Show dataset samples for tokens with top feature activations.</p>
+          </li>
+        </ul>
+      )}
+    </div>
   );
 }
 
@@ -65,6 +111,10 @@ function FeatureSidebarHeader({ feature }: { feature: BlockFeatureData }) {
       <CloseButton />
     </header>
   );
+}
+
+function FeatureSidebarSamplesHeader() {
+  return <header className="feature-samples-header">Examples</header>;
 }
 
 function FeatureActivationsSection({
