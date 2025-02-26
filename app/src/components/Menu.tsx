@@ -3,7 +3,7 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { BiArrowFromRight } from "react-icons/bi";
 import { FaLayerGroup } from "react-icons/fa6";
 
-import { modelIdAtom, sampleIdAtom } from "../stores/Graph";
+import { modelIdAtom, sampleIdAtom, versionAtom } from "../stores/Graph";
 import { isMenuOpenAtom, modelOptionsAtom, SampleOption } from "../stores/Navigation";
 import { getAboutPath, getInspectSamplePath } from "../views/App/urls";
 
@@ -27,9 +27,27 @@ function Menu() {
   // Sort sample IDs numerically if possible.
   const sortedShakespeareSampleIds = Array.from(shakespeareSampleIdToOptions.keys()).sort(
     (a, b) => {
-      const aId = isNaN(parseInt(a)) ? 0 : parseInt(a);
-      const bId = isNaN(parseInt(b)) ? 0 : parseInt(b);
-      return aId - bId;
+      // Check if ID is in the format "x.0.0.0"
+      const aParts = a.split(".");
+      const bParts = b.split(".");
+      if (aParts.length === 4 && bParts.length === 4) {
+        // Compare the first part as string
+        const splitComparison = aParts[0].localeCompare(bParts[0]);
+        if (splitComparison !== 0) return splitComparison;
+
+        // Compare the remaining parts as numbers
+        for (let i = 1; i < 4; i++) {
+          const aNum = parseInt(aParts[i]);
+          const bNum = parseInt(bParts[i]);
+          if (aNum !== bNum) return aNum - bNum;
+        }
+
+        // If all parts are equal, return 0.
+        return 0;
+      } else {
+        // Otherwise, sort as strings.
+        return a.localeCompare(b);
+      }
     }
   );
 
@@ -72,18 +90,18 @@ function Menu() {
 function SampleMenuItem({ sampleOptions }: { sampleOptions: SampleOption[] }) {
   const selectedModelId = useAtomValue(modelIdAtom);
   const selectedSampleId = useAtomValue(sampleIdAtom);
+  const selectedVersion = useAtomValue(versionAtom);
 
   // Does one of the sample options reference the selected model?
-  const hasSampleOption = sampleOptions.find((o) => o.modelId === selectedModelId);
+  const similarSampleOption = sampleOptions.find((o) => o.modelId === selectedModelId);
 
-  // Is the selected model a custom model?
-  const isCustomModel = selectedModelId.indexOf("-") !== -1;
+  // Is the selected model recognized?
+  const isCustomModel = sampleOptions.some((o) => o.modelId === selectedModelId);
 
   // Sort sample options by layer count.
   const sortedSampleOptions = sampleOptions.sort((a, b) => a.layerCount - b.layerCount);
   const lastSampleOption = sortedSampleOptions[sortedSampleOptions.length - 1];
   const sampleId = lastSampleOption.id;
-  const sampleVersion = lastSampleOption.defaultVersion;
 
   const targetIdx = lastSampleOption.targetIdx;
   const padLeft = 10;
@@ -98,12 +116,22 @@ function SampleMenuItem({ sampleOptions }: { sampleOptions: SampleOption[] }) {
 
   // Set default sample URL, which is navigated to when the menu item is clicked.
   let defaultSampleUrl: string;
-  if (hasSampleOption || isCustomModel) {
-    // If a sample option exist for the selected model (or if using custom model), use selected model.
+  if (isCustomModel) {
+    // If model is unrecognized, infer sample URL from current states.
+    defaultSampleUrl = getInspectSamplePath(selectedModelId, sampleId, selectedVersion);
+  } else if (similarSampleOption) {
+    // If a sample option exist for the selected model, use option. Try to match the selected version.
+    const sampleVersion =
+      similarSampleOption.versions.find((v) => v === selectedVersion) ??
+      similarSampleOption.defaultVersion;
     defaultSampleUrl = getInspectSamplePath(selectedModelId, sampleId, sampleVersion);
   } else {
     // Otherwise, use the last sample option.
-    defaultSampleUrl = getInspectSamplePath(lastSampleOption.modelId, sampleId, sampleVersion);
+    defaultSampleUrl = getInspectSamplePath(
+      lastSampleOption.modelId,
+      sampleId,
+      lastSampleOption.defaultVersion
+    );
   }
 
   return (
