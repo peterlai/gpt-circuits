@@ -6,6 +6,7 @@ import { FaChevronDown, FaLayerGroup } from "react-icons/fa6";
 import { BlockData, BlockFeatureData, blocksAtom } from "../../../stores/Block";
 import { createFeatureProfileAtom, FeatureProfile } from "../../../stores/Feature";
 import { printableTokensAtom, targetIdxAtom } from "../../../stores/Graph";
+import { SampleData } from "../../../stores/Sample";
 import { SamplingStrategies, samplingStrategyAtom } from "../../../stores/Search";
 import {
   hoveredUpstreamOffsetAtom,
@@ -20,6 +21,7 @@ function FeatureSidebar({ feature }: { feature: BlockFeatureData }) {
   const [{ data: featureProfile, isPending, isError }] = useAtom(
     useMemo(() => createFeatureProfileAtom(feature), [feature])
   );
+  const samplingStrategy = useAtomValue(samplingStrategyAtom);
 
   if (isPending) {
     return (
@@ -39,6 +41,31 @@ function FeatureSidebar({ feature }: { feature: BlockFeatureData }) {
     );
   }
 
+  let samples: SampleData[];
+  switch (samplingStrategy) {
+    case SamplingStrategies.Cluster:
+      // Show all samples if using the clustering strategy
+      samples = featureProfile.samples;
+      break;
+    case SamplingStrategies.Similar:
+      // Show samples with the closest activations
+      samples = featureProfile.samples
+        .sort((a, b) => {
+          const aActivation = a.tokens[a.targetIdx].activation;
+          const bActivation = b.tokens[b.targetIdx].activation;
+          return (
+            Math.abs(aActivation - feature.activation) - Math.abs(bActivation - feature.activation)
+          );
+        })
+        .slice(0, 25);
+      break;
+    case SamplingStrategies.Top:
+      // Show samples with the top 25 activations
+      samples = featureProfile.samples
+        .sort((a, b) => b.tokens[b.targetIdx].activation - a.tokens[a.targetIdx].activation)
+        .slice(0, 25);
+  }
+
   return (
     <>
       <FeatureSidebarHeader feature={feature} />
@@ -46,7 +73,7 @@ function FeatureSidebar({ feature }: { feature: BlockFeatureData }) {
       <UpstreamAblationsSection feature={feature} featureProfile={featureProfile} />
       <FeatureSidebarSamplesHeader />
       <SearchableSamples
-        samples={featureProfile.samples}
+        samples={samples}
         feature={feature}
         activationHistogram={featureProfile.activationHistogram}
         titleComponent={<FeatureSidebarSamplingStrategy />}
@@ -86,11 +113,11 @@ function FeatureSidebarSamplingStrategy() {
           </li>
           <li onClick={() => setStrategy(SamplingStrategies.Similar)}>
             <h4>Similar Activations</h4>
-            <p>Show dataset samples for tokens with similar feature magnitudes.</p>
+            <p>Show dataset samples for tokens with similar activation values.</p>
           </li>
           <li onClick={() => setStrategy(SamplingStrategies.Top)}>
             <h4>Top Activations</h4>
-            <p>Show dataset samples for tokens with top feature activations.</p>
+            <p>Show dataset samples for tokens with 90th percentile activations.</p>
           </li>
         </ul>
       )}

@@ -5,6 +5,7 @@ import { SAMPLES_ROOT_URL } from "../views/App/urls";
 import { BlockFeatureData } from "./Block";
 import { modelIdAtom, sampleIdAtom } from "./Graph";
 import { SampleData } from "./Sample";
+import { SamplingStrategies, samplingStrategyAtom } from "./Search";
 import { SelectionState, selectionStateAtom } from "./Selection";
 
 // Feature text color options
@@ -221,9 +222,24 @@ type HistogramBin = {
 // Creates a feature profile data atom for a specific feature
 function createFeatureProfileAtom(feature: BlockFeatureData) {
   return atomWithQuery((get) => ({
-    queryKey: [get(modelIdAtom), "feature-profile-data", get(sampleIdAtom), feature.key],
-    queryFn: async ({ queryKey: [modelId, , sampleId, featureKey] }) => {
-      const url = `${SAMPLES_ROOT_URL}/${modelId}/samples/${sampleId}/${featureKey}.json`;
+    queryKey: [
+      get(modelIdAtom),
+      "feature-profile-data",
+      get(sampleIdAtom),
+      get(samplingStrategyAtom),
+      feature.key,
+    ],
+    queryFn: async ({ queryKey: [modelId, , sampleId, samplingStrategy, featureKey] }) => {
+      let url: string;
+      switch (samplingStrategy) {
+        case SamplingStrategies.Cluster:
+          url = `${SAMPLES_ROOT_URL}/${modelId}/samples/${sampleId}/${featureKey}.json`;
+          break;
+        default:
+          const [, layerIdx, featureIdx] = (featureKey as string).split(".");
+          url = `${SAMPLES_ROOT_URL}/${modelId}/features/${layerIdx}.${featureIdx}.json`;
+          break;
+      }
       const res = await fetch(url);
       const data = await res.json();
       return new FeatureProfile(data, modelId as string);

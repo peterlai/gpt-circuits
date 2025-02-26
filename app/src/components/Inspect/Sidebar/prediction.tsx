@@ -95,7 +95,7 @@ function PredictionSamplesSection() {
 }
 
 function PredictionSamplesTitle() {
-  return <span>Similar Examples</span>;
+  return <span>Similar Tokens</span>;
 }
 
 export { PredictionSidebar };

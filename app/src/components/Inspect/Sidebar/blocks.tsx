@@ -74,7 +74,7 @@ function BlockProfile({ block }: { block: BlockData }) {
 }
 
 function BlockSamplesTitle() {
-  return <span>Similar Examples</span>;
+  return <span>Similar Tokens</span>;
 }
 
 function BlockSamplesSection({ block }: { block: BlockData }) {

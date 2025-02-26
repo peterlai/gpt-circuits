@@ -14,7 +14,7 @@ import torch
 from circuits import Circuit, Edge, Node, json_prettyprint
 from circuits.features.cache import ModelCache
 from circuits.features.profiles import FeatureProfile, ModelProfile
-from circuits.features.samples import Sample
+from circuits.features.samples import ModelSampleSet, Sample
 from circuits.search.ablation import ResampleAblator
 from circuits.search.clustering import ClusterSearch
 from circuits.search.divergence import (
@@ -61,6 +61,7 @@ def main():
     # Load cached metrics and feature samples
     model_profile = ModelProfile(checkpoint_dir)
     model_cache = ModelCache(checkpoint_dir)
+    model_sample_set = ModelSampleSet(checkpoint_dir)
 
     # Load sequence args
     with open(circuit_dir / "nodes.0.json") as f:
@@ -128,10 +129,12 @@ def main():
     # Export features
     export_features(
         base_dir / "samples" / str(sequence_idx + target_token_idx),
+        base_dir / "features",
         circuit.nodes,
         model,
         model_profile,
         model_cache,
+        model_sample_set,
         shard,
         tokens,
         target_token_idx,
@@ -214,7 +217,7 @@ def construct_circuit(gpt_config: GPTConfig, node_importance, edge_importance, t
 
 
 def export_blocks(
-    samples_dir: Path,
+    sample_dir: Path,
     model: SparsifiedGPT,
     model_profile: ModelProfile,
     model_cache: ModelCache,
@@ -241,7 +244,7 @@ def export_blocks(
     # Export each block
     for layer_idx, token_idx in blocks:
         export_block(
-            samples_dir,
+            sample_dir,
             model,
             model_profile,
             model_cache,
@@ -255,7 +258,7 @@ def export_blocks(
 
 
 def export_block(
-    samples_dir: Path,
+    sample_dir: Path,
     model: SparsifiedGPT,
     model_profile: ModelProfile,
     model_cache: ModelCache,
@@ -311,18 +314,20 @@ def export_block(
         data["magnitudeIdxs"].append(sample.magnitudes.nonzero()[1].tolist())
         data["magnitudeValues"].append([round(magnitude, 3) for magnitude in sample.magnitudes.data.tolist()])
 
-    samples_dir.mkdir(parents=True, exist_ok=True)
+    sample_dir.mkdir(parents=True, exist_ok=True)
     offset = target_token_idx - token_idx
-    with open(samples_dir / f"{offset}.{layer_idx}.json", "w") as f:
+    with open(sample_dir / f"{offset}.{layer_idx}.json", "w") as f:
         f.write(json_prettyprint(data))
 
 
 def export_features(
+    sample_dir,
     features_dir,
     nodes: frozenset[Node],
     model: SparsifiedGPT,
     model_profile: ModelProfile,
     model_cache: ModelCache,
+    model_sample_set: ModelSampleSet,
     shard: DatasetShard,
     tokens: list[int],
     target_token_idx: int,
@@ -337,13 +342,14 @@ def export_features(
     with torch.no_grad():
         output: SparsifiedGPTOutput = model(input)
 
+    # Export features with circuit context
     for node in nodes:
         layer_idx = node.layer_idx
         token_idx = node.token_idx
         feature_idx = node.feature_idx
 
-        export_feature(
-            features_dir,
+        export_circuit_feature(
+            sample_dir,
             model,
             model_profile,
             model_cache,
@@ -356,9 +362,91 @@ def export_features(
             target_token_idx,
         )
 
+    # Export features without circuit context
+    features: set[tuple[int, int]] = set()
+    for node in nodes:
+        features.add((node.layer_idx, node.feature_idx))
+    sorted_features = sorted(list(features))
+    for layer_idx, feature_idx in sorted_features:
+        export_shared_feature(
+            features_dir,
+            model,
+            model_profile,
+            model_sample_set,
+            shard,
+            layer_idx,
+            feature_idx,
+        )
 
-def export_feature(
+
+def export_shared_feature(
     features_dir,
+    model: SparsifiedGPT,
+    model_profile: ModelProfile,
+    model_sample_set: ModelSampleSet,
+    shard: DatasetShard,
+    layer_idx: int,
+    feature_idx: int,
+):
+    """
+    Create a JSON file with feature metrics for a feature without any specific circuit context.
+    """
+    # Load feature metrics
+    feature_profile: FeatureProfile = model_profile[layer_idx][feature_idx]
+
+    # Data to export
+    data = {
+        "samples": [],
+        "decodedTokens": [],
+        "tokenIdxs": [],
+        "absoluteTokenIdxs": [],
+        "magnitudeIdxs": [],
+        "magnitudeValues": [],
+        "maxActivation": feature_profile.max,
+        "activationHistogram": {
+            "counts": feature_profile.histogram_counts,
+            "binEdges": feature_profile.histogram_edges,
+        },
+    }
+
+    # Load feature samples
+    samples: list[Sample] = model_sample_set[layer_idx][feature_idx].samples
+    block_size = int(samples[0].magnitudes.shape[-1])  # type: ignore
+
+    # Load sample tokens
+    sample_tokens: list[list[int]] = []
+    for sample in samples:
+        starting_idx = sample.block_idx * block_size
+        tokens = shard.tokens[starting_idx : starting_idx + block_size].tolist()
+        sample_tokens.append(tokens)
+
+    # Add decoded samples
+    tokenizer = model.gpt.config.tokenizer
+    for tokens in sample_tokens:
+        decoded_sample = tokenizer.decode_sequence(tokens)
+        decoded_tokens = [tokenizer.decode_token(token) for token in tokens]
+        data["samples"].append(decoded_sample)
+        data["decodedTokens"].append(decoded_tokens)
+
+    # Add token idxs
+    for sample in samples:
+        data["tokenIdxs"].append(sample.token_idx)
+        data["absoluteTokenIdxs"].append(block_size * sample.block_idx + sample.token_idx)
+        pass
+
+    # Add token magnitudes
+    for sample in samples:
+        data["magnitudeIdxs"].append(sample.magnitudes.nonzero()[1].tolist())
+        data["magnitudeValues"].append([round(magnitude, 3) for magnitude in sample.magnitudes.data.tolist()])
+
+    # Create file for feature
+    features_dir.mkdir(parents=True, exist_ok=True)
+    with open(features_dir / f"{layer_idx}.{feature_idx}.json", "w") as f:
+        f.write(json_prettyprint(data))
+
+
+def export_circuit_feature(
+    sample_dir,
     model: SparsifiedGPT,
     model_profile: ModelProfile,
     model_cache: ModelCache,
@@ -465,9 +553,9 @@ def export_feature(
         data["magnitudeValues"].append([round(magnitude, 3) for magnitude in sample.magnitudes.data.tolist()])
 
     # Create file for feature
-    features_dir.mkdir(parents=True, exist_ok=True)
+    sample_dir.mkdir(parents=True, exist_ok=True)
     offset = target_token_idx - token_idx
-    with open(features_dir / f"{offset}.{layer_idx}.{feature_idx}.json", "w") as f:
+    with open(sample_dir / f"{offset}.{layer_idx}.{feature_idx}.json", "w") as f:
         f.write(json_prettyprint(data))
 
 

@@ -100,7 +100,7 @@ function SearchableSamples({
     <>
       <header className="samples-header">
         <div className="info">
-          {titleComponent ? titleComponent : <span>Examples</span>}
+          {titleComponent ? titleComponent : null}
           <span className="count">
             {filteredSamples.length}{" "}
             {activationHistogram && <>/ {prettyCount(activationHistogram.totalCount)}</>}
