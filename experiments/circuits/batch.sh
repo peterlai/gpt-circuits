@@ -19,7 +19,7 @@ process_token_ids() {
 }
 
 # Training shard token IDs
-TRAIN_TOKEN_IDS=(300553 872699)
+TRAIN_TOKEN_IDS=(7010 300553 872699)
 
 # Validation shard token IDs
 VAL_TOKEN_IDS=(15524 85424)
