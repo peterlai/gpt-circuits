@@ -13,7 +13,7 @@ import {
   targetIdxAtom,
   versionAtom,
 } from "../stores/Graph";
-import { isSidebarOpenAtom, ModelOption } from "../stores/Navigation";
+import { isSidebarOpenAtom, ModelOption, modelOptionsAtom } from "../stores/Navigation";
 
 import "./Navbar.scss";
 
@@ -44,13 +44,18 @@ function Navbar() {
   );
 
   return (
-    <>
-      <div id="Navbar">{isPending ? <Loader /> : isError ? <Error /> : <NavbarContent />}</div>
-      <BsReverseLayoutTextSidebarReverse
-        id="ToggleSidebar"
-        onClick={() => setIsSidebarOpen((isOpen) => !isOpen)}
-      />
-    </>
+    <div id="Navbar">
+      <div className="left-side">
+        {isPending ? <Loader /> : isError ? <Error /> : <NavbarContent />}
+      </div>
+      <div className="right-side">
+        {!isPending && !isError && <VersionSelector />}
+        <BsReverseLayoutTextSidebarReverse
+          id="ToggleSidebar"
+          onClick={() => setIsSidebarOpen((isOpen) => !isOpen)}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -97,8 +102,7 @@ function NavbarContent() {
     );
     const text = `${leftTokens.join("")}[${printableTokens[targetIdx]}]${rightTokens.join("")}`;
     const titleText = `${isTrimmedLeft ? "…" : ""}${text}${isTrimmedRight ? "…" : ""}`;
-    const modelDescriptor = layerCount ? modelId[0].toUpperCase() : modelId.toUpperCase();
-    document.title = `GPT Circuit | ${modelDescriptor}-${sampleId}-${version} | "${titleText}"`;
+    document.title = `GPT Circuit | "${titleText}" | ${modelId}:${sampleId}:${version}`;
   }, [modelId, sampleId, version, targetIdx, printableTokens, layerCount]);
 
   return (
@@ -114,9 +118,7 @@ function NavbarContent() {
             modelId
           )}
         </span>
-        <span className="sample-id">
-          {sampleId}:{version}
-        </span>
+        <span className="sample-id">{sampleId}</span>
       </span>
       <span className="context">
         &ldquo;
@@ -138,6 +140,37 @@ function NavbarContent() {
         &rdquo;
       </span>
     </>
+  );
+}
+
+function VersionSelector() {
+  const [{ data: modelOptions }] = useAtom(modelOptionsAtom);
+  const setVersion = useSetAtom(versionAtom);
+  const modelId = useAtomValue(modelIdAtom);
+  const sampleId = useAtomValue(sampleIdAtom);
+  const version = useAtomValue(versionAtom);
+
+  // Find options for the current sample.
+  const options = modelOptions?.[modelId]?.sampleOptions[sampleId]?.versions || [version];
+
+  return (
+    <select
+      className="version-selector"
+      value={version}
+      onChange={(e) => {
+        const newVersion = e.target.value;
+        if (newVersion !== version) {
+          // Update version to show
+          setVersion(newVersion);
+        }
+      }}
+    >
+      {options.map((option) => (
+        <option key={option} value={option}>
+          {option}
+        </option>
+      ))}
+    </select>
   );
 }
 
