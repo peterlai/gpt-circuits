@@ -19,7 +19,7 @@ SEQUENCE_IDX=$((SHARD_TOKEN_IDX / 128 * 128))
 
 # Set circuit name
 CIRCUIT_NAME="$SPLIT.0.$SEQUENCE_IDX.$TOKEN_IDX"
-echo "Extracting '$CIRCUIT_NAME' with $THRESHOLD KLD threshold"
+echo "Extracting '$CIRCUIT_NAME'"
 
 # Setup trap to kill all child processes on script exit
 trap 'kill $(jobs -p) 2>/dev/null' EXIT INT

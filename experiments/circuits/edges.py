@@ -135,7 +135,7 @@ if __name__ == "__main__":
 
     # Export circuit features
     data = {
-        "data_dir": data_dir,
+        "data_dir": str(data_dir),
         "split": split,
         "shard_idx": shard_idx,
         "sequence_idx": sequence_idx,
