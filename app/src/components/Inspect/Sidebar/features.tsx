@@ -3,10 +3,14 @@ import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import { useMemo } from "react";
 import { FaLayerGroup } from "react-icons/fa6";
 
-import { BlockFeatureData } from "../../../stores/Block";
+import { BlockData, BlockFeatureData, blocksAtom } from "../../../stores/Block";
 import { createFeatureProfileAtom, FeatureProfile } from "../../../stores/Feature";
 import { printableTokensAtom, targetIdxAtom } from "../../../stores/Graph";
-import { hoveredUpstreamOffsetAtom, selectionStateAtom } from "../../../stores/Selection";
+import {
+  hoveredUpstreamOffsetAtom,
+  selectionStateAtom,
+  toggleSelectionAtom,
+} from "../../../stores/Selection";
 import { CloseButton } from "./close";
 import { ErrorMessage, LoadingMessage } from "./loading";
 import { SearchableSamples } from "./samples";
@@ -113,6 +117,10 @@ function UpstreamAblationsSection({
   const targetIdx = useAtomValue(targetIdxAtom);
   const setHoveredUpstreamOffset = useSetAtom(hoveredUpstreamOffsetAtom);
 
+  // For selecting blocks
+  const blocks = useAtomValue(blocksAtom);
+  const toggleSelection = useSetAtom(toggleSelectionAtom);
+
   // Construct a list of (token, offset) pairs for upstream ablations.
   const upstreamOffsets = [
     ...new Set(Object.values(feature.ablatedBy).map((a) => a.tokenOffset)),
@@ -130,6 +138,11 @@ function UpstreamAblationsSection({
   // Compute ideal width for chart labels (in ch units)
   const chartLabelSize = Math.max(...upstreamAblations.map(([token]) => token.length)) + 2;
 
+  // Compute the maximum ablation value for the chart
+  const maxAblation = Math.max(
+    ...upstreamAblations.map(([, offset]) => feature.groupAblations[offset])
+  );
+
   return (
     <section className="ablations">
       <h3>Upstream Tokens</h3>
@@ -144,6 +157,10 @@ function UpstreamAblationsSection({
               })}
               onMouseEnter={() => setHoveredUpstreamOffset(offset)}
               onMouseLeave={() => setHoveredUpstreamOffset(null)}
+              onClick={() =>
+                // Select upstream block
+                toggleSelection(blocks[BlockData.getKey(offset, feature.layerIdx - 1)])
+              }
             >
               <th scope="row">
                 <pre className="token">{token}</pre>
@@ -151,7 +168,7 @@ function UpstreamAblationsSection({
               <td
                 style={
                   {
-                    "--size": feature.groupAblations[offset] / featureProfile.maxActivation,
+                    "--size": feature.groupAblations[offset] / maxAblation,
                   } as React.CSSProperties
                 }
               ></td>

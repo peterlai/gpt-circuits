@@ -103,14 +103,64 @@ class EdgeSearch:
             print(f"Edge {edge} - Baseline MSE: {baseline_mse:.4f} - Ablation MSE: {mse:.4f}")
             edge_importance[edge] = (mse - baseline_mse) / baseline_mse  # normalized MSE increase
 
-        # For each downstream node, map upstream token indicies to a normalized MSE increase
+        # For each downstream node, map upstream token indicies to an MSE
+        token_ablation_mses = self.estimate_token_ablation_effects(
+            downstream_nodes,
+            frozenset(all_edges),
+            upstream_magnitudes,
+            original_downstream_magnitudes,
+            target_token_idx,
+        )
+
+        # Calculate token MSE increase from baseline
         token_importance = defaultdict(dict)
-        for node in sorted(downstream_nodes):
-            for token_idx in {edge.upstream.token_idx for edge in all_edges if edge.downstream == node}:
-                # TODO: Implement
-                token_importance[node][token_idx] = 1.0
+        for downstream_node, upstream_token_mses in sorted(token_ablation_mses.items(), key=lambda x: x[0]):
+            for token_idx, token_mse in sorted(upstream_token_mses.items(), key=lambda x: x[0]):
+                # Calculate normalized MSE increase
+                baseline_mse = baseline_mses[downstream_node]
+                print(
+                    f"Upstream from {downstream_node} to {token_idx} - "
+                    f"Baseline MSE: {baseline_mse:.4f} - "
+                    f"Ablation MSE: {token_mse:.4f}"
+                )
+                token_importance[downstream_node][token_idx] = (token_mse - baseline_mse) / baseline_mse
 
         return EdgeSearchResult(edge_importance=edge_importance, token_importance=token_importance)
+
+    def estimate_token_ablation_effects(
+        self,
+        downstream_nodes: frozenset[Node],
+        all_edges: frozenset[Edge],
+        upstream_magnitudes: torch.Tensor,  # Shape: (T, F)
+        original_downstream_magnitudes: torch.Tensor,  # Shape: (T, F)
+        target_token_idx: int,
+    ) -> dict[Node, dict[int, float]]:
+        """
+        Estimate the downstream feature mean-squared error that results from ablating each token in a circuit.
+
+        :param downstream_nodes: The downstream nodes to use for deriving downstream feature magnitudes.
+        :param edges: The edges to use for deriving downstream feature magnitudes.
+        :param upstream_magnitudes: The upstream feature magnitudes.
+        :param original_downstream_magnitudes: The original downstream feature magnitudes.
+        :param target_token_idx: The target token index.
+        """
+        token_ablation_mses = defaultdict(dict)
+        for token_idx in sorted({edge.upstream.token_idx for edge in all_edges}):
+            # Exclude edges that are connected to the target token
+            patched_edges = frozenset({edge for edge in all_edges if edge.upstream.token_idx != token_idx})
+            estimated_mses = self.estimate_downstream_mses(
+                downstream_nodes,
+                patched_edges,
+                upstream_magnitudes,
+                original_downstream_magnitudes,
+                target_token_idx,
+            )
+            # Look for downstream nodes that have an edge to the target token
+            for downstream_node in {edge.downstream for edge in all_edges if edge.upstream.token_idx == token_idx}:
+                # Set the mean-squared error from the downstream node
+                token_ablation_mses[downstream_node][token_idx] = estimated_mses[downstream_node]
+
+        return token_ablation_mses
 
     def estimate_edge_ablation_effects(
         self,
@@ -127,6 +177,7 @@ class EdgeSearch:
         :param edges: The edges to use for deriving downstream feature magnitudes.
         :param upstream_magnitudes: The upstream feature magnitudes.
         :param original_downstream_magnitudes: The original downstream feature magnitudes.
+        :param target_token_idx: The target token index.
         """
         # Maps edge to downstream mean-squared error
         edge_to_mse: dict[Edge, float] = {}
