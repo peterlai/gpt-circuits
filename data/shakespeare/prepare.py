@@ -21,8 +21,8 @@ if __name__ == "__main__":
     # Split the corpus into training and validation data
     train_length = int(len(shakespeare_corpus) * 0.9)
     trimmed_train_length = train_length - (train_length % 256)  # Round down to nearest multiple of 256
-    train_dataset = Dataset.from_list([{"text": shakespeare_corpus[:trimmed_train_length]}])
-    val_dataset = Dataset.from_list([{"text": shakespeare_corpus[trimmed_train_length:]}])
+    train_dataset = Dataset.from_list([{"text": shakespeare_corpus[:trimmed_train_length]}])  # 1,003,776 tokens
+    val_dataset = Dataset.from_list([{"text": shakespeare_corpus[trimmed_train_length:]}])  # 111,618 tokens
 
     # Use about half the available CPUs for tokenization
     num_proc = max(1, (os.cpu_count() or 2) // 2)

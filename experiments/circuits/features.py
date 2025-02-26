@@ -5,6 +5,7 @@ $ python -m experiments.circuits.features
 """
 
 import argparse
+from pathlib import Path
 
 from circuits.features.samples import ModelSampleSet
 from config import TrainingConfig
@@ -32,6 +33,6 @@ if __name__ == "__main__":
     # Load samples
     checkpoint_dir = TrainingConfig.checkpoints_dir / args.model
     sample_set = ModelSampleSet(checkpoint_dir=checkpoint_dir)
-    shard = DatasetShard(dir_path=args.data_dir, split=args.split, shard_idx=args.shard_idx)
+    shard = DatasetShard(dir_path=Path(args.data_dir), split=args.split, shard_idx=args.shard_idx)
     tokenizer = TokenizerType(args.tokenizer).as_tokenizer()
     sample_set.export(checkpoint_dir / "features", shard, tokenizer)

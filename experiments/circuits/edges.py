@@ -6,6 +6,7 @@ $ python -m experiments.circuits.edges --circuit=train.0.0.51 --upstream_layer=0
 
 import argparse
 import json
+from pathlib import Path
 
 import torch
 
@@ -72,7 +73,7 @@ if __name__ == "__main__":
     # Load sequence args
     with open(upstream_path) as f:
         upstream_json = json.load(f)
-        data_dir = upstream_json["data_dir"]
+        data_dir = Path(upstream_json["data_dir"])
         split = upstream_json["split"]
         shard_idx = upstream_json["shard_idx"]
         sequence_idx = upstream_json["sequence_idx"]

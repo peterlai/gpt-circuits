@@ -7,6 +7,7 @@ $ python -m experiments.circuits.nodes --sequence_idx=0 --token_idx=51 --layer_i
 
 import argparse
 from collections import defaultdict
+from pathlib import Path
 
 import torch
 
@@ -80,7 +81,7 @@ if __name__ == "__main__":
         )
 
     # Load shard
-    shard = DatasetShard(dir_path=args.data_dir, split=args.split, shard_idx=args.shard_idx)
+    shard = DatasetShard(dir_path=Path(args.data_dir), split=args.split, shard_idx=args.shard_idx)
 
     # Get token sequence
     tokenizer = model.gpt.config.tokenizer

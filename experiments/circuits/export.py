@@ -1,7 +1,7 @@
 """
 Export circuit for visualization using Node app.
 
-$ python -m experiments.circuits.export --circuit=train.0.0.51 --dirname=toy-resample
+$ python -m experiments.circuits.export --circuit=train.0.0.51 --dirname=toy-local
 """
 
 import argparse
@@ -72,17 +72,15 @@ def main():
     # Load sequence args
     with open(circuit_dir / "nodes.0.json") as f:
         data = json.load(f)
-        data_dir = data["data_dir"]
-        split = data["split"]
-        shard_idx = data["shard_idx"]
-        sequence_idx = data["sequence_idx"]
-        target_token_idx = data["token_idx"]
-
-    # Load shard
-    shard = DatasetShard(data_dir, split, shard_idx)
+        data_dir: Path = Path(data["data_dir"])
+        split: str = data["split"]
+        shard_idx: int = data["shard_idx"]
+        sequence_idx: int = data["sequence_idx"]
+        target_token_idx: int = data["token_idx"]
 
     # Get tokens
-    tokens: list[int] = shard.tokens[sequence_idx : sequence_idx + model.config.block_size].tolist()
+    shard_for_tokens = DatasetShard(data_dir, split, shard_idx)
+    tokens: list[int] = shard_for_tokens.tokens[sequence_idx : sequence_idx + model.config.block_size].tolist()
 
     # Gather circuit nodes
     node_importance: dict[Node, float] = {}
@@ -128,7 +126,7 @@ def main():
         model_profile,
         model_cache,
         circuit.nodes,
-        shard,
+        data_dir,
         tokens,
         target_token_idx,
     )
@@ -141,13 +139,14 @@ def main():
         model_profile,
         model_cache,
         model_sample_set,
-        shard,
+        data_dir,
         tokens,
         target_token_idx,
     )
 
     # Export data.json
     export_circuit_data(
+        tokens,
         sample_dir,
         model,
         model_profile,
@@ -155,8 +154,6 @@ def main():
         circuit,
         edge_importance,
         token_importance,
-        shard,
-        sequence_idx,
         target_token_idx,
         args.threshold,
     )
@@ -229,7 +226,7 @@ def export_blocks(
     model_profile: ModelProfile,
     model_cache: ModelCache,
     nodes: frozenset[Node],
-    shard: DatasetShard,
+    data_dir: Path,
     tokens: list[int],
     target_token_idx: int,
 ):
@@ -247,6 +244,9 @@ def export_blocks(
     blocks: set[tuple[int, int]] = set()
     for node in nodes:
         blocks.add((node.layer_idx, node.token_idx))
+
+    # Get shard that was used for caching feature magnitudes
+    shard = model_cache.get_shard(data_dir)
 
     # Export each block
     for layer_idx, token_idx in blocks:
@@ -335,7 +335,7 @@ def export_features(
     model_profile: ModelProfile,
     model_cache: ModelCache,
     model_sample_set: ModelSampleSet,
-    shard: DatasetShard,
+    data_dir: Path,
     tokens: list[int],
     target_token_idx: int,
 ):
@@ -348,6 +348,9 @@ def export_features(
     # Get target feature magnitudes
     with torch.no_grad():
         output: SparsifiedGPTOutput = model(input)
+
+    # Get shard that was used for caching feature magnitudes
+    shard = model_cache.get_shard(data_dir)
 
     # Export features with circuit context
     for node in nodes:
@@ -567,6 +570,7 @@ def export_circuit_feature(
 
 
 def export_circuit_data(
+    tokens: list[int],
     sample_dir: Path,
     model: SparsifiedGPT,
     model_profile: ModelProfile,
@@ -574,18 +578,12 @@ def export_circuit_data(
     circuit: Circuit,
     edge_importance: dict[Edge, float],
     token_importance: dict[Node, dict[int, float]],
-    shard: DatasetShard,
-    sequence_idx: int,
     target_token_idx: int,
     threshold: float,
 ):
     """
     Export sample data to data.json
     """
-
-    tokenizer = model.gpt.config.tokenizer
-    tokens: list[int] = shard.tokens[sequence_idx : sequence_idx + model.config.block_size].tolist()
-
     # Convert tokens to tensor
     input: torch.Tensor = torch.tensor(tokens, device=model.config.device).unsqueeze(0)  # Shape: (1, T)
 
@@ -595,8 +593,8 @@ def export_circuit_data(
 
     # Data to export
     data = {
-        "text": tokenizer.decode_sequence(tokens),
-        "decodedTokens": [tokenizer.decode_token(token) for token in tokens],
+        "text": model.gpt.config.tokenizer.decode_sequence(tokens),
+        "decodedTokens": [model.gpt.config.tokenizer.decode_token(token) for token in tokens],
         "targetIdx": target_token_idx,
         "kldThreshold": threshold,
     }

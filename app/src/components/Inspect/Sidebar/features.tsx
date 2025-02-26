@@ -109,7 +109,7 @@ function FeatureSidebarSamplingStrategy() {
             <h4>Circuit Cluster</h4>
             <p>
               Cluster dataset samples using circuit features and boost the importance of the
-              selected one.
+              selected feature.
             </p>
           </li>
           <li className="option" onClick={() => setStrategy(SamplingStrategies.Similar)}>
