@@ -382,12 +382,12 @@ def export_feature(
     circuit_feature_idxs = np.array([node.feature_idx for node in nodes if node in target_nodes])
 
     # Magnify the importance of the targeted feature
-    feature_coefficients = np.full_like(circuit_feature_idxs, 0.05, dtype=np.float32)
+    feature_coefficients = np.full_like(circuit_feature_idxs, 0.025, dtype=np.float32)
     feature_coefficients[np.where(circuit_feature_idxs == feature_idx)[0]] = 1.0
 
     # Get samples that are similar to the target token
     num_samples = 25
-    k_nearest = min(1000, int(feature_profile.count / 20)) if len(circuit_feature_idxs) > 1 else num_samples
+    k_nearest = 25
     cluster_search = ClusterSearch(model_profile, model_cache)
     cluster = cluster_search.get_cluster(
         layer_idx,

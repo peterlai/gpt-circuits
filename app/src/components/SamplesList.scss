@@ -53,11 +53,21 @@ ul.samples {
         }
 
         .remainder {
-            flex: 0 0 5ch;
-            font-size: 10px;
+            flex: 0 0 15px;
+            font-size: 13px;
             color: #aaa;
             white-space: nowrap;
             text-align: right;
+        }
+
+        .index {
+            flex: 0 0 20px;
+            font-size: 10px;
+            padding: 2px;
+            margin-left: 5px;
+            background-color: #555;
+            border-radius: 2px;
+            text-align: center;
         }
 
         a {

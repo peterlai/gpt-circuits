@@ -170,7 +170,10 @@ function Sample({
         </pre>
       </span>
       {alignment === AlignmentOptions.Token && (
-        <span className="remainder">{remainder > 0 ? <>…{remainder}</> : null}</span>
+        <>
+          <span className="remainder">{remainder > 0 ? <>…</> : <>&nbsp;</>}</span>
+          <span className="index">{sample.targetIdx}</span>
+        </>
       )}
     </li>
   );
