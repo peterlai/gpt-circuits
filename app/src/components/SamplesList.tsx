@@ -147,9 +147,7 @@ function Sample({
   return (
     <li className="sample" data-sample-id={sample.absoluteTokenIdx}>
       {showIcon && <TbBlockquote className="icon" />}
-      {!hideActivation && (
-        <span className="activation">{sample.tokens[sample.targetIdx].activation.toFixed(3)}</span>
-      )}
+      {alignment === AlignmentOptions.Token && <span className="index">{sample.targetIdx}</span>}
       {sampleUrl && (
         <a href={sampleUrl} target="_blank" rel="noreferrer">
           <FaExternalLinkAlt />
@@ -170,10 +168,10 @@ function Sample({
         </pre>
       </span>
       {alignment === AlignmentOptions.Token && (
-        <>
-          <span className="remainder">{remainder > 0 ? <>…</> : <>&nbsp;</>}</span>
-          <span className="index">{sample.targetIdx}</span>
-        </>
+        <span className="remainder">{remainder > 0 ? <>…</> : <>&nbsp;</>}</span>
+      )}
+      {!hideActivation && (
+        <span className="activation">{sample.tokens[sample.targetIdx].activation.toFixed(3)}</span>
       )}
     </li>
   );

@@ -13,8 +13,8 @@ ul.samples {
             opacity: 0.5;
         }
 
-        .activation {
-            flex: 0 0 30px;
+        .index {
+            flex: 0 0 20px;
             font-size: 10px;
             padding: 2px;
             margin-right: 10px;
@@ -60,8 +60,8 @@ ul.samples {
             text-align: right;
         }
 
-        .index {
-            flex: 0 0 20px;
+        .activation {
+            flex: 0 0 30px;
             font-size: 10px;
             padding: 2px;
             margin-left: 5px;
@@ -73,7 +73,7 @@ ul.samples {
         a {
             cursor: pointer;
             font-size: 12px;
-            margin-right: 10px;
+            margin-right: 5px;
         }
     }
 }

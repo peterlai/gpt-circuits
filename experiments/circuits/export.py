@@ -382,7 +382,7 @@ def export_feature(
     circuit_feature_idxs = np.array([node.feature_idx for node in nodes if node in target_nodes])
 
     # Magnify the importance of the targeted feature
-    feature_coefficients = np.full_like(circuit_feature_idxs, 0.025, dtype=np.float32)
+    feature_coefficients = np.full_like(circuit_feature_idxs, 0.04, dtype=np.float32)
     feature_coefficients[np.where(circuit_feature_idxs == feature_idx)[0]] = 1.0
 
     # Get samples that are similar to the target token
