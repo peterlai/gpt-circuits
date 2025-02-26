@@ -500,9 +500,8 @@ def export_circuit_data(
     # Data to export
     data = {
         "text": tokenizer.decode_sequence(tokens),
-        "decoded_tokens": [tokenizer.decode_token(token) for token in tokens],
-        "target_idx": target_token_idx,
-        "absolute_target_idx": sequence_idx + target_token_idx,
+        "decodedTokens": [tokenizer.decode_token(token) for token in tokens],
+        "targetIdx": target_token_idx,
     }
 
     # Set feature magnitudes
@@ -538,27 +537,20 @@ def export_circuit_data(
         target_token_idx,
     )[circuit]
     predicted_probabilities = get_predictions(model.gpt.config.tokenizer, predicted_logits, 128)
-    data["circuit_probabilities"] = {k: round(v / 100.0, 3) for k, v in predicted_probabilities.items() if v > 0.1}
-
-    # Set root features
-    data["root_features"] = {}
-    num_layers = model.gpt.config.n_layer
-    for feature_idx, magnitude in enumerate(output.feature_magnitudes[num_layers][0, target_token_idx, :].tolist()):
-        if magnitude > 0:
-            data["root_features"][feature_idx] = round(magnitude, 3)
+    data["circuitProbabilities"] = {k: round(v / 100.0, 3) for k, v in predicted_probabilities.items() if v > 0.1}
 
     # Set ablation graph
-    data["ablation_graph"] = {}
+    data["graph"] = {}
     for downstream_node in sorted(set(edge.downstream for edge in circuit.edges)):
         dependencies = []
         upstream_edges = [edge for edge in circuit.edges if edge.downstream == downstream_node]
         for edge in sorted(upstream_edges):
             edge_weight = edge_importance[edge]
             dependencies.append([node_to_key(edge.upstream, target_token_idx), edge_weight])
-        data["ablation_graph"][node_to_key(downstream_node, target_token_idx)] = dependencies
+        data["graph"][node_to_key(downstream_node, target_token_idx)] = dependencies
 
-    # Set group alation graph
-    data["group_ablation_graph"] = {}
+    # Set block importance
+    data["blockImportance"] = {}
     for downstream_node in sorted(set(edge.downstream for edge in circuit.edges)):
         groups = []
         upstream_edges = [edge for edge in circuit.edges if edge.downstream == downstream_node]
@@ -566,7 +558,7 @@ def export_circuit_data(
         for layer_idx, token_idx in sorted(upstream_blocks):
             block_weight = token_importance[downstream_node].get(token_idx, 0.0)
             groups.append([f"{target_token_idx - token_idx}.{layer_idx}", block_weight])
-        data["group_ablation_graph"][node_to_key(downstream_node, target_token_idx)] = groups
+        data["blockImportance"][node_to_key(downstream_node, target_token_idx)] = groups
 
     # Export to data.json
     sample_dir.mkdir(parents=True, exist_ok=True)

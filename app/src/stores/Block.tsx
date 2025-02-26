@@ -106,11 +106,10 @@ class UpstreamAblationData {
 const blocksAtom = atom((get) => {
   const blocks: { [key: string]: BlockData } = {};
   const data = get(sampleDataAtom).data;
-  const ablationGraph = data?.ablation_graph ?? {};
+  const ablationGraph = data?.graph ?? {};
   const activations: { [key: string]: number } = data?.activations ?? {};
   const normalizedActivations: { [key: string]: number } = data?.normalizedActivations ?? {};
-  const groupAblationGraph: { [key: string]: [string, number][] } =
-    data?.group_ablation_graph ?? {};
+  const groupAblationGraph: { [key: string]: [string, number][] } = data?.blockImportance ?? {};
 
   // Gather all unique feature keys
   const featureKeys = new Set<string>();

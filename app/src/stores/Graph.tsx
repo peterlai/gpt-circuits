@@ -22,7 +22,7 @@ const sampleDataAtom = atomWithQuery((get) => ({
 
 // String representation of each token
 const sampleTokensAtom = atom<string[]>((get) => {
-  const decodedTokens = get(sampleDataAtom).data?.decoded_tokens;
+  const decodedTokens = get(sampleDataAtom).data?.decodedTokens;
   if (decodedTokens !== undefined) return decodedTokens;
   // Backwards compatible with shakespeare token-per-char. Remove when all regenerated.
   const sampleText = get(sampleDataAtom).data?.text ?? "";
@@ -38,7 +38,7 @@ const numLayersAtom = atom((get) => {
 });
 
 // Target index on sample text
-const targetIdxAtom = atom((get) => get(sampleDataAtom).data?.target_idx ?? 0);
+const targetIdxAtom = atom((get) => get(sampleDataAtom).data?.targetIdx ?? 0);
 
 // Sample tokens (printable characters)
 const printableTokensAtom = atom<string[]>((get) => {
@@ -58,7 +58,7 @@ const probabilitiesAtom = atom<{ [key: string]: number }>(
 
 // Predicted next tokens (using x_reconstructed)
 const circuitProbabilitiesAtom = atom<{ [key: string]: number }>(
-  (get) => get(sampleDataAtom).data?.circuit_probabilities ?? {}
+  (get) => get(sampleDataAtom).data?.circuitProbabilities ?? {}
 );
 
 export {

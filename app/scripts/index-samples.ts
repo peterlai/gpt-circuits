@@ -32,7 +32,7 @@ for (const modelName of fs.readdirSync(modelsDir)) {
         const json = await fs.promises.readFile(join(samplePath, "data.json"), "utf-8");
         const sampleData = JSON.parse(json);
 
-        let decodedTokens = sampleData.decoded_tokens;
+        let decodedTokens = sampleData.decodedTokens;
         if (decodedTokens === undefined) {
             // Backwards-compatible with existing data - can remove when all regenerated
             decodedTokens = [...sampleData.text];
@@ -42,7 +42,7 @@ for (const modelName of fs.readdirSync(modelsDir)) {
             name: sampleName,
             text: sampleData.text,
             decodedTokens: decodedTokens,
-            targetIdx: sampleData.target_idx,
+            targetIdx: sampleData.targetIdx,
         });
     }
 }
