@@ -104,18 +104,19 @@ function FeatureSidebarSamplingStrategy() {
 
       {isOpen && (
         <ul>
-          <li onClick={() => setStrategy(SamplingStrategies.Cluster)}>
+          <li className="header">Sampling Strategy</li>
+          <li className="option" onClick={() => setStrategy(SamplingStrategies.Cluster)}>
             <h4>Circuit Cluster</h4>
             <p>
               Cluster dataset samples using circuit features and boost the importance of the
               selected one.
             </p>
           </li>
-          <li onClick={() => setStrategy(SamplingStrategies.Similar)}>
+          <li className="option" onClick={() => setStrategy(SamplingStrategies.Similar)}>
             <h4>Similar Activations</h4>
             <p>Show dataset samples for tokens with similar activation values.</p>
           </li>
-          <li onClick={() => setStrategy(SamplingStrategies.Top)}>
+          <li className="option" onClick={() => setStrategy(SamplingStrategies.Top)}>
             <h4>Top Activations</h4>
             <p>Show dataset samples for tokens with 90th percentile activations.</p>
           </li>
