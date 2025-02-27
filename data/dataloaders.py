@@ -1,5 +1,6 @@
 import os
 from functools import cached_property
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -118,7 +119,7 @@ class DatasetShard:
 
     def __init__(
         self,
-        dir_path: str,
+        dir_path: Path,
         split: str,
         shard_idx: int = 0,
         limit: Optional[int] = None,

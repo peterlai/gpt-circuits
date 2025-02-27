@@ -1,15 +1,15 @@
 #!/bin/bash
-# Extracts a circuit using a given (i) a token index, (ii) an dirname, and (iii) a resampling strategy.
-# Example usage: `source experiments/circuits/extract.sh 51 toy-resampling true`
+# Extracts a set of circuits using a given (i) a dirname, (ii) a split and (iii) and a token index.
+# Example usage: `source experiments/circuits/extract.sh toy-local train 51`
 
-# Set first positional argument as the shard token idx (default to 0)
-SHARD_TOKEN_IDX=${1:-0}
+# Set the first positional argument as the dirname
+DIRNAME=${1}
 
-# Set the second positional argument as the dirname (default to "mri")
-DIRNAME=${2:-mri}
+# Set the second positional argument as the split
+SPLIT=${2}
 
-# Set ablation strategy
-SHOULD_RESAMPLE=${3:-true}
+# Set the third positional argument as the shard token idx
+SHARD_TOKEN_IDX=${3}
 
 # Set token idx to be the shard token idx % 128
 TOKEN_IDX=$((SHARD_TOKEN_IDX % 128))
@@ -18,8 +18,8 @@ TOKEN_IDX=$((SHARD_TOKEN_IDX % 128))
 SEQUENCE_IDX=$((SHARD_TOKEN_IDX / 128 * 128))
 
 # Set circuit name
-CIRCUIT_NAME="train.0.$SEQUENCE_IDX.$TOKEN_IDX"
-echo "Extracting circuit: $CIRCUIT_NAME"
+CIRCUIT_NAME="$SPLIT.0.$SEQUENCE_IDX.$TOKEN_IDX"
+echo "Extracting '$CIRCUIT_NAME'"
 
 # Setup trap to kill all child processes on script exit
 trap 'kill $(jobs -p) 2>/dev/null' EXIT INT
@@ -28,9 +28,9 @@ trap 'kill $(jobs -p) 2>/dev/null' EXIT INT
 for layer_idx in {0..4}; do
     python -m experiments.circuits.nodes \
         --sequence_idx=$SEQUENCE_IDX \
+        --split=$SPLIT \
         --token_idx=$TOKEN_IDX \
-        --layer_idx=$layer_idx \
-        $([ "$SHOULD_RESAMPLE" = "false" ] && echo "--no-resample") &
+        --layer_idx=$layer_idx &
 done
 
 # Wait for all processes to finish
@@ -40,12 +40,13 @@ wait
 for layer_idx in {0..3}; do
     python -m experiments.circuits.edges \
         --circuit=$CIRCUIT_NAME \
-        --upstream_layer=$layer_idx \
-        $([ "$SHOULD_RESAMPLE" = "false" ] && echo "--no-resample") &
+        --upstream_layer=$layer_idx &
 done
 
 # Wait for all processes to finish
 wait
 
-# Export the circuit
-python -m experiments.circuits.mri --circuit=$CIRCUIT_NAME --dirname=$DIRNAME
+# Export circuits using a set of thresholds
+python -m experiments.circuits.export --circuit=$CIRCUIT_NAME --dirname=$DIRNAME --threshold=0.15
+python -m experiments.circuits.export --circuit=$CIRCUIT_NAME --dirname=$DIRNAME --threshold=0.20
+python -m experiments.circuits.export --circuit=$CIRCUIT_NAME --dirname=$DIRNAME --threshold=0.25

@@ -125,6 +125,16 @@ class ModelCache:
         """
         return "metrics.magnitudes.json"
 
+    def get_shard(self, data_dir: Path) -> DatasetShard:
+        """
+        Return the shard that was used to compute the feature magnitudes.
+        """
+        return DatasetShard(
+            dir_path=data_dir,
+            split=self.split,
+            shard_idx=self.shard_idx,
+        )
+
 
 class LayerCache:
     """

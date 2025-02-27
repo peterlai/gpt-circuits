@@ -5,6 +5,7 @@ $ python -m experiments.circuits.cache
 """
 
 import argparse
+from pathlib import Path
 
 from circuits.features import compute_metrics
 from config import TrainingConfig
@@ -30,7 +31,12 @@ if __name__ == "__main__":
     args = parse_args()
 
     # Load tokens
-    shard = DatasetShard(dir_path=args.data_dir, split=args.split, shard_idx=args.shard_idx, limit=int(args.limit))
+    shard = DatasetShard(
+        dir_path=Path(args.data_dir),
+        split=args.split,
+        shard_idx=args.shard_idx,
+        limit=int(args.limit),
+    )
 
     # Cache feature metrics
     compute_metrics(TrainingConfig.checkpoints_dir / args.model, shard, args.batch_size)

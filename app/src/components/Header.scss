@@ -1,0 +1,42 @@
+#root > header {
+    white-space: nowrap;
+    overflow: auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+
+    h1 {
+        height: 50px;
+        margin: 0;
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        font-weight: bold;
+        font-size: 16px;
+
+        .icon {
+            margin-right: 5px;
+            padding: 5px 0;
+            cursor: pointer;
+            font-size: 20px;
+        }
+    }
+
+    a {
+        background: rgba(0, 0, 0, 0.5);
+        color: #ccc;
+        padding: 0 15px;
+        margin-right: -5px; // Pull right to align with sidebar button
+        line-height: 30px;
+        font-size: 0.9em;
+        cursor: pointer;
+        border-radius: 5px;
+
+        &:hover {
+            background: rgba(0, 0, 0, 1);
+            color: #fff;
+            text-decoration: none;
+        }
+    }
+}
