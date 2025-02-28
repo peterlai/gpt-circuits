@@ -2,7 +2,7 @@
 Extracting and caching activations from a GPT model.
 
 Example usage:
-$ python -m spar.cache_activations --model=shakespeare_64x4 --dataset=shakespeare --batch_size=64
+$ python -m david.cache_activations --model=shakespeare_64x4 --dataset=shakespeare --batch_size=64
 """
 
 import os

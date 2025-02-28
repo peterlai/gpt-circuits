@@ -53,7 +53,7 @@ python -m training.sae.concurrent --config=standard.shakespeare_64x4 --load_from
 For trainign multi-layer SAEs, it's faster to just shove the entire dataset through the model and cache the activations. This can be done with:
 
 ```
-python -m spar.cache_activations --model=shakespeare_64x4 --dataset=shakespeare
+python -m david.cache_activations --model=shakespeare_64x4 --dataset=shakespeare
 ```
 
 We will still need to load the model and the validation dataset  and do forward passes for eval, but training will be a lot faster.
