@@ -258,13 +258,19 @@ class ClusterSearch:
         layer_cache = self.model_cache[layer_idx]
         block_size = layer_cache.block_size
         num_shard_tokens: int = layer_cache.magnitudes.shape[0]  # type: ignore
-        block_idxs = np.random.choice(range(num_shard_tokens // block_size), size=num_samples, replace=False)
 
         # Calculate max MSE by averaging the squares of all coefficients
         max_mse = np.append(feature_coefficients**2, positional_coefficient**2).mean()
 
-        # Respect token position when choosing indices
-        cluster_idxs = block_idxs * layer_cache.block_size + token_idx
+        # Choose cluster indices
+        block_idxs = np.random.choice(range(num_shard_tokens // block_size), size=num_samples, replace=False)
+        if positional_coefficient > 0.0:
+            # If positional information is important, respect token position when choosing indices
+            token_idxs = np.full_like(block_idxs, token_idx)
+        else:
+            # Else, choose random token positions
+            token_idxs = np.random.choice(range(block_size), size=num_samples, replace=True)
+        cluster_idxs = block_idxs * layer_cache.block_size + token_idxs
         cluster_mses = (0.0,) * len(cluster_idxs)
         return Cluster(
             layer_cache=layer_cache,
