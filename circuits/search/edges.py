@@ -269,3 +269,86 @@ class EdgeSearch:
         return downstream_mses
         return downstream_mses
         return downstream_mses
+
+#########################################################################
+
+def compute_downstream_magnitudes_from_edges(
+    model: SparsifiedGPT,
+    ablator: Ablator,
+    edges: frozenset[Edge],
+    upstream_magnitudes: torch.Tensor,  # Shape: (T, F)
+    target_token_idx: int,
+    num_samples: int = 2
+) -> torch.Tensor:
+    """
+    Compute downstream feature magnitudes using only the provided edges and upstream magnitudes.
+    
+    :param model: Model to use for computation
+    :param ablator: Ablator to use for patching
+    :param edges: Circuit edges defining connections from layer L to layer L+1
+    :param upstream_magnitudes: Upstream feature magnitudes tensor from layer L
+    :param target_token_idx: Target token index
+    :param num_samples: Number of samples for patching
+    :returns: Downstream feature magnitudes tensor at layer L+1
+    """
+
+    # Extract all downstream nodes from edges
+    downstream_nodes = frozenset({edge.downstream for edge in edges})
+    
+    # Map downstream nodes to upstream dependencies
+    node_to_dependencies: dict[Node, frozenset[Node]] = {}
+    for node in downstream_nodes:
+        node_to_dependencies[node] = frozenset({edge.upstream for edge in edges if edge.downstream == node})
+    dependencies_to_nodes: dict[frozenset[Node], set[Node]] = defaultdict(set)
+    for node, dependencies in node_to_dependencies.items():
+        dependencies_to_nodes[dependencies].add(node)
+
+    # Patch upstream feature magnitudes for each set of dependencies
+    circuit_variants = [Circuit(nodes=dependencies) for dependencies in dependencies_to_nodes.keys()]
+    upstream_layer_idx = next(iter(downstream_nodes)).layer_idx - 1
+    patched_upstream_magnitudes = patch_feature_magnitudes(  # Shape: (num_samples, T, F)
+        ablator,
+        upstream_layer_idx,
+        target_token_idx,
+        circuit_variants,
+        upstream_magnitudes,
+        num_samples=num_samples,
+    )
+
+    # Compute downstream feature magnitudes for each set of dependencies
+    sampled_downstream_magnitudes = compute_downstream_magnitudes(  # Shape: (num_samples, T, F)
+        model,
+        upstream_layer_idx,
+        patched_upstream_magnitudes,
+    )
+
+    # Create a downstream circuit with all nodes and compute downstream magnitudes
+    all_downstream_circuit = Circuit(nodes=frozenset())
+    dummy_downstream = compute_downstream_magnitudes(  # Shape: (num_samples, T, F)
+        model,
+        upstream_layer_idx,
+        {all_downstream_circuit: upstream_magnitudes.unsqueeze(0)}
+    )
+    dummy_downstream_magnitudes = dummy_downstream[all_downstream_circuit].squeeze(0)
+
+    # Initialise the result tensor as the patched downstream magnitudes
+    downstream_layer_idx = upstream_layer_idx + 1
+    patched_downstream_magnitudes = patch_feature_magnitudes(  # Shape: (num_samples, T, F)
+        ablator,
+        downstream_layer_idx,
+        target_token_idx,
+        [all_downstream_circuit],
+        dummy_downstream_magnitudes,
+        num_samples=num_samples,
+    )
+    result = patched_downstream_magnitudes[all_downstream_circuit][0]
+    
+    # Now fill in the actual computed values from our circuit variants
+    for circuit_variant, magnitudes in sampled_downstream_magnitudes.items():
+        for node in dependencies_to_nodes[circuit_variant.nodes]:
+            node_sampled_magnitudes = magnitudes[:, node.token_idx, node.feature_idx]
+            result[node.token_idx, node.feature_idx] = torch.mean(node_sampled_magnitudes, dim=0)
+    
+    # Normalization?
+    
+    return result

@@ -194,3 +194,41 @@ def get_predictions(
     for i, p in zip(topk.indices, topk.values):
         results[tokenizer.decode_token(int(i.item()))] = round(p.item() * 100, 2)
     return results
+
+#########################################################################
+
+@torch.no_grad()
+def get_predicted_logits_from_full_circuit(
+    model: SparsifiedGPT,
+    layer_idx: int,
+    feature_magnitudes: torch.Tensor,  # Shape: (num_samples, T, F)
+    target_token_idx
+):
+    """
+    Get predicted logits for the full circuit when using patched feature magnitudes.
+
+    :param model: Model to use for prediction
+    :param layer_idx: Layer index of feature_magnitudes
+    :param feature_magnitudes: Patched feature magnitudes tensor
+    :param target_token_idx: Target token index
+    :return: Predicted logits for the full circuit
+    """
+    
+    # Create a dummy circuit for the full model
+    full_circuit = Circuit(nodes=frozenset())
+
+    # Package the magnitudes in the format expected by get_predicted_logits
+    packaged_magnitudes = {full_circuit: feature_magnitudes}
+
+    # Get the predicted logits by running these features through the rest of the model
+    predicted_logits = get_predicted_logits(
+        model,
+        layer_idx, 
+        patched_feature_magnitudes=packaged_magnitudes,
+        target_token_idx=target_token_idx
+    )
+
+    # Extract the logits from the result dictionary
+    logits = predicted_logits[full_circuit]
+    
+    return logits
