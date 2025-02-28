@@ -48,20 +48,65 @@ tiny_32x4_defaults = {
     "min_lr": 1e-4,
 }
 
+# Shared training parameters
+tiny_defaults = {
+    "data_dir": "data/tiny_stories_10m",
+    "eval_interval": 250,
+    "eval_steps": 100,
+    "batch_size": 128,
+    "gradient_accumulation_steps": 2,
+    "learning_rate": 1e-3,
+    "max_steps": 5000,
+    "decay_lr": True,
+    "min_lr": 1e-4,
+}
+
 
 # Training configuration options
 options: dict[str, SAETrainingConfig] = map_options(
     SAETrainingConfig(
+    name="standard.tiny_64x2",
+    sae_config=sae_options["standardx8.tiny_64x2"],
+        **tiny_defaults,
+        loss_coefficients=LossCoefficients(
+        sparsity=(0.02, 0.06, 0.2, 0.2, 0.5),  # Targets L0s of ~10
+        ),
+    ),
+     SAETrainingConfig(
         name="standard.tiny_32x4",
         sae_config=sae_options["standardx16.tiny_32x4"],
-        **tiny_32x4_defaults,
+        **tiny_defaults,
         loss_coefficients=LossCoefficients(
             sparsity=(0.06, 0.06, 0.1, 0.1, 0.1),  # Targets L0s of ~10
         ),
     ),
     SAETrainingConfig(
+        name="multilayer.shakespeare_64x4",
+        sae_config=sae_options["staircasex8.shakespeare_64x4"],
+        **shakespeare_64x4_defaults,
+        loss_coefficients=LossCoefficients(
+            sparsity=(0.02, 0.06, 0.2, 0.2, 0.5),  # Targets L0s of ~10
+        ),
+    ),
+    SAETrainingConfig(
         name="standard.shakespeare_64x4",
         sae_config=sae_options["standardx8.shakespeare_64x4"],
+        **shakespeare_64x4_defaults,
+        loss_coefficients=LossCoefficients(
+            sparsity=(0.02, 0.06, 0.2, 0.2, 0.5),  # Targets L0s of ~10
+        ),
+    ),
+    SAETrainingConfig(
+        name="standard_fat.shakespeare_64x4",
+        sae_config=sae_options["standardx40.shakespeare_64x4"],
+        **shakespeare_64x4_defaults,
+        loss_coefficients=LossCoefficients(
+            sparsity=(0.02, 0.06, 0.2, 0.2, 0.5),  # Targets L0s of ~10
+        ),
+    ),
+    SAETrainingConfig(
+        name="staircase.shakespeare_64x4",
+        sae_config=sae_options["staircasex8.shakespeare_64x4"],
         **shakespeare_64x4_defaults,
         loss_coefficients=LossCoefficients(
             sparsity=(0.02, 0.06, 0.2, 0.2, 0.5),  # Targets L0s of ~10

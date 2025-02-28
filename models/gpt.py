@@ -111,8 +111,10 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, idx, targets=None) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+    def forward(self, idx, targets=None, cache_resid=False):
         # idx is of shape (B, T)
+        cache = []
+
         B, T = idx.size()
         assert (
             T <= self.config.block_size
@@ -122,10 +124,16 @@ class GPT(nn.Module):
         pos_emb = self.transformer.wpe(pos)  # position embeddings of shape (T, n_embd)
         tok_emb = self.transformer.wte(idx)  # token embeddings of shape (B, T, n_embd)
         x = tok_emb + pos_emb
-
+        if cache_resid:
+            cache.append(x.detach().clone()) # (batch, seq, n_embd)
         # forward the blocks of the transformer
         for block in self.transformer.h:
             x = block(x)
+            if cache_resid:
+                cache.append(x.detach().clone())
+
+        if cache_resid:
+            mycache = torch.stack(cache, dim=1) # (batch, seq, n_embd) -> (batch, n_layer+1, seq,  n_embd)
 
         # forward the final layernorm and the classifier
         x = self.transformer.ln_f(x)
@@ -133,9 +141,15 @@ class GPT(nn.Module):
         if targets is not None:
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
 
-            return (logits, loss)
-
-        return (logits, None)
+            if cache_resid:
+                return (logits, loss, mycache)
+            else:
+                return (logits, loss)
+            
+        if cache_resid:
+            return (logits, None, mycache)
+        else:
+            return (logits, None)
 
     def forward_with_patched_activations(self, x: torch.Tensor, layer_idx: int) -> torch.Tensor:
         """
