@@ -12,118 +12,152 @@ from models.sae import EncoderOutput, SAELossComponents, SparseAutoencoder
 import einops
 from dataclasses import dataclass
 # %%
-@dataclass
-class MultiLayerSAELossComponents:
-    """
-    Loss components for a sparse autoencoder.
-    """
-
-    reconstruct: torch.Tensor
-    sparsity: torch.Tensor
-    aux: torch.Tensor
-    l0: torch.Tensor
-    x_norm: torch.Tensor  # L2 norm of input (useful for experiments)
-    x_l1: torch.Tensor  # L1 of residual stream (useful for analytics)
-
-    def __init__(
-        self,
-        x: Float[Tensor, "batch n_layer seq embed"],
-        x_reconstructed: Float[Tensor, "batch n_layer seq embed"],
-        feature_magnitudes: List[Float[Tensor, "batch n_layer seq feature"]],
-        sparsity : Float[Tensor, "n_layer"],
-        aux: Optional[torch.Tensor] = None,
-    ):
-        # earlier layers get more batches, more gradients, weight by reciprocal
-        # of number of layers from the end
-        reconstruct_per_layer = (x - x_reconstructed).pow(2).sum(dim=-1).mean(dim=(0, 2)) # (n_layer,)
-        n_layers = len(reconstruct_per_layer)
-        layer_weight = 1 / torch.range(n_layers, 1, -1, device=reconstruct_per_layer.device) #[1/n, 1/(n-1), ..., 1/1]
-        self.reconstruct = (reconstruct_per_layer * layer_weight).sum() 
-        self.sparsity = sparsity
-        self.aux = aux if aux is not None else torch.tensor(0.0, device=x.device)
-        self.l0 = (feature_magnitudes != 0).float().sum(dim=-1).mean()
-        self.x_norm = torch.norm(x, p=2, dim=-1).mean()
-        self.x_l1 = torch.norm(x, p=1, dim=-1).mean()
-
-    @property
-    def total(self) -> torch.Tensor:
-        """
-        Returns sum of reconstruction, sparsity, and aux loss.
-        """
-        return self.reconstruct + self.sparsity + self.aux
-
-
-class MultiLayerSAE(nn.Module, SparseAutoencoder):
+class MultiLayerSAEBase(nn.Module):
     def __init__(self, config: SAEConfig, loss_coefficients: Optional[LossCoefficients]):
         super().__init__()
-        n_layer = config.gpt_config.n_layer
-        hidden_size = config.n_features * n_layer
+        self.config = config
+        n_layer = config.gpt_config.n_layer+1 # Number of activations in between layers
+        self.feature_size = config.n_features
         embedding_size = config.gpt_config.n_embd  # GPT embedding size.
+        hidden_size = self.feature_size * n_layer
         
+        # Initialize parameters with correct shapes
         self.W_dec = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(hidden_size, embedding_size)))
+        self.W_enc = nn.Parameter(torch.empty(embedding_size, hidden_size))
+        self.W_enc.data = self.W_dec.data.T.detach().clone()  # initialize W_enc from W_dec
+        
         self.b_enc = nn.Parameter(torch.zeros(hidden_size))
         self.b_dec = nn.Parameter(torch.zeros(embedding_size))
-        self.feature_size = config.n_features
+        
         self.n_layers = n_layer
         self.l1_coefficient = loss_coefficients.sparsity if loss_coefficients else None
-        try:
-            # NOTE: Subclass might define these properties.
-            self.W_enc = nn.Parameter(torch.empty(embedding_size, hidden_size))
-            self.W_enc.data = self.W_dec.data.T.detach().clone()  # initialize W_enc from W_dec
-        except KeyError:
-            pass
 
-    def encode(self, x: Float[Tensor, "batch seq embed"], layer_idx : int) -> Float[Tensor, "batch seq feature"]:
-        chunks = (layer_idx + 1) * self.feature_size
-        return F.relu((x - self.b_dec) @ self.W_enc[:chunks] + self.b_enc[:chunks])
+    def encode(self, x: Float[Tensor, "batch seq embed"], layer_idx: int) -> Float[Tensor, "batch seq feature"]:
+        # Assert layer_idx is valid
+        assert 0 <= layer_idx < self.n_layers, f"Layer index {layer_idx} out of bounds (0 to {self.n_layers-1})"
+        
+        # Get the slice of parameters corresponding to current layer
+        start_idx = 0
+        end_idx = (layer_idx + 1) * self.feature_size
+        
+        # Assert we're not exceeding parameter bounds
+        assert end_idx <= self.n_layers * self.feature_size, f"Index {end_idx} exceeds parameter size {self.n_layers * self.feature_size}"
+        
+        # Use the correct slice of parameters
+        W_enc_slice = self.W_enc[:, start_idx:end_idx]
+        b_enc_slice = self.b_enc[start_idx:end_idx]
+        
+        # Perform the encoding operation with correct dimensions
+        return F.relu(x @ W_enc_slice + b_enc_slice)
 
-    def decode(self, feat_mag: Float[Tensor, "batch seq feature"], layer_idx : int) -> Float[Tensor, "batch seq embed"]:
-        chunks = (layer_idx + 1) * self.feature_size
-        return feat_mag @ self.W_dec[:chunks] + self.b_dec
-        #return feat_mag @ self.W_dec + self.b_dec
+    def decode(self, feat_mag: Float[Tensor, "batch seq feature"], layer_idx: int) -> Float[Tensor, "batch seq embed"]:
+        # Assert layer_idx is valid
+        assert 0 <= layer_idx < self.n_layers, f"Layer index {layer_idx} out of bounds (0 to {self.n_layers-1})"
+        
+        # Get the slice of parameters corresponding to current layer
+        start_idx = 0
+        end_idx = (layer_idx + 1) * self.feature_size
+        
+        # Assert we're not exceeding parameter bounds
+        assert end_idx <= self.n_layers * self.feature_size, f"Index {end_idx} exceeds parameter size {self.n_layers * self.feature_size}"
+        
+        # Use the correct slice of parameters
+        W_dec_slice = self.W_dec[start_idx:end_idx, :]
+        
+        # Perform the decoding operation with correct dimensions
+        return feat_mag @ W_dec_slice + self.b_dec
 
-    def forward(self, x: Float[Tensor, "batch n_layer block embed"], layer_idx: int) -> EncoderOutput:
+    def forward(self, x: Float[Tensor, "batch block embed"], layer_idx: int) -> EncoderOutput:
         """
         Returns a reconstruction of GPT model activations and feature magnitudes.
         Also return loss components if loss coefficients are provided.
 
-        x: GPT model activations (B, L, T, E) where:
-            B: batch size
-            L: number of layers
-            T: sequence length
-            E: embedding size
-        layer_idx: which layer to train on this step
+        x: GPT model activations (B, T, embedding size)
         """
-        # Initialize lists to store feature magnitudes and losses
-        feature_magnitudes = []
-        sparsity_loss = torch.zeros(self.n_layers, device=x.device)
-        
-        # Process each layer
-        x_reconstructed = torch.zeros_like(x)
-        for l in range(self.n_layers):
-            feat_mag = self.encode(x[:, l], l)  # (B, T, hidden_size)
-            feature_magnitudes.append(feat_mag)
-            x_reconstructed[:, l] = self.decode(feat_mag, l)
+        feature_magnitudes = self.encode(x, layer_idx)
+        x_reconstructed = self.decode(feature_magnitudes, layer_idx)
+        output = EncoderOutput(x_reconstructed, feature_magnitudes)
+
+        if self.l1_coefficient:
+            # Calculate appropriate slice of W_dec for norm
+            start_idx = 0
+            end_idx = (layer_idx + 1) * self.feature_size
             
-            if self.l1_coefficient:
-                chunk = (l + 1) * self.feature_size
-                decoder_norm = torch.norm(self.W_dec[:chunk], p=2, dim=1)  # (hidden_size,)
-                sparsity_loss[l] = einops.einsum(feat_mag, decoder_norm, "batch seq hid, hid -> batch").mean() * self.l1_coefficient[l]
+            W_dec_slice = self.W_dec[start_idx:end_idx, :]
+            decoder_norm = torch.norm(W_dec_slice, p=2, dim=1)  # L2 norm
+            
+            # Now perform the multiplication with proper broadcasting
+            weighted_features = feature_magnitudes * decoder_norm
+            avg_weighted_features = weighted_features.sum(dim=-1).mean()
+            sparsity_loss = avg_weighted_features * self.l1_coefficient[layer_idx]
+            
+            output.loss = SAELossComponents(x, x_reconstructed, feature_magnitudes, sparsity_loss)
         
-        # Compute loss components
-        loss = MultiLayerSAELossComponents(
-            x=x,
-            x_reconstructed=x_reconstructed,
-            feature_magnitudes=feature_magnitudes,
-            sparsity=sparsity_loss.sum(),
-        )
+        return output
+    
+
+class MultiLayerSAE(SparseAutoencoder):
+    """
+    Wrapper class that makes MultiLayerSAE conform to the SparseAutoencoder protocol.
+    Each layer gets access to its chunk plus all previous layers' chunks.
+    """
+    def __init__(self, 
+                 layer_idx: int, 
+                 config: SAEConfig, 
+                 loss_coefficients: Optional[LossCoefficients],
+                 parent: Optional[nn.ModuleDict] = None):
+        """
+        Initialize a layer-specific view into a shared MultiLayerSAE.
         
-        return EncoderOutput(
-            feature_magnitudes=feature_magnitudes,
-            reconstructed_input=x_reconstructed,
-            loss=loss
-        )
+        Args:
+            layer_idx: Which layer this wrapper represents
+            config: SAE configuration
+            loss_coefficients: Loss coefficients for training
+            parent: Parent ModuleDict containing the shared MultiLayerSAE
+        """
+        super().__init__()
+        if parent is None:
+            # Create new MultiLayerSAE if no parent provided
+            self.sae = MultiLayerSAEBase(config, loss_coefficients)
+        else:
+            # Use existing MultiLayerSAE from parent
+            self.sae = parent['sae']
+        self.layer_idx = layer_idx
+
+    def forward(self, x: torch.Tensor) -> EncoderOutput:
+        """Forward pass for this specific layer"""
+        return self.sae(x, layer_idx=self.layer_idx)
+
+    def decode(self, feature_magnitudes: torch.Tensor) -> torch.Tensor:
+        """Decode for this specific layer"""
+        return self.sae.decode(feature_magnitudes, layer_idx=self.layer_idx)
+
+    @property
+    def W_dec(self):
+        """Get this layer's chunk plus all previous chunks of decoder weights"""
+        end = (self.layer_idx + 1) * self.sae.feature_size
+        return self.sae.W_dec[:end]
+
+    @property
+    def W_enc(self):
+        """Get this layer's chunk plus all previous chunks of encoder weights"""
+        end = (self.layer_idx + 1) * self.sae.feature_size
+        return self.sae.W_enc[:, :end]
+
+    @property
+    def b_enc(self):
+        """Get this layer's chunk plus all previous chunks of encoder bias"""
+        end = (self.layer_idx + 1) * self.sae.feature_size
+        return self.sae.b_enc[:end]
+
+    @property
+    def b_dec(self):
+        """Get decoder bias (shared across layers)"""
+        return self.sae.b_dec
 
 
 
+
         
+
+# %%
