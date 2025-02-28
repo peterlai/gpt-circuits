@@ -118,3 +118,36 @@ def create_sparse_dense_tensor(*dimensions, sparsity=0.2, dtype=torch.float32, d
     sparse_dense_tensor = values * mask
     
     return sparse_dense_tensor
+
+def randomly_select_edges(edges: frozenset[Edge], num_edges: int) -> frozenset[Edge]:
+    """
+    Randomly select num_edges from the given frozen set of edges.
+    
+    Args:
+        edges: The original set of edges
+        num_edges: Number of edges to select
+        
+    Returns:
+        A new frozen set with num_edges randomly selected edges
+        
+    Raises:
+        ValueError: If num_edges is greater than the number of edges
+    """
+    # Convert to list for random sampling
+    edge_list = list(edges)
+    total_edges = len(edge_list)
+    
+    if num_edges > total_edges:
+        raise ValueError(f"Cannot select {num_edges} edges from a set of {total_edges} edges")
+    
+    if num_edges == total_edges:
+        return edges
+    
+    if num_edges == 0:
+        return frozenset()
+    
+    # Randomly select num_edges
+    selected_edges = random.sample(edge_list, num_edges)
+    
+    # Return as frozenset
+    return frozenset(selected_edges)

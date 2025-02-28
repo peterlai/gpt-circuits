@@ -16,6 +16,8 @@ project_root = Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 # Imports from the project
+from data.tokenizers import ASCIITokenizer
+
 from config.sae.models import SAEConfig
 from models.sparsified import SparsifiedGPT
 from models.gpt import GPT
@@ -25,7 +27,7 @@ from circuits.search.ablation import ZeroAblator
 from circuits.search.divergence import compute_downstream_magnitudes, get_predicted_logits_from_full_circuit
 from circuits.search.edges import compute_downstream_magnitudes_from_edges
 
-from xavier.utils import compute_kl_divergence, create_random_edges, create_sparse_dense_tensor
+from xavier.utils import compute_kl_divergence, create_random_edges, randomly_select_edges
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Plot KL divergence between random and full circuits')
@@ -74,12 +76,21 @@ def main():
     ablator = ZeroAblator()
     layer_num = args.layer
     target_token_idx = 0
+    num_downstream_features = model.config.n_features[layer_num]
+    num_upstream_features = model.config.n_features[layer_num+1]
     num_samples = 2
     
-    # Generate random input data... we can do better than this
-    T, F = 5, model.config.n_features[layer_num] 
+    # Prompt for input
+    prompt = "And let us once again assail your ea"
+    tokenizer = ASCIITokenizer()
+    input_ids = torch.tensor([tokenizer.encode(text=prompt)])
+    assert input_ids.shape[1] <= model.config.gpt_config.block_size, "Input sequence length exceeds block size"
 
-    upstream_magnitudes = create_sparse_dense_tensor((T, F), sparsity=0.2)
+    # Compute upstream magnitudes
+    ## Can probably be smart about how we use these outputs
+    with model.use_saes(layers_to_patch=[layer_num]) as encoder_outputs:
+        _ = model(input_ids)
+        upstream_magnitudes = encoder_outputs[layer_num].feature_magnitudes.squeeze(0)
     
     print(f"Computing downstream magnitudes (full circuit)...")
     # Create a downstream circuit with all nodes and compute downstream magnitudes
@@ -101,20 +112,24 @@ def main():
     
     # Create random edges and compute KL divergences
     min_edges = 10
-    max_edges = F*F
-    num_circuits = 5
-    num_edges_array = np.linspace(min_edges, max_edges, num_circuits, dtype=int)
+    max_edges = num_downstream_features*num_upstream_features
+    num_circuits = 8
+    num_edges_array = np.flip(np.linspace(min_edges, max_edges, num_circuits, dtype=int))
     kl_divergences = []
+
+    # Initialize edge set to full circuit
+    random_edges = create_random_edges(
+            layer_l=layer_num, 
+            num_features_l=model.config.n_features[layer_num], 
+            num_features_l_plus_1=model.config.n_features[layer_num+1] , 
+            num_edges=model.config.n_features[layer_num]*model.config.n_features[layer_num+1]
+        )
     
     for num_edges in num_edges_array:
         print(f"Computing for {num_edges} random edges...")
-        # Create random edges
-        random_edges = create_random_edges(
-            layer_l=layer_num, 
-            num_features_l=model.config.n_features[layer_num] , 
-            num_features_l_plus_1=model.config.n_features[layer_num+1] , 
-            num_edges=num_edges
-        )
+    
+        # Update random edges
+        random_edges = randomly_select_edges(random_edges, num_edges)
         
         # Compute downstream magnitudes from random edges
         random_downstream_magnitudes = compute_downstream_magnitudes_from_edges(
@@ -144,10 +159,11 @@ def main():
     plt.plot(num_edges_array.tolist(), kl_divergences, marker='o')
     plt.xlabel('num_edges')
     plt.ylabel('KL_div')
-    plt.title('KL Divergence Between Random Circuit and Full Model')
+    plt.ylim(-1, 8)
+    plt.title(f'KL Divergence Between Full Model and Random Circuit Between Layers {layer_num} & {layer_num+1}')
     plt.grid(True)
     plt.axhline(y=0, color='r', linestyle='--', alpha=0.3)
-    plt.axvline(x=F*F, color='r', linestyle='--', alpha=0.3)
+    plt.axvline(x=num_downstream_features*num_upstream_features, color='r', linestyle='--', alpha=0.3)
     plt.savefig(args.output)
     plt.close()
     
