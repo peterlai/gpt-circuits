@@ -41,9 +41,27 @@ sae_options: dict[str, SAEConfig] = map_options(
         sae_variant=SAEVariant.STANDARD,
     ),
     SAEConfig(
+        name="standardx8.tiny_64x2",
+        gpt_config=gpt_options["tiktoken_64x2"],
+        n_features=tuple(64 * n for n in (8, 8, 8, 8, 8)),
+        sae_variant=SAEVariant.STANDARD,
+    ),
+    SAEConfig(
         name="standardx8.shakespeare_64x4",
         gpt_config=gpt_options["ascii_64x4"],
         n_features=tuple(64 * n for n in (8, 8, 8, 8, 8)),
+        sae_variant=SAEVariant.STANDARD,
+    ),
+    SAEConfig(
+        name="standardx40.shakespeare_64x4",
+        gpt_config=gpt_options["ascii_64x4"],
+        n_features=tuple(64 * n for n in (40, 40, 40, 40, 40)),
+        sae_variant=SAEVariant.STANDARD,
+    ),
+    SAEConfig(
+        name="staircasex8.shakespeare_64x4",
+        gpt_config=gpt_options["ascii_64x4"],
+        n_features=64 * 8,
         sae_variant=SAEVariant.STANDARD,
     ),
     SAEConfig(
