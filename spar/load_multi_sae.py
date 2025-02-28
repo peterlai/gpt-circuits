@@ -4,7 +4,7 @@ import torch
 import json
 from models.sae.multilayer import MultiLayerSAEBase
 from config.sae.training import SAEConfig, LossCoefficients  # Adjust based on your actual config classes
-
+import os
 def load_sae_from_huggingface(save_dir: str, model_name: str = "multi_sae", device: str = "cuda"):
     """
     Load a MultiLayerSAEBase model from Hugging Face format using safetensors.
