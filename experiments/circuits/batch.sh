@@ -20,12 +20,14 @@ process_token_ids() {
 
 # Training shard token IDs
 TRAIN_TOKEN_IDS=(7010 300553 393485 512822 780099 872699)
+# TRAIN_TOKEN_IDS=()
 
 # Validation shard token IDs
 VAL_TOKEN_IDS=(15524 69324 75324 85424)
+# VAL_TOKEN_IDS=(15 1039 2063 3087 4111 5135 6159 7183)
 
 # Process training data
 process_token_ids "toy-v0" "train" "${TRAIN_TOKEN_IDS[@]}"
 
 # Process validation data
-process_token_ids "toy-v0" "val" "${VAL_TOKEN_IDS[@]}"
+pocess_token_ids "toy-local" "val" "${VAL_TOKEN_IDS[@]}"

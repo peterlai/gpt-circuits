@@ -174,8 +174,8 @@ class NodeSearch:
                 print("Stopping search - No remaining nodes to add.")
                 break
 
-            # Sort remaining tokens by KL divergence (descending)
-            estimated_token_importance = self.estimate_token_importance(
+            # Find next most important token
+            most_important_token_idx = self.find_next_token(
                 layer_idx,
                 target_token_idx,
                 target_logits,
@@ -183,7 +183,6 @@ class NodeSearch:
                 circuit_nodes=circuit_nodes,
                 remaining_nodes=all_nodes - circuit_nodes,
             )
-            most_important_token_idx = min(estimated_token_importance.items(), key=lambda x: x[1])[0]
             new_nodes = nodes_by_token_idx[most_important_token_idx]
 
         # Print results (grouped by token_idx)
@@ -318,7 +317,7 @@ class NodeSearch:
         least_important_nodes = set([node for node, _ in sorted_nodes[:max_count]])
         return least_important_nodes
 
-    def estimate_token_importance(
+    def find_next_token(
         self,
         layer_idx: int,
         target_token_idx: int,
@@ -326,9 +325,9 @@ class NodeSearch:
         feature_magnitudes: torch.Tensor,
         circuit_nodes: frozenset[Node],
         remaining_nodes: frozenset[Node],
-    ) -> dict[int, float]:
+    ) -> int:
         """
-        Map tokens to KL divergence.
+        Find next token to add to the circuit.
         """
         # Generate all variations with one token added
         circuit_variants: dict[int, Circuit] = {}
@@ -352,4 +351,8 @@ class NodeSearch:
 
         # Map token indices to KL divergence
         results = {token_idx: kld_results[variant].kl_divergence for token_idx, variant in circuit_variants.items()}
-        return results
+
+        # The most important token is the one that results in the lowest KL divergence
+        sorted_tokens = sorted(results.items(), key=lambda x: x[1])
+        most_important_token_idx = sorted_tokens[0][0]
+        return most_important_token_idx

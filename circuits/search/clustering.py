@@ -152,6 +152,16 @@ class ClusterSearch:
         block_size = layer_cache.block_size
         num_features = len(circuit_feature_idxs)
 
+        # If no features are in the circuit, return random cluster
+        if num_features == 0:
+            return self.get_random_cluster(
+                layer_idx,
+                token_idx,
+                num_samples=k_nearest,
+                feature_coefficients=feature_coefficients,
+                positional_coefficient=positional_coefficient,
+            )
+
         # Calculate max MSE by averaging the squares of all coefficients
         max_mse = np.append(feature_coefficients**2, positional_coefficient**2).mean()
 
