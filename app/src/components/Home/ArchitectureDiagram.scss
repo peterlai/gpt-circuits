@@ -1,0 +1,73 @@
+$blockDistance: 20px;
+$blockWidth: 45%;
+
+#ArchitectureDiagram {
+    max-width: 400px;
+    margin: 0 auto;
+
+    ol {
+        margin: 0;
+        padding: 0;
+        font-size: 0.9em;
+        list-style: none;
+    }
+
+    li {
+        position: relative;
+        margin-bottom: $blockDistance;
+    }
+
+    .input, .output, .block {
+        box-sizing: border-box;
+        width: $blockWidth;
+        padding: 5px 0;
+        text-align: center;
+    }
+
+    .input:after, .block:after {
+        content: '';
+        position: absolute;
+        top: 100%;
+        left: $blockWidth / 2;
+        box-sizing: border-box;
+        height: $blockDistance;
+        border-left: 1px solid #000;
+    }
+
+    .block:not(.ellipsis) {
+        box-shadow: 1px 1px 1px rgba(0, 0, 0, 0.3);
+        border: 1px solid #000;
+        border-radius: 5px;
+    }
+
+    .sae {
+        box-shadow: 1px 1px 1px rgba(0, 0, 0, 0.3);
+        position: absolute;
+        top: 50%;
+        right: 0;
+        box-sizing: border-box;
+        width: $blockWidth;
+        margin-top: $blockDistance / 2;
+        padding: 5px 0;
+        border: 1px solid #000;
+        border-radius: 5px;
+        text-align: center;
+        white-space: nowrap;
+    }
+    .sae:before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        right: 100%;
+        box-sizing: border-box;
+        width: ((100% - $blockWidth * 1.5) / $blockWidth) * 100%;
+        border-top: 1px dashed #000;
+    }
+
+    .input, .output { font-style: italic; }
+    .embedding { background: rgba(240 50 50 / 25%); }
+    .transformer { background: rgba(180 180 180 / 50%); }
+    .transposed-embedding { background: rgba(240 50 50 / 25%); }
+    .softmax { background: white; }
+    .sae { background: rgba(255 220 90 / 75%); }
+}
