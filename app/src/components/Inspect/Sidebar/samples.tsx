@@ -10,6 +10,7 @@ import { SampleData } from "../../../stores/Sample";
 import { alignmentAtom, AlignmentOptions, searchQueryAtom } from "../../../stores/Search";
 import { SamplesList } from "../../SamplesList";
 
+import { JSX } from "react";
 import "react-tooltip/dist/react-tooltip.css";
 
 function SearchableSamples({

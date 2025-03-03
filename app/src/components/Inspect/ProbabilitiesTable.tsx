@@ -1,3 +1,4 @@
+import { JSX } from "react";
 import "./ProbabilitiesTable.scss";
 
 function ProbabilitiesTable({
