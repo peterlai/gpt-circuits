@@ -1,6 +1,40 @@
 import fs from 'fs';
 import { join } from 'path';
 
+// Parse command line arguments
+const args = process.argv.slice(2);
+const buildMode = args.includes('build');
+
+let modelsDir: string;
+let allowedModelPrefixes: string[];
+let ignoredModelPrefixes: string[];
+
+// Set directory and prefixes based on build mode
+if (buildMode) {
+    console.log("Building index for deployment");
+    modelsDir = buildMode ? 'build/samples' : 'public/samples';
+    allowedModelPrefixes = ["toy-v0"];
+    ignoredModelPrefixes = [];
+} else {
+    modelsDir = 'public/samples';
+    allowedModelPrefixes = ["toy"];
+    ignoredModelPrefixes = ["toy-v0"];
+}
+
+// If building for deploying, clean up build directory
+if (buildMode) {
+    for (const modelName of fs.readdirSync(modelsDir)) {
+        // Preserve everything that is allowed.
+        if (allowedModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
+
+        // Remove everything else.
+        const modelPath = join(modelsDir, modelName);
+        if (fs.statSync(modelPath).isDirectory()) {
+            fs.rmSync(modelPath, { recursive: true, force: true });
+        }
+    }
+}
+
 type SampleEntry  = {
     name: string;
     versions: string[];
@@ -8,13 +42,14 @@ type SampleEntry  = {
     decodedTokens: string;
     targetIdx: number;
 }
-const modelsDir = 'public/samples';
 const index: {[key: string]: SampleEntry[]} = {};
 
 for (const modelName of fs.readdirSync(modelsDir)) {
-    // Use whitelist.
-    const approvedModelPrefixes = ["toy", "baby"];
-    if (!approvedModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
+    // Use allowlist.
+    if (!allowedModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
+
+    // Use denylist.
+    if (ignoredModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
 
     // e.g. toy/
     const modelPath = join(modelsDir, modelName);
