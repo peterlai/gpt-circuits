@@ -86,22 +86,12 @@ def main():
     input_ids = torch.tensor([tokenizer.encode(text=prompt)])
     assert input_ids.shape[1] <= model.config.gpt_config.block_size, "Input sequence length exceeds block size"
 
-    # Compute upstream magnitudes
-    ## Can probably be smart about how we use these outputs
-    with model.use_saes(layers_to_patch=[layer_num]) as encoder_outputs:
+    print(f"Computing upstream & downstream magnitudes (full circuit)...")
+    with model.use_saes(layers_to_patch=[layer_num, layer_num + 1]) as encoder_outputs:
         _ = model(input_ids)
-        upstream_magnitudes = encoder_outputs[layer_num].feature_magnitudes.squeeze(0)
+        upstream_magnitudes = encoder_outputs[layer_num].feature_magnitudes
+        downstream_magnitudes = encoder_outputs[layer_num + 1].feature_magnitudes
     
-    print(f"Computing downstream magnitudes (full circuit)...")
-    # Create a downstream circuit with all nodes and compute downstream magnitudes
-    all_downstream_circuit = Circuit(nodes=frozenset())
-    downstream = compute_downstream_magnitudes(
-        model,
-        layer_num,
-        {all_downstream_circuit: upstream_magnitudes.unsqueeze(0)}
-    )
-    downstream_magnitudes = downstream[all_downstream_circuit]
-
     # Get full circuit logits
     logits_full = get_predicted_logits_from_full_circuit(
         model,
@@ -113,7 +103,7 @@ def main():
     # Create random edges and compute KL divergences
     min_edges = 10
     max_edges = num_downstream_features*num_upstream_features
-    num_circuits = 8
+    num_circuits = 5
     num_edges_array = np.flip(np.linspace(min_edges, max_edges, num_circuits, dtype=int))
     kl_divergences = []
 
@@ -131,23 +121,34 @@ def main():
         # Update random edges
         random_edges = randomly_select_edges(random_edges, num_edges)
         
-        # Compute downstream magnitudes from random edges
-        random_downstream_magnitudes = compute_downstream_magnitudes_from_edges(
-            model,
-            ablator,
-            random_edges,
-            upstream_magnitudes,
-            target_token_idx,
-            num_samples
-        )
-        
-        # Get random circuit logits
-        logits_random = get_predicted_logits_from_full_circuit(
-            model,
-            layer_num + 1,
-            random_downstream_magnitudes.unsqueeze(0),
-            target_token_idx
-        )
+        # Save time if computing full circuit
+        if num_edges == num_downstream_features*num_upstream_features:
+
+            logits_random = get_predicted_logits_from_full_circuit(
+                model,
+                layer_num + 1,
+                downstream_magnitudes,
+                target_token_idx
+            )
+
+        else:
+            # Compute downstream magnitudes from random edges
+            random_downstream_magnitudes = compute_downstream_magnitudes_from_edges(
+                model,
+                ablator,
+                random_edges,
+                upstream_magnitudes.squeeze(0),
+                target_token_idx,
+                num_samples
+            )
+            
+            # Get random circuit logits
+            logits_random = get_predicted_logits_from_full_circuit(
+                model,
+                layer_num + 1,
+                random_downstream_magnitudes.unsqueeze(0),
+                target_token_idx
+            )
         
         # Compute KL divergence
         kl_div = compute_kl_divergence(logits_full, logits_random)
