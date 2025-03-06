@@ -27,7 +27,7 @@ from circuits.search.ablation import ZeroAblator
 from circuits.search.divergence import compute_downstream_magnitudes, get_predicted_logits_from_full_circuit
 from circuits.search.edges import compute_downstream_magnitudes_from_edges
 
-from xavier.utils import compute_kl_divergence, create_random_edges, randomly_select_edges
+from xavier.utils import compute_kl_divergence, create_full_edge_set, select_edges_from_array
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Plot KL divergence between random and full circuits')
@@ -75,7 +75,7 @@ def main():
     print("Setting up computation parameters...")
     ablator = ZeroAblator()
     layer_num = args.layer
-    target_token_idx = 0
+    target_token_idx = 1 # Computations scale very badly when increasing this token
     num_downstream_features = model.config.n_features[layer_num]
     num_upstream_features = model.config.n_features[layer_num+1]
     num_samples = 2
@@ -101,25 +101,28 @@ def main():
     )   
     
     # Create random edges and compute KL divergences
-    min_edges = 10
-    max_edges = num_downstream_features*num_upstream_features
-    num_circuits = 5
-    num_edges_array = np.flip(np.linspace(min_edges, max_edges, num_circuits, dtype=int))
+    # min_edges = 10
+    # max_edges = num_downstream_features*num_upstream_features
+    # num_circuits = 5
+    # num_edges_array = np.flip(np.linspace(min_edges, max_edges, num_circuits, dtype=int))
+
+    # Selecting a few edge numbers for testing
+    num_edges_array = np.array([num_downstream_features * num_upstream_features, num_downstream_features * num_upstream_features - 1, 10])
+    
+    
     kl_divergences = []
 
-    # Initialize edge set to full circuit
-    random_edges = create_random_edges(
-            layer_l=layer_num, 
-            num_features_l=model.config.n_features[layer_num], 
-            num_features_l_plus_1=model.config.n_features[layer_num+1] , 
-            num_edges=model.config.n_features[layer_num]*model.config.n_features[layer_num+1]
-        )
+    # Create random edge array 
+    edge_arr = np.array([(a,b) for a in range(num_upstream_features) for b in range(num_downstream_features)])
+    full_edge_arr = np.random.permutation(edge_arr)
+
     
-    for num_edges in num_edges_array:
-        print(f"Computing for {num_edges} random edges...")
-    
+    for num_edges in num_edges_array:    
         # Update random edges
-        random_edges = randomly_select_edges(random_edges, num_edges)
+        random_edge_arr = full_edge_arr[:num_edges]
+        random_edges = select_edges_from_array(random_edge_arr, layer_num, target_token_idx)
+
+        print(f"Computing for {num_edges} random edges...")
         
         # Save time if computing full circuit
         if num_edges == num_downstream_features*num_upstream_features:
@@ -133,6 +136,7 @@ def main():
 
         else:
             # Compute downstream magnitudes from random edges
+            ## This is taking way too long, make more efficient...
             random_downstream_magnitudes = compute_downstream_magnitudes_from_edges(
                 model,
                 ablator,

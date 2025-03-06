@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as Fn
 import random
+import numpy as np
 
 from circuits import Circuit, Edge, Node
 
@@ -151,3 +152,49 @@ def randomly_select_edges(edges: frozenset[Edge], num_edges: int) -> frozenset[E
     
     # Return as frozenset
     return frozenset(selected_edges)
+
+
+def create_full_edge_set(
+    upstream_layer_idx: int, 
+    num_upstream_features: int, 
+    num_downstream_features: int, 
+    target_token_idx: int
+):
+
+
+    # Create all possible edges
+    ## THINK ABOUT WHY WE NEED ALL POSSIBLE EDGES
+    edges = frozenset([
+        Edge(
+            upstream=Node(layer_idx=upstream_layer_idx, token_idx=t_up, feature_idx=f_up),
+            downstream=Node(layer_idx=upstream_layer_idx+1, token_idx=t_down, feature_idx=f_down)
+        )
+        for t_up in range(target_token_idx+1)
+        for t_down in range(target_token_idx+1)
+        for f_up in range(num_upstream_features)
+        for f_down in range(num_downstream_features)
+    ])
+    
+    return edges
+
+
+def select_edges_from_array(
+    edge_arr: np.ndarray, 
+    upstream_layer_idx: int,
+    target_token_idx: int
+):
+
+
+    # Create all possible edges
+    ## THINK ABOUT WHY WE NEED ALL POSSIBLE EDGES -- make this part more efficient
+    edges = frozenset([
+        Edge(
+            upstream=Node(layer_idx=upstream_layer_idx, token_idx=t_up, feature_idx=f_up),
+            downstream=Node(layer_idx=upstream_layer_idx+1, token_idx=t_down, feature_idx=f_down)
+        )
+        for t_up in range(target_token_idx+1)
+        for t_down in range(target_token_idx+1)
+        for f_up, f_down in edge_arr
+    ])
+    
+    return edges
