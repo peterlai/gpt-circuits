@@ -25,25 +25,29 @@ from data.dataloaders import TrainingDataLoader
 TensorFunction = Callable[[Tensor], Tensor]
 
 
-
-
-
-def all_ig_attributions(model: SparsifiedGPT, ds: TrainingDataLoader, nbatches: int = 32, steps = 10):
+def all_ig_attributions(model: SparsifiedGPT, ds: TrainingDataLoader, nbatches: int = 32, steps = 10, verbose = False, just_last = False):
     """
-    Returns a dict of all consecutive integrated gradient attributions for a model
+    Returns a dict of all consecutive integrated gradient attributions for a model. Most of the time, this is what you will call.
     :param model: SparsifiedGPT model
     :param ds: Dataloader
     :param nbatches: How many batches of data to aggregate into attributions
+    :param steps: number of steps to approximate integral with
+    :param verbose: Prints updates after finishing each layer connection
+    :param just_last: whether to aggregate over all sequence positions or just take last
     :return: a dict where key 'i-i+1' (e.g. '0-1' or '1-2' is the 2d tensor of attributions between layers)
+    TODO: give option to keep all sequence position
     """
+
     layers = model.gpt.config.n_layer
     attributions = {}
     for i in range(layers - 1):
-        attributions[f'{i}-{i+1}'] = ig_attributions(model, i, i+1, ds, nbatches, steps)
+        attributions[f'{i}-{i+1}'] = ig_attributions(model, i, i+1, ds, nbatches, steps, just_last)
         ds.reset()
+        if verbose:
+            print(f"Finished Connections from Layer {i} to {i+1}")
     return attributions
 
-def ig_attributions(model: SparsifiedGPT, layer0: int, layer1: int, ds: TrainingDataLoader, nbatches: int=32, steps = 10):
+def ig_attributions(model: SparsifiedGPT, layer0: int, layer1: int, ds: TrainingDataLoader, nbatches: int=32, steps = 10, just_last = False):
     """
     Computes integrated gradient attribution for a model between two layers
     :param model: SparsifiedGPT model
@@ -51,7 +55,11 @@ def ig_attributions(model: SparsifiedGPT, layer0: int, layer1: int, ds: Training
     :param layer1: index of layer of target sae
     :param ds: Dataloader
     :param nbatches: How many batches of data to aggregate into attributions
-    :return: a tensor of shape (source_size, target_size) where the dimensions are the sizes of the hidden layers of the source and target sae respectively
+    :param steps: How many steps to use to approximate the integral
+    :param just_last: If true, only does computation from the last position in the sequence
+    
+    :return: a tensor of shape (source_size, target_size) where the dimensions are the sizes of the hidden layers of the source and target sae respectively.
+        If keep_pos is true, tensor is of shape (seq_len source_size seq_len target_size)
     """
     assert layer0 < layer1
     assert layer0 >= 0
@@ -83,6 +91,8 @@ def ig_attributions(model: SparsifiedGPT, layer0: int, layer1: int, ds: Training
         input, _ = ds.next_batch(model.gpt.config.device) #get batch of inputs 
         output = model.forward(input.long(), targets=None, is_eval=True)
         feature_magnitudes0 = output.feature_magnitudes[layer0] #feature magnitudes at source layer (batchsize, seqlen, source_size)
+        if just_last:
+            feature_magnitudes0 = t.unsqueeze(feature_magnitudes0[:, -1, :], 1)
         
         #loop over fms in target sae, and find attributions from all fms in source layer.
         #aggregate these by root mean square, following https://www.lesswrong.com/posts/Rv6ba3CMhZGZzNH7x/interpretability-integrated-gradients-is-a-decent
@@ -90,15 +100,18 @@ def ig_attributions(model: SparsifiedGPT, layer0: int, layer1: int, ds: Training
             y_i = t.zeros(target_size, device = model.gpt.config.device)
             y_i[fm_i] = 1
         
-            gradient = integrate_gradient(x = feature_magnitudes0, x_i = None, fun = forward, direction = y_i, steps = steps) #(batch seq source_size)
+            gradient = integrate_gradient(x = feature_magnitudes0, x_i = None, fun = forward, direction = y_i, steps = steps, just_last = just_last) #(batch seq source_size)
             #sum over batch and position
             #Q: Does this make sense? It might be incorrect to sum over position
-            attributions[:,fm_i] = attributions[:,fm_i] + (gradient **2).sum(dim=[0,1]) 
+            if just_last:
+                attributions[:,fm_i] = attributions[:,fm_i] + (gradient[:, -1, :] **2).sum(dim=0)
+            else: 
+                attributions[:,fm_i] = attributions[:,fm_i] + (gradient **2).sum(dim=[0,1])
                 
     attributions = t.sqrt(attributions)
     return attributions
 
-def integrate_gradient(x: Tensor, x_i: Tensor | None, fun: TensorFunction, direction = None, base:int= 0, steps:int=10):
+def integrate_gradient(x: Tensor, x_i: Tensor | None, fun: TensorFunction, direction, base:int= 0, steps:int=10, just_last = False):
     """
     Approximates int_C d/dx_i y(z) dz where C is a linear path from base to x
     :param x: End of path. In practice it is a tensor of feature magnitudes generated by the data, 
@@ -125,8 +138,12 @@ def integrate_gradient(x: Tensor, x_i: Tensor | None, fun: TensorFunction, direc
     path = t.linspace(0, 1, steps)
     steplength = t.linalg.norm(x - base, dim = -1, keepdim = True)/steps
 
-    if direction != None:
-        direction = t.broadcast_to(direction, x.shape)
+
+    batch_size, seq_len , _ = x.shape
+    source_len = direction.shape[0]
+    direction = direction.view(1, 1, source_len).expand(batch_size, seq_len,source_len)
+    if just_last:
+        direction[:,:,:-1] = 0
 
     integral = 0
     for alpha in path:
@@ -147,13 +164,13 @@ def integrate_gradient(x: Tensor, x_i: Tensor | None, fun: TensorFunction, direc
 
     return integral
 
-
 if __name__ == "__main__":
    #This code loads a model and data, and computes all the attributions
+   #If you want to do you own run, just modify the strings here, and the arguments in the call to all_ig_attributions below
     c_name = 'standardx8.shakespeare_64x4'
     name = ''
     data_dir = 'data/shakespeare'
-    output_filename = 'Andy/data/attributions.safetensors'
+    output_filename = 'Andy/data/just_last_attributions.safetensors'
     batch_size = 32
     config = sae_options[c_name]
 
@@ -195,7 +212,7 @@ if __name__ == "__main__":
     layer0 = 0
     layer1 = 1
 
-    attributions = all_ig_attributions(model, dataloader, 1, 3)
+    attributions = all_ig_attributions(model, dataloader, 16, 4, verbose = True, just_last = True)
     save_file({"attributions0-1": attributions['0-1'], "attributions1-2": attributions['1-2'], "attributions2-3": attributions['2-3']}, output_filename)
     
     
