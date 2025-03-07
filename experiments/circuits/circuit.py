@@ -6,10 +6,12 @@ $ python -m experiments.circuits.circuit --split=val --sequence_idx=5120 --token
 """
 
 import argparse
+from collections import defaultdict
 from pathlib import Path
 
 import torch
 
+from circuits import json_prettyprint
 from circuits.features.cache import ModelCache
 from circuits.features.profiles import ModelProfile
 from circuits.search.ablation import ResampleAblator
@@ -41,7 +43,6 @@ if __name__ == "__main__":
     shard_token_idx = args.sequence_idx
     target_token_idx = args.token_idx
 
-
     # Set paths
     checkpoint_dir = TrainingConfig.checkpoints_dir / args.model
     dirname = f"{args.split}.{args.shard_idx}.{shard_token_idx}.{target_token_idx}"
@@ -61,7 +62,7 @@ if __name__ == "__main__":
     model_cache = ModelCache(checkpoint_dir)
 
     # Set feature ablation strategy
-    num_samples = 256  # Number of samples to use for estimating KL divergence
+    num_samples = 64  # Number of samples to use for estimating KL divergence
     k_nearest = 256  # How many nearest neighbors to consider in resampling
     positional_coefficient = 2.0  # How important is the position of a feature
     ablator = ResampleAblator(
@@ -85,11 +86,32 @@ if __name__ == "__main__":
 
     # Start search
     circuit_search = CircuitSearch(model, ablator, num_samples)
-    circuit = circuit_search.search(tokens, target_token_idx, threshold)
+    search_result = circuit_search.search(tokens, target_token_idx, threshold)
 
     # Print results, grouping nodes by layer
     print("\nCircuit:")
     for layer_idx in range(model.gpt.config.n_layer + 1):
-        layer_nodes = [node for node in circuit.nodes if node.layer_idx == layer_idx]
+        layer_nodes = [node for node in search_result.circuit.nodes if node.layer_idx == layer_idx]
         layer_nodes.sort(key=lambda node: node.token_idx)
         print(f"Layer {layer_idx}: {layer_nodes}")
+
+        # Group features by token idx
+        grouped_nodes = defaultdict(dict)
+        for node in layer_nodes:
+            # Map feature indices to KL divergence
+            grouped_nodes[node.token_idx][node.feature_idx] = 0.0
+
+        # Export layer
+        data = {
+            "data_dir": args.data_dir,
+            "split": args.split,
+            "shard_idx": args.shard_idx,
+            "sequence_idx": args.sequence_idx,
+            "token_idx": target_token_idx,
+            "layer_idx": layer_idx,
+            "threshold": threshold,
+            "nodes": grouped_nodes,
+        }
+        circuit_dir.mkdir(parents=True, exist_ok=True)
+        with open(circuit_dir / f"nodes.{layer_idx}.json", "w") as f:
+            f.write(json_prettyprint(data))

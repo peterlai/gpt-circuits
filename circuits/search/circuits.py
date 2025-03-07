@@ -1,4 +1,5 @@
 import math
+from dataclasses import dataclass
 from typing import Sequence
 
 import torch
@@ -9,10 +10,22 @@ from circuits.search.divergence import analyze_divergence, get_predictions
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
 
 
+@dataclass(frozen=True)
+class CircuitResult:
+    """
+    Result of a circuit search.
+    """
+
+    circuit: Circuit  # Circuit found
+    klds: dict[int, float]  # KL divergence using the nodes of each layer
+    predictions: dict[int, dict]  # Predictions for using the nodes of each layer
+
+
 class CircuitSearch:
     """
     Search for a circuit in a sparsified model.
     """
+
     def __init__(self, model: SparsifiedGPT, ablator: Ablator, num_samples: int):
         """
         :param model: The sparsified model to use for circuit extraction.
@@ -28,7 +41,7 @@ class CircuitSearch:
         tokens: Sequence[int],
         target_token_idx: int,
         threshold: float,
-    ) -> Circuit:
+    ) -> CircuitResult:
         """
         Search for a circuit in the model.
         """
@@ -50,10 +63,50 @@ class CircuitSearch:
         for layer_idx in reversed(range(self.num_layers)):
             layer_nodes = self.find_nodes(model_output, circuit, target_token_idx, layer_idx, threshold)
             circuit = Circuit(circuit.nodes | layer_nodes, frozenset())
+            print(f"Added the following nodes to layer {layer_idx}: {layer_nodes}")
 
-        return circuit
+        # Make circuit look more like a tree
+        circuit_nodes = set(circuit.nodes)
+        discarded_nodes = set({})
+        for node in sorted(circuit.nodes):
+            if node.layer_idx > 0:
+                token_idx = node.token_idx
+                upstream_idx = node.layer_idx - 1
+                if not any(n for n in circuit_nodes if n.layer_idx == upstream_idx and n.token_idx == token_idx):
+                    circuit_nodes.remove(node)
+                    discarded_nodes.add(node)
+        circuit = Circuit(frozenset(circuit_nodes), frozenset())
+        print(f"\nDiscarded the following nodes: {discarded_nodes}")
 
-    def find_nodes(self, model_output: SparsifiedGPTOutput, circuit: Circuit, target_token_idx: int, layer_idx: int, threshold: float) -> frozenset[Node]:
+        # Calculate final KLD for each layer
+        print("\nFinal metrics:")
+        klds: dict[int, float] = {}
+        predictions: dict[int, dict] = {}
+        for layer_idx in range(self.num_layers):
+            circuit_results = analyze_divergence(
+                self.model,
+                self.ablator,
+                layer_idx,
+                target_token_idx,
+                target_logits,
+                [circuit],
+                model_output.feature_magnitudes[layer_idx].squeeze(0),  # Shape: (T, F)
+                self.num_samples * 4,  # Increase samples for final calculation
+            )[circuit]
+            klds[layer_idx] = circuit_results.kl_divergence
+            predictions[layer_idx] = circuit_results.predictions
+            print(f"Layer {layer_idx} - KLD: {klds[layer_idx]:.4f} - Predictions: {predictions[layer_idx]}")
+
+        return CircuitResult(circuit, klds, predictions)
+
+    def find_nodes(
+        self,
+        model_output: SparsifiedGPTOutput,
+        circuit: Circuit,
+        target_token_idx: int,
+        layer_idx: int,
+        threshold: float,
+    ) -> frozenset[Node]:
         """
         Find the nodes in a particular layer that should be added to a circuit.
         """
@@ -74,12 +127,29 @@ class CircuitSearch:
             if t >= start_token_idx and t <= target_token_idx:
                 all_nodes.add(Node(layer_idx, t.item(), f.item()))
 
+        # Get KLD baseline
+        baseline_circuit = Circuit(frozenset(all_nodes))
+        basline_results = analyze_divergence(
+            self.model,
+            self.ablator,
+            layer_idx,
+            target_token_idx,
+            target_logits,
+            [baseline_circuit],
+            feature_magnitudes,
+            num_samples=self.num_samples * 4,  # Increase samples for baseline
+        )[baseline_circuit]
+        baseline_kld = basline_results.kl_divergence
+
+        # Set search threshold to larger of baseline KLD and threshold
+        search_threshold = threshold  # max((baseline_kld + threshold) / 2, threshold)
+
         # Narrow down nodes to consider
-        circuit_candidates = frozenset(all_nodes) # TODO: Implement
+        circuit_candidates = frozenset(all_nodes)  # TODO: Implement
 
         # Rank remaining features by importance
-        print("\nRanking features...")
-        ranked_nodes = self.rank_features(
+        print(f"\nSearching for nodes in layer {layer_idx} (baseline KLD: {baseline_kld:.4f})...")
+        ranked_nodes = self.rank_nodes(
             layer_idx,
             target_token_idx,
             target_logits,
@@ -88,22 +158,24 @@ class CircuitSearch:
             downstream_nodes,
         )
 
-        # Walk backwards through ranked nodes and stop when KL divergence is below threshold.
+        # Walk backwards through ranked nodes and stop when KL divergence is below search threshold.
         # NOTE: KL divergence does not monotonically decrease, which is why we need to walk backwards.
         layer_nodes = set({})
         previous_klds = []
         for node, kld in reversed(ranked_nodes):
-            layer_nodes.add(node)
-            if kld < threshold:
+            # Stop if KLD is greater than average of previous 3 values
+            if len(previous_klds) >= 3 and kld > sum(previous_klds[-3:]) / 3:
                 break
-            # Also stop if KLD is greater than average of previous 8 values
-            elif len(previous_klds) >= 8 and kld > sum(previous_klds[-8:]) / 8:
+            # Add node to layer
+            layer_nodes.add(node)
+            # Stop if KLD is below search threshold
+            if kld < search_threshold:
                 break
             previous_klds.append(kld)
 
         return frozenset(layer_nodes)
 
-    def rank_features(
+    def rank_nodes(
         self,
         layer_idx: int,
         target_token_idx: int,
@@ -113,7 +185,7 @@ class CircuitSearch:
         downstream_nodes: frozenset[Node],
     ) -> list[tuple[Node, float]]:
         """
-        Rank the features in a layer from least to most important.
+        Rank the nodes in a layer from least to most important.
         """
         # Nodes ordered by when they were removed from the circuit
         ranked_nodes: list[tuple[Node, float]] = []
@@ -182,7 +254,7 @@ class CircuitSearch:
         # Generate all circuit variations with one node removed
         circuit_variants: dict[Node, Circuit] = {}
         for node in layer_nodes:
-            circuit_variants[node] = Circuit(nodes=frozenset([n for n in layer_nodes if n != node]))
+            circuit_variants[node] = Circuit(nodes=frozenset([n for n in layer_nodes if n != node]) | downstream_nodes)
 
         # Calculate KL divergence for each variant
         kld_results = analyze_divergence(
@@ -209,4 +281,4 @@ class CircuitSearch:
         """
         Get the number of SAE layers in the model.
         """
-        return self.model.gpt.config.n_layer + 1 # Add 1 for the embedding layer
+        return self.model.gpt.config.n_layer + 1  # Add 1 for the embedding layer

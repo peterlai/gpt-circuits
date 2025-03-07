@@ -27,7 +27,7 @@ def analyze_divergence(
     num_samples: int,
 ) -> dict[Circuit, Divergence]:
     """
-    Calculate KL divergence between target logits and logits produced through use of circuit features.
+    Calculate KL divergence between target logits and logits produced through use of circuit nodes on a single layer.
 
     :param model: The sparsified model to use for circuit extraction.
     :param ablator: Ablation tecnique to use for circuit extraction.
