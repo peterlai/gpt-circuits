@@ -121,14 +121,15 @@ class CircuitSearch:
         start_token_idx = target_token_idx if layer_idx == self.num_layers - 1 else 0
 
         # Get non-zero features where token index is in [start_token_idx...target_token_idx]
-        all_nodes: set[Node] = set({})
+        layer_nodes = set({})
         non_zero_indices = torch.nonzero(feature_magnitudes, as_tuple=True)
         for t, f in zip(*non_zero_indices):
             if t >= start_token_idx and t <= target_token_idx:
-                all_nodes.add(Node(layer_idx, t.item(), f.item()))
+                layer_nodes.add(Node(layer_idx, t.item(), f.item()))
+        layer_nodes = frozenset(layer_nodes)
 
         # Get KLD baseline
-        baseline_circuit = Circuit(frozenset(all_nodes))
+        baseline_circuit = Circuit(layer_nodes)
         basline_results = analyze_divergence(
             self.model,
             self.ablator,
@@ -144,36 +145,45 @@ class CircuitSearch:
         # Set search threshold to larger of baseline KLD and threshold
         search_threshold = threshold  # max((baseline_kld + threshold) / 2, threshold)
 
-        # Narrow down nodes to consider
-        circuit_candidates = frozenset(all_nodes)  # TODO: Implement
+        # Narrow down nodes to consider by selecting token indices that are most likely to be important
+        print(f"\nSearching for tokens in layer {layer_idx} with important information...")
+        circuit_candidates = self.select_tokens(
+            layer_idx,
+            target_token_idx,
+            target_logits,
+            feature_magnitudes,
+            layer_nodes,
+            downstream_nodes,
+            threshold=threshold / 2,  # Use lower threshold for coarse search
+            limit=16,  # Limit to 16 token indices
+        )
 
         # Rank remaining features by importance
-        print(f"\nSearching for nodes in layer {layer_idx} (baseline KLD: {baseline_kld:.4f})...")
+        print(f"\nRanking nodes in layer {layer_idx} (baseline KLD: {baseline_kld:.4f})...")
         ranked_nodes = self.rank_nodes(
             layer_idx,
             target_token_idx,
             target_logits,
             feature_magnitudes,
             circuit_candidates,
-            downstream_nodes,
         )
 
         # Walk backwards through ranked nodes and stop when KL divergence is below search threshold.
         # NOTE: KL divergence does not monotonically decrease, which is why we need to walk backwards.
-        layer_nodes = set({})
+        selected_nodes = set({})
         previous_klds = []
         for node, kld in reversed(ranked_nodes):
             # Stop if KLD is greater than average of previous 3 values
             if len(previous_klds) >= 3 and kld > sum(previous_klds[-3:]) / 3:
                 break
             # Add node to layer
-            layer_nodes.add(node)
+            selected_nodes.add(node)
             # Stop if KLD is below search threshold
             if kld < search_threshold:
                 break
             previous_klds.append(kld)
 
-        return frozenset(layer_nodes)
+        return frozenset(selected_nodes)
 
     def rank_nodes(
         self,
@@ -182,7 +192,6 @@ class CircuitSearch:
         target_logits: torch.Tensor,
         feature_magnitudes: torch.Tensor,
         layer_nodes: frozenset[Node],
-        downstream_nodes: frozenset[Node],
     ) -> list[tuple[Node, float]]:
         """
         Rank the nodes in a layer from least to most important.
@@ -216,7 +225,6 @@ class CircuitSearch:
                 target_logits,
                 feature_magnitudes,
                 layer_nodes=layer_nodes,
-                downstream_nodes=downstream_nodes,
                 # Remove 4% of nodes on each iteration
                 max_count=int(math.ceil(len(layer_nodes) * 0.04)),
             )
@@ -245,7 +253,6 @@ class CircuitSearch:
         target_logits: torch.Tensor,
         feature_magnitudes: torch.Tensor,
         layer_nodes: frozenset[Node],
-        downstream_nodes: frozenset[Node],
         max_count: int,
     ) -> set[Node]:
         """
@@ -254,7 +261,7 @@ class CircuitSearch:
         # Generate all circuit variations with one node removed
         circuit_variants: dict[Node, Circuit] = {}
         for node in layer_nodes:
-            circuit_variants[node] = Circuit(nodes=frozenset([n for n in layer_nodes if n != node]) | downstream_nodes)
+            circuit_variants[node] = Circuit(nodes=frozenset([n for n in layer_nodes if n != node]))
 
         # Calculate KL divergence for each variant
         kld_results = analyze_divergence(
@@ -275,6 +282,128 @@ class CircuitSearch:
         sorted_nodes = sorted(node_to_kld.items(), key=lambda x: x[1])  # Sort by KL divergence (ascending)
         least_important_nodes = set([node for node, _ in sorted_nodes[:max_count]])
         return least_important_nodes
+
+    def select_tokens(
+        self,
+        layer_idx: int,
+        target_token_idx: int,
+        target_logits: torch.Tensor,
+        feature_magnitudes: torch.Tensor,
+        layer_nodes: frozenset[Node],
+        downstream_nodes: frozenset[Node],
+        threshold: float,
+        limit: int,
+    ) -> frozenset[Node]:
+        """
+        Select tokens that are most likely to be important.
+        """
+        # Group features by token index
+        nodes_by_token_idx: dict[int, set[Node]] = {}
+        for token_idx in range(target_token_idx + 1):
+            nodes_by_token_idx[token_idx] = set({node for node in layer_nodes if node.token_idx == token_idx})
+
+        # Starting search states
+        selected_nodes: frozenset[Node] = frozenset()  # Starting nodes share token indices with downstream nodes
+        for downstream_idx in {node.token_idx for node in downstream_nodes}:
+            selected_nodes = frozenset(selected_nodes | nodes_by_token_idx[downstream_idx])
+        new_nodes: set[Node] = set({})
+
+        # Start search
+        while selected_nodes is not layer_nodes:
+            # Update circuit
+            selected_nodes = frozenset(selected_nodes | new_nodes)
+
+            # Compute KL divergence
+            circuit = Circuit(nodes=selected_nodes)
+            circuit_analysis = analyze_divergence(
+                self.model,
+                self.ablator,
+                layer_idx,
+                target_token_idx,
+                target_logits,
+                [circuit],
+                feature_magnitudes,
+                num_samples=self.num_samples,
+            )[circuit]
+
+            # Print results
+            print(
+                f"Tokens: {len(set(f.token_idx for f in circuit.nodes))}/{target_token_idx + 1} - "
+                f"KL Div: {circuit_analysis.kl_divergence:.4f} - "
+                f"Added: {set([n.token_idx for n in new_nodes]) or 'None'} - "
+                f"Predictions: {circuit_analysis.predictions}"
+            )
+
+            # If below threshold, stop search
+            if circuit_analysis.kl_divergence < threshold and len(selected_nodes) > 0:
+                print("Reached target KL divergence.")
+                break
+
+            # Stop early if reached the max number of token indices
+            if len(set(f.token_idx for f in circuit.nodes)) >= limit:
+                print("Reached token limit.")
+                break
+
+            # If no remaining nodes, stop search
+            remaining_nodes = frozenset(layer_nodes - selected_nodes)
+            if not remaining_nodes:
+                print("No remaining nodes to add.")
+                break
+
+            # Find next most important token
+            most_important_token_idx = self.find_next_token(
+                layer_idx,
+                target_token_idx,
+                target_logits,
+                feature_magnitudes,
+                circuit_nodes=selected_nodes,
+                remaining_nodes=layer_nodes - selected_nodes,
+            )
+            new_nodes = nodes_by_token_idx[most_important_token_idx]
+
+        # Return circuit
+        print(f"Selected token indices: {','.join(map(str, sorted({n.token_idx for n in selected_nodes})))}")
+        return selected_nodes
+
+    def find_next_token(
+        self,
+        layer_idx: int,
+        target_token_idx: int,
+        target_logits: torch.Tensor,
+        feature_magnitudes: torch.Tensor,
+        circuit_nodes: frozenset[Node],
+        remaining_nodes: frozenset[Node],
+    ) -> int:
+        """
+        Find next token to add to the circuit.
+        """
+        # Generate all variations with one token added
+        circuit_variants: dict[int, Circuit] = {}
+        unique_token_indices = {node.token_idx for node in remaining_nodes}
+        for token_idx in unique_token_indices:
+            new_nodes = frozenset([node for node in remaining_nodes if node.token_idx == token_idx])
+            circuit_variant = Circuit(nodes=frozenset(circuit_nodes | new_nodes))
+            circuit_variants[token_idx] = circuit_variant
+
+        # Calculate KL divergence for each variant
+        kld_results = analyze_divergence(
+            self.model,
+            self.ablator,
+            layer_idx,
+            target_token_idx,
+            target_logits,
+            [variant for variant in circuit_variants.values()],
+            feature_magnitudes,
+            self.num_samples * 4,  # Increase number of samples for token selection
+        )
+
+        # Map token indices to KL divergence
+        results = {token_idx: kld_results[variant].kl_divergence for token_idx, variant in circuit_variants.items()}
+
+        # The most important token is the one that results in the lowest KL divergence
+        sorted_tokens = sorted(results.items(), key=lambda x: x[1])
+        most_important_token_idx = sorted_tokens[0][0]
+        return most_important_token_idx
 
     @property
     def num_layers(self) -> int:
