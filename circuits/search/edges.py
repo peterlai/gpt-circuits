@@ -267,5 +267,3 @@ class EdgeSearch:
             normalized_mse = torch.mean((norm_coefficients[i] * (sampled_magnitudes - original_magnitude)) ** 2)
             downstream_mses[node] = normalized_mse.item()
         return downstream_mses
-        return downstream_mses
-        return downstream_mses

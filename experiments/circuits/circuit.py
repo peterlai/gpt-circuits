@@ -77,7 +77,7 @@ if __name__ == "__main__":
 
     # Get token sequence
     tokenizer = model.gpt.config.tokenizer
-    tokens: list[int] = shard.tokens[args.sequence_idx : args.sequence_idx + model.config.block_size].tolist()
+    tokens: list[int] = shard.tokens[shard_token_idx : shard_token_idx + model.config.block_size].tolist()
     decoded_tokens = tokenizer.decode_sequence(tokens)
     decoded_target = tokenizer.decode_token(tokens[target_token_idx])
     print(f'Using sequence: "{decoded_tokens.replace("\n", "\\n")}"')
@@ -85,11 +85,11 @@ if __name__ == "__main__":
     print(f"Target threshold: {threshold}")
 
     # Start search
-    circuit_search = CircuitSearch(model, ablator, num_samples)
+    circuit_search = CircuitSearch(model, model_profile, ablator, num_samples)
     search_result = circuit_search.search(tokens, target_token_idx, threshold)
 
-    # Print results, grouping nodes by layer
-    print("\nCircuit:")
+    # Print circuit nodes, grouping nodes by layer
+    print("\nCircuit nodes:")
     for layer_idx in range(model.gpt.config.n_layer + 1):
         layer_nodes = [node for node in search_result.circuit.nodes if node.layer_idx == layer_idx]
         layer_nodes.sort(key=lambda node: node.token_idx)
@@ -106,7 +106,7 @@ if __name__ == "__main__":
             "data_dir": args.data_dir,
             "split": args.split,
             "shard_idx": args.shard_idx,
-            "sequence_idx": args.sequence_idx,
+            "sequence_idx": shard_token_idx,
             "token_idx": target_token_idx,
             "layer_idx": layer_idx,
             "threshold": threshold,
@@ -114,4 +114,44 @@ if __name__ == "__main__":
         }
         circuit_dir.mkdir(parents=True, exist_ok=True)
         with open(circuit_dir / f"nodes.{layer_idx}.json", "w") as f:
+            f.write(json_prettyprint(data))
+
+    # Save edge data
+    for layer_idx in range(1, model.gpt.config.n_layer + 1):
+        downstream_nodes = {n for n in search_result.circuit.nodes if n.layer_idx == layer_idx}
+
+        # Group edges by downstream token
+        grouped_edges = {}
+        for downstream_node in sorted(downstream_nodes):
+            edges = [
+                (edge, value)
+                for edge, value in search_result.edge_importance.items()
+                if edge.downstream == downstream_node
+            ]
+            upstream_to_value = {}
+            for edge, value in sorted(edges, key=lambda x: x[0]):
+                upstream_to_value[".".join(map(str, edge.upstream.as_tuple()))] = round(value, 4)
+            grouped_edges[".".join(map(str, downstream_node.as_tuple()))] = upstream_to_value
+
+        # Upstream token importance
+        upstream_tokens = {}
+        for node in downstream_nodes:
+            node_key = ".".join(map(str, node.as_tuple()))
+            upstream_tokens[node_key] = {}
+            for token_idx, value in search_result.token_importance[node].items():
+                upstream_tokens[node_key][token_idx] = round(value, 4)
+
+        # Export circuit features
+        data = {
+            "data_dir": args.data_dir,
+            "split": args.split,
+            "shard_idx": args.shard_idx,
+            "sequence_idx": shard_token_idx,
+            "token_idx": target_token_idx,
+            "layer_idx": layer_idx,
+            "edges": grouped_edges,
+            "upstream_tokens": upstream_tokens,
+        }
+        circuit_dir.mkdir(parents=True, exist_ok=True)
+        with open(circuit_dir / f"edges.{layer_idx}.json", "w") as f:
             f.write(json_prettyprint(data))
