@@ -187,24 +187,14 @@ class ClusterSearch:
                 max_mse=max_mse,
             )
 
-        if num_features == 0:
-            # No features to use for sampling
-            top_feature_idxs = np.array([])
-        else:
-            # Get top features by magnitude
-            num_top_features = max(0, min(16, num_features))  # Limit to 16 features
-            # TODO: Consider selecting top features using normalized magnitude
-            select_indices = np.argsort(circuit_feature_magnitudes)[-num_top_features:]
-            top_feature_idxs = circuit_feature_idxs[select_indices]
+        # Get top features by magnitude
+        num_top_features = max(0, min(16, num_features))  # Limit to 16 features
+        # TODO: Consider selecting top features using normalized magnitude
+        select_indices = np.argsort(circuit_feature_magnitudes)[-num_top_features:]
+        top_feature_idxs = circuit_feature_idxs[select_indices]
 
         # Find rows in layer cache with any of the top features
         row_idxs = np.unique(layer_cache.csc_matrix[:, top_feature_idxs].nonzero()[0])
-
-        # Use random rows selected based on token position if no feature-based candidates
-        if len(row_idxs) == 0:
-            num_blocks = layer_cache.magnitudes.shape[0] // block_size  # type: ignore
-            sample_idxs = np.random.choice(range(num_blocks), size=k_nearest, replace=True)
-            row_idxs = sample_idxs * block_size + token_idx
 
         # Create matrix of token magnitudes to sample from
         candidate_samples = layer_cache.csc_matrix[:, circuit_feature_idxs][row_idxs, :].toarray()
@@ -230,7 +220,6 @@ class ClusterSearch:
 
         # Get nearest neighbors
         num_neighbors = min(k_nearest, len(row_idxs))
-        # TODO: Consider removing first exact match to avoid duplicating original values
         argsort_idxs = np.argsort(mses)[:num_neighbors]
         cluster_idxs = tuple(row_idxs[argsort_idxs].tolist())
         cluster_mses = tuple(mses[argsort_idxs].tolist())

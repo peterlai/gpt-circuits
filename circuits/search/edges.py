@@ -48,28 +48,59 @@ class EdgeSearch:
         self,
         tokens: list[int],
         target_token_idx: int,
-        upstream_nodes: frozenset[Node],
-        downstream_nodes: frozenset[Node],
-    ) -> EdgeSearchResult:
+        circuit_nodes: frozenset[Node],
+    ) -> tuple[dict[Edge, float], dict[Node, dict[int, float]]]:
         """
-        Map each edge in a sparsified model to a normalized MSE increase that results from its ablation.
+        Find the edges in a circuit and map them to a value representing their importance.
 
-        :param tokens: The token sequence to use for circuit extraction.
-        :param upstream_nodes: The upstream nodes to use for circuit analysis.
-        :param downstream_nodes: The downstream nodes to use for circuit analsysi.
+        :param tokens: The tokens to use for circuit extraction.
+        :param target_token_idx: The target token index to use for circuit extraction.
+        :param circuit_nodes: The nodes in the circuit to use for edge extraction.
+
+        :return: A tuple containing:
+            - A dictionary mapping edges to their importance.
+            - A dictionary mapping nodes to a mapping of upstream token indices to their importance.
         """
-        assert len(downstream_nodes) > 0
-        downstream_idx = next(iter(downstream_nodes)).layer_idx
-        upstream_idx = downstream_idx - 1
-
         # Convert tokens to tensor
         input: torch.Tensor = torch.tensor(tokens, device=self.model.config.device).unsqueeze(0)  # Shape: (1, T)
 
         # Get feature magnitudes
         with torch.no_grad():
-            output: SparsifiedGPTOutput = self.model(input)
-        upstream_magnitudes = output.feature_magnitudes[upstream_idx].squeeze(0)  # Shape: (T, F)
-        original_downstream_magnitudes = output.feature_magnitudes[downstream_idx].squeeze(0)  # Shape: (T, F)
+            model_output: SparsifiedGPTOutput = self.model(input)
+
+        edge_importance: dict[Edge, float] = {}
+        token_importance: dict[Node, dict[int, float]] = {}
+
+        # Iterate through each pairs of consecutive layers
+        for layer_idx in range(self.num_layers - 1):
+            upstream_nodes = frozenset(node for node in circuit_nodes if node.layer_idx == layer_idx)
+            downstream_nodes = frozenset(node for node in circuit_nodes if node.layer_idx == layer_idx + 1)
+            search_result = self.find_edges(
+                model_output,
+                upstream_nodes,
+                downstream_nodes,
+                target_token_idx,
+            )
+            edge_importance.update(search_result.edge_importance)
+            token_importance.update(search_result.token_importance)
+        return edge_importance, token_importance
+
+    def find_edges(
+        self,
+        model_output: SparsifiedGPTOutput,
+        upstream_nodes: frozenset[Node],
+        downstream_nodes: frozenset[Node],
+        target_token_idx: int,
+    ) -> EdgeSearchResult:
+        """
+        Map each edge in a sparsified model to a normalized MSE increase that results from its ablation.
+        """
+        assert len(downstream_nodes) > 0
+        downstream_idx = next(iter(downstream_nodes)).layer_idx
+        upstream_idx = downstream_idx - 1
+
+        upstream_magnitudes = model_output.feature_magnitudes[upstream_idx].squeeze(0)  # Shape: (T, F)
+        original_downstream_magnitudes = model_output.feature_magnitudes[downstream_idx].squeeze(0)  # Shape: (T, F)
 
         # Find all edges that could exist between upstream and downstream nodes
         all_edges = set()
@@ -267,3 +298,10 @@ class EdgeSearch:
             normalized_mse = torch.mean((norm_coefficients[i] * (sampled_magnitudes - original_magnitude)) ** 2)
             downstream_mses[node] = normalized_mse.item()
         return downstream_mses
+
+    @property
+    def num_layers(self) -> int:
+        """
+        Get the number of SAE layers in the model.
+        """
+        return self.model.gpt.config.n_layer + 1  # Add 1 for the embedding layer
