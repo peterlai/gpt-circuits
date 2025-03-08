@@ -95,12 +95,20 @@ def patch_feature_magnitudes(
     with ThreadPoolExecutor() as executor:
         futures: dict[Future, Circuit] = {}
         for circuit_variant in circuit_variants:
+            # Create feature mask
+            feature_mask = torch.zeros_like(feature_magnitudes, dtype=torch.bool)
+            layer_nodes = [n for n in circuit_variant.nodes if n.layer_idx == layer_idx]
+            if layer_nodes:
+                token_indices = torch.tensor([node.token_idx for node in layer_nodes])
+                feature_indices = torch.tensor([node.feature_idx for node in layer_nodes])
+                feature_mask[token_indices, feature_indices] = True
+            # Patch feature magnitudes
             future = executor.submit(
                 ablator.patch,
                 layer_idx=layer_idx,
                 target_token_idx=target_token_idx,
                 feature_magnitudes=feature_magnitudes,
-                circuit=circuit_variant,
+                feature_mask=feature_mask,
                 num_samples=num_samples,
             )
             futures[future] = circuit_variant
