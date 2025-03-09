@@ -63,6 +63,7 @@
         font-size: 16px;
         white-space: nowrap;
     }
+
     /* Loader */
     .loading, .error {
         display: flex;
@@ -74,6 +75,52 @@
     }
     .error .icon {
         color: red;
+    }
+
+    /* Menu */
+    ul.menu {
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 3;
+        width: 220px;
+        background: #fff;
+        border-radius: 5px;
+        box-shadow: 0 5px 10px rgba(0, 0, 0, 0.15);
+        z-index: 10;
+        padding: 5px 0;
+        margin: 0;
+        list-style: none;
+        overflow: hidden;
+
+        li.header {
+            padding: 10px;
+            color: #888;
+            border-bottom: 1px solid #aaa;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+
+        li.option {
+            padding: 10px;
+            cursor: pointer;
+            color: #333;
+
+            &:hover {
+                background: #eee;
+            }
+
+            h4 {
+                margin: 0;
+                padding: 0;
+            }
+            p {
+                font-size: 12px;
+                margin: 0;
+                padding: 5px 0 0;
+                white-space: normal;
+            }
+        }
     }
 
     /* Header */
@@ -94,6 +141,29 @@
 
         .icon {
             padding: 0 2px;
+        }
+
+        .dropdown-icon {
+            font-size: 12px;
+            padding-left: 5px;
+            padding-top: 2px;
+        }
+    }
+
+    /* Circuit predictions */
+    .circuit-prediction {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .layer-location {
+        position: relative;
+        cursor: pointer;
+
+        &:hover {
+            color: #fff;
+
+            .layer { opacity: 1; }
         }
     }
 
@@ -181,51 +251,6 @@
                 font-size: 12px;
                 padding-left: 5px;
                 padding-bottom: 2px;
-            }
-        }
-
-        ul {
-            position: absolute;
-            top: 0;
-            left: 0;
-            z-index: 3;
-            width: 220px;
-            background: #fff;
-            border-radius: 5px;
-            box-shadow: 0 5px 10px rgba(0, 0, 0, 0.15);
-            z-index: 10;
-            padding: 5px 0;
-            margin: 0;
-            list-style: none;
-            overflow: hidden;
-        }
-
-        li.header {
-            padding: 10px;
-            color: #888;
-            border-bottom: 1px solid #aaa;
-            font-size: 12px;
-            text-transform: uppercase;
-        }
-
-        li.option {
-            padding: 10px;
-            cursor: pointer;
-            color: #333;
-
-            &:hover {
-                background: #eee;
-            }
-
-            h4 {
-                margin: 0;
-                padding: 0;
-            }
-            p {
-                font-size: 12px;
-                margin: 0;
-                padding: 5px 0 0;
-                white-space: normal;
             }
         }
     }

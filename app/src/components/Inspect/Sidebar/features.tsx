@@ -83,14 +83,14 @@ function FeatureSidebar({ feature }: { feature: BlockFeatureData }) {
 }
 
 function FeatureSidebarSamplingStrategy() {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [strategy, setStrategy] = useAtom(samplingStrategyAtom);
 
   return (
     <div
       className="feature-sampling-strategy"
-      onClick={() => setIsOpen(!isOpen)}
-      onBlur={() => setIsOpen(false)}
+      onClick={() => setIsMenuOpen(!isMenuOpen)}
+      onBlur={() => setIsMenuOpen(false)}
       tabIndex={0}
     >
       <span className="selected-option">
@@ -102,8 +102,8 @@ function FeatureSidebarSamplingStrategy() {
         <FaChevronDown className="icon" />
       </span>
 
-      {isOpen && (
-        <ul>
+      {isMenuOpen && (
+        <ul className="menu">
           <li className="header">Sampling Strategy</li>
           <li className="option" onClick={() => setStrategy(SamplingStrategies.Cluster)}>
             <h4>From Cluster</h4>

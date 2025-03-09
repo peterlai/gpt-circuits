@@ -1,7 +1,8 @@
 import { useAtom, useAtomValue } from "jotai";
 
 import classNames from "classnames";
-import { FaLayerGroup } from "react-icons/fa6";
+import { useState } from "react";
+import { FaChevronDown, FaLayerGroup } from "react-icons/fa6";
 import { probabilitiesAtom, targetTokenAtom } from "../../../stores/Graph";
 import { layerProfilesAtom } from "../../../stores/Layer";
 import { predictionDataAtom } from "../../../stores/Prediction";
@@ -50,7 +51,9 @@ function LLMPrediction() {
 
 function CircuitPrediction() {
   const layerProfiles = useAtomValue(layerProfilesAtom);
-  const focusedLayerIdx = useAtomValue(selectedLayerIdxAtom) || layerProfiles.length - 1;
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [selectedLayerIdx, setSelectedLayerIdx] = useAtom(selectedLayerIdxAtom);
+  const focusedLayerIdx = selectedLayerIdx === null ? layerProfiles.length - 1 : selectedLayerIdx;
   if (!layerProfiles || layerProfiles.length === 0) {
     return <></>;
   }
@@ -59,12 +62,30 @@ function CircuitPrediction() {
 
   return (
     <section className="circuit-prediction">
-      <h3 className="layer-location">
+      <h3
+        className="layer-location"
+        onClick={() => setIsMenuOpen(!isMenuOpen)}
+        onBlur={() => setIsMenuOpen(false)}
+        tabIndex={0}
+      >
         Prediction Using{" "}
         <span className="layer">
           <FaLayerGroup className="icon" />
           {focusedLayerIdx > 0 ? `${focusedLayerIdx}` : "Embedding"}
+          <FaChevronDown className="dropdown-icon" />
         </span>
+        {isMenuOpen && (
+          <ul className="menu">
+            <li className="header">Layers</li>
+            {layerProfiles.map((layerProfile, i) => (
+              <li key={i} className="option" onClick={() => setSelectedLayerIdx(i)}>
+                <h4>
+                  {i > 0 ? `Layer ${i}` : "Embedding"} &ndash; {layerProfile.kld.toFixed(2)}
+                </h4>
+              </li>
+            ))}
+          </ul>
+        )}
       </h3>
       <ProbabilitiesTable probabilities={probabilities} />
     </section>
@@ -81,7 +102,7 @@ function KldSection() {
 
   return (
     <>
-      <header>KL Divergence</header>
+      <header>KL Divergence by Layer</header>
       <section className="klds">
         <table className="charts-css column show-primary-axis show-labels data-spacing-1">
           <tbody>
