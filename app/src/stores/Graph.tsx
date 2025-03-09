@@ -58,13 +58,7 @@ const probabilitiesAtom = atom<{ [key: string]: number }>(
   (get) => get(sampleDataAtom).data?.probabilities ?? {}
 );
 
-// Predicted next tokens (using x_reconstructed)
-const circuitProbabilitiesAtom = atom<{ [key: string]: number }>(
-  (get) => get(sampleDataAtom).data?.layerProbabilities?.[get(numLayersAtom) - 1] ?? {}
-);
-
 export {
-  circuitProbabilitiesAtom,
   contextLengthAtom,
   modelIdAtom,
   numLayersAtom,

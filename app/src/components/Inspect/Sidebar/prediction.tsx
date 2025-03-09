@@ -1,10 +1,7 @@
 import { useAtom, useAtomValue } from "jotai";
 
-import {
-  circuitProbabilitiesAtom,
-  probabilitiesAtom,
-  targetTokenAtom,
-} from "../../../stores/Graph";
+import { probabilitiesAtom, targetTokenAtom } from "../../../stores/Graph";
+import { layerProfilesAtom } from "../../../stores/Layer";
 import { predictionDataAtom } from "../../../stores/Prediction";
 import { ProbabilitiesTable } from "../ProbabilitiesTable";
 import { ErrorMessage, LoadingMessage } from "./loading";
@@ -48,7 +45,9 @@ function LLMPrediction() {
 }
 
 function CircuitPrediction() {
-  const probabilities = useAtomValue(circuitProbabilitiesAtom);
+  const layerProfiles = useAtomValue(layerProfilesAtom);
+  const probabilities =
+    layerProfiles.length > 0 ? layerProfiles[layerProfiles.length - 1].probabilities : null;
   if (!probabilities || Object.keys(probabilities).length === 0) {
     return <></>;
   }
