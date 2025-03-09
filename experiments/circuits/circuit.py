@@ -116,6 +116,8 @@ if __name__ == "__main__":
             "layer_idx": layer_idx,
             "threshold": threshold,
             "nodes": grouped_nodes,
+            "kld": round(search_result.klds[layer_idx], 4),
+            "predictions": search_result.predictions[layer_idx],
         }
         circuit_dir.mkdir(parents=True, exist_ok=True)
         with open(circuit_dir / f"nodes.{layer_idx}.json", "w") as f:

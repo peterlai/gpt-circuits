@@ -15,13 +15,8 @@ from circuits import Circuit, Edge, Node, json_prettyprint
 from circuits.features.cache import ModelCache
 from circuits.features.profiles import FeatureProfile, ModelProfile
 from circuits.features.samples import ModelSampleSet, Sample
-from circuits.search.ablation import ResampleAblator
 from circuits.search.clustering import ClusterSearch
-from circuits.search.divergence import (
-    get_predicted_logits,
-    get_predictions,
-    patch_feature_magnitudes,
-)
+from circuits.search.divergence import get_predictions
 from config import Config, TrainingConfig
 from config.gpt.models import GPTConfig
 from data.dataloaders import DatasetShard
@@ -84,15 +79,22 @@ def main():
 
     # Gather circuit nodes
     node_importance: dict[Node, float] = {}
+    layer_klds: dict[int, float] = {}
+    layer_predictions: dict[int, dict[str, float]] = {}
     for layer_idx in range(model.gpt.config.n_layer + 1):
         with open(circuit_dir / f"nodes.{layer_idx}.json", "r") as f:
             data = json.load(f)
+            # Load nodes
             for token_str, features in data["nodes"].items():
                 token_idx = int(token_str)
                 for feature_str, kld in features.items():
                     feature_idx = int(feature_str)
                     node = Node(layer_idx, token_idx, feature_idx)
                     node_importance[node] = kld
+            # Load KLD
+            layer_klds[layer_idx] = data["kld"]
+            # Load predictions
+            layer_predictions[layer_idx] = data["predictions"]
 
     # Gather circuit edges
     edge_importance: dict[Edge, float] = {}
@@ -154,6 +156,8 @@ def main():
         circuit,
         edge_importance,
         token_importance,
+        layer_klds,
+        layer_predictions,
         target_token_idx,
         args.threshold,
     )
@@ -578,6 +582,8 @@ def export_circuit_data(
     circuit: Circuit,
     edge_importance: dict[Edge, float],
     token_importance: dict[Node, dict[int, float]],
+    layer_klds: dict[int, float],
+    layer_predictions: dict[int, dict[str, float]],
     target_token_idx: int,
     threshold: float,
 ):
@@ -599,6 +605,11 @@ def export_circuit_data(
         "kldThreshold": threshold,
     }
 
+    # Set KLDs
+    data["klds"] = {}
+    for layer_idx in range(model.gpt.config.n_layer + 1):
+        data["klds"][layer_idx] = round(layer_klds[layer_idx], 3)
+
     # Set feature magnitudes
     data["activations"] = {}
     data["normalizedActivations"] = {}
@@ -614,25 +625,12 @@ def export_circuit_data(
     data["probabilities"] = {k: round(v / 100.0, 3) for k, v in probabilities.items() if v > 0.1}
 
     # Set circuit probabilities
-    ablator = ResampleAblator(model_profile, model_cache, 128, 0.0)
-    last_layer_idx = model.gpt.config.n_layer
-    feature_magnitudes = output.feature_magnitudes[last_layer_idx][0]
-    patched_feature_magnitudes = patch_feature_magnitudes(
-        ablator,
-        last_layer_idx,
-        target_token_idx,
-        [circuit],
-        feature_magnitudes,
-        num_samples=128,
-    )
-    predicted_logits = get_predicted_logits(
-        model,
-        last_layer_idx,
-        patched_feature_magnitudes,
-        target_token_idx,
-    )[circuit]
-    predicted_probabilities = get_predictions(model.gpt.config.tokenizer, predicted_logits, 128)
-    data["circuitProbabilities"] = {k: round(v / 100.0, 3) for k, v in predicted_probabilities.items() if v > 0.1}
+    data["layerProbabilities"] = {}
+    for layer_idx in range(model.gpt.config.n_layer + 1):
+        layer_probabilities = layer_predictions[layer_idx]
+        data["layerProbabilities"][layer_idx] = {
+            k: round(v / 100.0, 3) for k, v in layer_probabilities.items() if v > 0.1
+        }
 
     # Set ablation graph
     data["graph"] = {}
