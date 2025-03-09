@@ -28,7 +28,7 @@ function PredictionHeader() {
   return (
     <header>
       <span>
-        Next token after <pre className="token">{targetToken}</pre>
+        Next Token After <pre className="token">{targetToken}</pre>
       </span>
     </header>
   );
@@ -60,7 +60,7 @@ function CircuitPrediction() {
   return (
     <section className="circuit-prediction">
       <h3 className="layer-location">
-        Prediction using{" "}
+        Prediction Using{" "}
         <span className="layer">
           <FaLayerGroup className="icon" />
           {focusedLayerIdx > 0 ? `${focusedLayerIdx}` : "Embedding"}
