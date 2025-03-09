@@ -5,7 +5,7 @@ from typing import Sequence
 import torch
 
 from circuits import Circuit
-from circuits.search.ablation import Ablator
+from circuits.search.ablation import ResampleAblator
 from data.tokenizers import Tokenizer
 from models.sparsified import SparsifiedGPT
 
@@ -18,7 +18,7 @@ class Divergence:
 
 def analyze_divergence(
     model: SparsifiedGPT,
-    ablator: Ablator,
+    ablator: ResampleAblator,
     layer_idx: int,
     target_token_idx: int,
     target_logits: torch.Tensor,  # Shape: (V)
@@ -78,7 +78,7 @@ def analyze_divergence(
 
 
 def patch_feature_magnitudes(
-    ablator: Ablator,
+    ablator: ResampleAblator,
     layer_idx: int,
     target_token_idx: int,
     circuit_variants: Sequence[Circuit],

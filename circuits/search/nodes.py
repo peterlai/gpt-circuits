@@ -4,7 +4,7 @@ from typing import Sequence
 import torch
 
 from circuits import Circuit, Node
-from circuits.search.ablation import Ablator
+from circuits.search.ablation import ResampleAblator
 from circuits.search.divergence import analyze_divergence, get_predictions
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
 
@@ -14,7 +14,7 @@ class NodeSearch:
     Search for circuit nodes in a sparsified model.
     """
 
-    def __init__(self, model: SparsifiedGPT, ablator: Ablator, num_samples: int):
+    def __init__(self, model: SparsifiedGPT, ablator: ResampleAblator, num_samples: int):
         """
         :param model: The sparsified model to use for circuit extraction.
         :param ablator: Ablation tecnique to use for circuit extraction.
@@ -27,16 +27,19 @@ class NodeSearch:
     def search(
         self,
         tokens: list[int],
+        downstream_nodes: frozenset[Node],
+        layer_idx: int,
         target_token_idx: int,
         threshold: float,
-    ) -> tuple[frozenset[Node], dict[int, float], dict[int, dict]]:
+    ) -> frozenset[Node]:
         """
-        Find the nodes in a circuit.
+        Search for circuit nodes in the selected layer.
 
-        :return: A tuple containing the following:
-            - A frozenset of nodes in the circuit.
-            - A dictionary mapping layer indices to KL divergence values.
-            - A dictionary mapping layer indices to predictions.
+        :param model_output: The sparsified model output.
+        :param downstream_nodes: The downstream nodes in the circuit.
+        :param layer_idx: The layer index to search in.
+        :param target_token_idx: The target token index.
+        :param threshold: The KL diverence threshold for node extraction.
         """
         # Convert tokens to tensor
         input: torch.Tensor = torch.tensor(tokens, device=self.model.config.device).unsqueeze(0)  # Shape: (1, T)
@@ -45,72 +48,7 @@ class NodeSearch:
         # Get target logits
         with torch.no_grad():
             model_output: SparsifiedGPTOutput = self.model(input)
-        target_logits = model_output.logits.squeeze(0)[target_token_idx]  # Shape: (V)
-        target_predictions = get_predictions(tokenizer, target_logits)
-        print(f"Target predictions: {target_predictions}")
 
-        # Start with an empty set
-        circuit_nodes = frozenset()
-
-        # Add nodes to the circuit by working backwards from the last layer
-        for layer_idx in reversed(range(self.num_layers)):
-            downstream_nodes = frozenset([node for node in circuit_nodes if node.layer_idx == layer_idx + 1])
-            layer_nodes = self.find_layer_nodes(model_output, downstream_nodes, target_token_idx, layer_idx, threshold)
-            circuit_nodes = circuit_nodes | layer_nodes
-
-        # Make circuit look more like a tree
-        selected_nodes = set(circuit_nodes)
-        discarded_nodes = set({})
-        for node in sorted(circuit_nodes):
-            if node.layer_idx > 0:
-                token_idx = node.token_idx
-                upstream_idx = node.layer_idx - 1
-                if not any(n for n in selected_nodes if n.layer_idx == upstream_idx and n.token_idx == token_idx):
-                    selected_nodes.remove(node)
-                    discarded_nodes.add(node)
-        print(f"\nDiscarded the following nodes: {discarded_nodes}")
-
-        # Calculate final KLD for each layer
-        print("\nFinal metrics:")
-        klds: dict[int, float] = {}
-        predictions: dict[int, dict] = {}
-        target_logits = model_output.logits.squeeze(0)[target_token_idx]
-        circuit = Circuit(nodes=frozenset(selected_nodes))
-        for layer_idx in range(self.num_layers):
-            circuit_results = analyze_divergence(
-                self.model,
-                self.ablator,
-                layer_idx,
-                target_token_idx,
-                target_logits,
-                [circuit],
-                model_output.feature_magnitudes[layer_idx].squeeze(0),  # Shape: (T, F)
-                self.num_samples * 4,  # Increase samples for final calculation
-            )[circuit]
-            klds[layer_idx] = circuit_results.kl_divergence
-            predictions[layer_idx] = circuit_results.predictions
-            print(f"Layer {layer_idx} - KLD: {klds[layer_idx]:.4f} - Predictions: {predictions[layer_idx]}")
-
-        # Return selected nodes, KLDs, and predictions
-        return frozenset(selected_nodes), klds, predictions
-
-    def find_layer_nodes(
-        self,
-        model_output: SparsifiedGPTOutput,
-        downstream_nodes: frozenset[Node],
-        target_token_idx: int,
-        layer_idx: int,
-        threshold: float,
-    ) -> frozenset[Node]:
-        """
-        Search for circuit nodes in the selected layer.
-
-        :param model_output: The sparsified model output.
-        :param downstream_nodes: The downstream nodes in the circuit.
-        :param target_token_idx: The target token index.
-        :param layer_idx: The layer index to search in.
-        :param threshold: The KL diverence threshold for node extraction.
-        """
         # Get output for layer
         feature_magnitudes = model_output.feature_magnitudes[layer_idx].squeeze(0)  # Shape: (T, F)
         target_logits = model_output.logits.squeeze(0)[target_token_idx]  # Shape: (V)

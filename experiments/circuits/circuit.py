@@ -14,8 +14,8 @@ import torch
 from circuits import json_prettyprint
 from circuits.features.cache import ModelCache
 from circuits.features.profiles import ModelProfile
-from circuits.search.ablation import ResampleAblator
 from circuits.search.circuits import CircuitSearch
+from circuits.search.divergence import get_predictions
 from config import Config, TrainingConfig
 from data.dataloaders import DatasetShard
 from models.sparsified import SparsifiedGPT
@@ -64,13 +64,7 @@ if __name__ == "__main__":
     # Set feature ablation strategy
     num_samples = 64  # Number of samples to use for estimating KL divergence
     k_nearest = 256  # How many nearest neighbors to consider in resampling
-    positional_coefficient = 2.0  # How important is the position of a feature
-    ablator = ResampleAblator(
-        model_profile,
-        model_cache,
-        k_nearest=k_nearest,
-        positional_coefficient=positional_coefficient,
-    )
+    max_positional_coefficient = 2.0  # How important is the position of a feature
 
     # Load shard
     shard = DatasetShard(dir_path=Path(args.data_dir), split=args.split, shard_idx=args.shard_idx)
@@ -84,8 +78,19 @@ if __name__ == "__main__":
     print(f"Target token: `{decoded_target}` at index {args.token_idx}")
     print(f"Target threshold: {threshold}")
 
+    # Convert tokens to tensor
+    input: torch.Tensor = torch.tensor(tokens, device=model.config.device).unsqueeze(0)  # Shape: (1, T)
+
+    # Get target logits
+    with torch.no_grad():
+        target_logits = model(input).logits.squeeze(0)[target_token_idx]  # Shape: (V)
+        target_predictions = get_predictions(tokenizer, target_logits)
+        print(f"Target predictions: {target_predictions}")
+
     # Start search
-    circuit_search = CircuitSearch(model, model_profile, ablator, num_samples)
+    circuit_search = CircuitSearch(
+        model, model_profile, model_cache, num_samples, k_nearest, max_positional_coefficient
+    )
     search_result = circuit_search.search(tokens, target_token_idx, threshold)
 
     # Print circuit nodes, grouping nodes by layer

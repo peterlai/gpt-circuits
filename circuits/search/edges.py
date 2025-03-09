@@ -5,7 +5,7 @@ import torch
 
 from circuits import Circuit, Edge, Node
 from circuits.features.profiles import ModelProfile
-from circuits.search.ablation import Ablator
+from circuits.search.ablation import ResampleAblator
 from circuits.search.divergence import (
     compute_downstream_magnitudes,
     patch_feature_magnitudes,
@@ -32,62 +32,27 @@ class EdgeSearch:
     Analyze edge importance in a circuit by ablating each edge between two adjacent layers.
     """
 
-    def __init__(self, model: SparsifiedGPT, model_profile: ModelProfile, ablator: Ablator, num_samples: int):
+    def __init__(
+        self,
+        model: SparsifiedGPT,
+        model_profile: ModelProfile,
+        upstream_ablator: ResampleAblator,
+        num_samples: int,
+    ):
         """
         :param model: The sparsified model to use for circuit analysis.
         :param model_profile: The model profile containing cache feature metrics.
-        :param ablator: Ablation tecnique to use for circuit analysis.
+        :param upstream_ablator: Ablator to use for patching upstream feature magnitudes.
         :param num_samples: The number of samples to use for ablation.
         """
         self.model = model
         self.model_profile = model_profile
-        self.ablator = ablator
+        self.upstream_ablator = upstream_ablator
         self.num_samples = num_samples
 
     def search(
         self,
         tokens: list[int],
-        target_token_idx: int,
-        circuit_nodes: frozenset[Node],
-    ) -> tuple[dict[Edge, float], dict[Node, dict[int, float]]]:
-        """
-        Find the edges in a circuit and map them to a value representing their importance.
-
-        :param tokens: The tokens to use for circuit extraction.
-        :param target_token_idx: The target token index to use for circuit extraction.
-        :param circuit_nodes: The nodes in the circuit to use for edge extraction.
-
-        :return: A tuple containing:
-            - A dictionary mapping edges to their importance.
-            - A dictionary mapping nodes to a mapping of upstream token indices to their importance.
-        """
-        # Convert tokens to tensor
-        input: torch.Tensor = torch.tensor(tokens, device=self.model.config.device).unsqueeze(0)  # Shape: (1, T)
-
-        # Get feature magnitudes
-        with torch.no_grad():
-            model_output: SparsifiedGPTOutput = self.model(input)
-
-        edge_importance: dict[Edge, float] = {}
-        token_importance: dict[Node, dict[int, float]] = {}
-
-        # Iterate through each pairs of consecutive layers
-        for layer_idx in range(self.num_layers - 1):
-            upstream_nodes = frozenset(node for node in circuit_nodes if node.layer_idx == layer_idx)
-            downstream_nodes = frozenset(node for node in circuit_nodes if node.layer_idx == layer_idx + 1)
-            search_result = self.find_edges(
-                model_output,
-                upstream_nodes,
-                downstream_nodes,
-                target_token_idx,
-            )
-            edge_importance.update(search_result.edge_importance)
-            token_importance.update(search_result.token_importance)
-        return edge_importance, token_importance
-
-    def find_edges(
-        self,
-        model_output: SparsifiedGPTOutput,
         upstream_nodes: frozenset[Node],
         downstream_nodes: frozenset[Node],
         target_token_idx: int,
@@ -98,6 +63,13 @@ class EdgeSearch:
         assert len(downstream_nodes) > 0
         downstream_idx = next(iter(downstream_nodes)).layer_idx
         upstream_idx = downstream_idx - 1
+
+        # Convert tokens to tensor
+        input: torch.Tensor = torch.tensor(tokens, device=self.model.config.device).unsqueeze(0)  # Shape: (1, T)
+
+        # Get feature magnitudes
+        with torch.no_grad():
+            model_output: SparsifiedGPTOutput = self.model(input)
 
         upstream_magnitudes = model_output.feature_magnitudes[upstream_idx].squeeze(0)  # Shape: (T, F)
         original_downstream_magnitudes = model_output.feature_magnitudes[downstream_idx].squeeze(0)  # Shape: (T, F)
@@ -263,7 +235,7 @@ class EdgeSearch:
         circuit_variants = [Circuit(nodes=dependencies) for dependencies in dependencies_to_nodes.keys()]
         upstream_layer_idx = next(iter(downstream_nodes)).layer_idx - 1
         patched_upstream_magnitudes = patch_feature_magnitudes(  # Shape: (num_samples, T, F)
-            self.ablator,
+            self.upstream_ablator,
             upstream_layer_idx,
             target_token_idx,
             circuit_variants,

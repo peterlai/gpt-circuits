@@ -1,5 +1,3 @@
-from typing import Protocol
-
 import numpy as np
 import torch
 
@@ -8,34 +6,7 @@ from circuits.features.profiles import ModelProfile
 from circuits.search.clustering import ClusterSearch
 
 
-class Ablator(Protocol):
-    """
-    Ablation interface.
-    """
-
-    def patch(
-        self,
-        layer_idx: int,
-        target_token_idx: int,
-        feature_magnitudes: torch.Tensor,
-        feature_mask: torch.Tensor,
-        num_samples: int,
-    ) -> torch.Tensor:
-        """
-        Patch feature magnitudes and return `num_samples` samples.
-
-        :param layer_idx: Layer index from which feature magnitudes are taken.
-        :param target_token_idx: Target token index for which logits are evaluated.
-        :param feature_magnitudes: Feature magnitudes to patch. Shape: (T, F)
-        :param feature_mask: Features magnitudes to preserve. Shape: (T, F)
-        :param num_samples: Number of samples to return.
-
-        :return: Patched feature magnitudes. Shape: (B, T, F)
-        """
-        ...
-
-
-class ResampleAblator(Ablator):
+class ResampleAblator:
     """
     Ablation using resampling. Based on technique described here:
     https://www.lesswrong.com/posts/JvZhhzycHu2Yd57RN
@@ -70,6 +41,14 @@ class ResampleAblator(Ablator):
         """
         Resample feature magnitudes using cached values, returning `num_samples` samples.
         Samples are drawn from `k_nearest` most similar rows in the cache.
+
+        :param layer_idx: Layer index from which feature magnitudes are taken.
+        :param target_token_idx: Target token index for which logits are evaluated.
+        :param feature_magnitudes: Feature magnitudes to patch. Shape: (T, F)
+        :param feature_mask: Features magnitudes to preserve. Shape: (T, F)
+        :param num_samples: Number of samples to return.
+
+        :return: Patched feature magnitudes. Shape: (B, T, F)
         """
         # Construct empty samples
         samples_shape = (num_samples,) + feature_magnitudes.shape
@@ -143,26 +122,20 @@ class ResampleAblator(Ablator):
         return token_idx, torch.tensor(token_samples)
 
 
-class ZeroAblator(Ablator):
+class ZeroAblator:
     """
     Ablation using zeroing of patched features.
     """
 
     def patch(
         self,
-        layer_idx: int,
-        target_token_idx: int,
         feature_magnitudes: torch.Tensor,  # Shape: (T, F)
         feature_mask: torch.Tensor,  # Shape: (T, F)
-        num_samples: int,
-    ) -> torch.Tensor:  # Shape: (B, T, F)
+    ) -> torch.Tensor:  # Shape: (T, F)
         """
-        Set non-circuit features to zero and duplicate the result S times. (Useful for debugging)
+        Set non-circuit features to zero.
         """
         # Zero-ablate non-circuit features
         patched_feature_magnitudes = torch.zeros_like(feature_magnitudes)
         patched_feature_magnitudes[feature_mask] = feature_magnitudes[feature_mask]
-
-        # Duplicate feature magnitudes `num_samples` times
-        patched_samples = patched_feature_magnitudes.unsqueeze(0).expand(num_samples, -1, -1)  # Shape: (B, T, F)
-        return patched_samples
+        return patched_feature_magnitudes
