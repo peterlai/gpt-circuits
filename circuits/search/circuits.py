@@ -12,17 +12,16 @@ from circuits.search.nodes import NodeSearch
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
 
 
-@dataclass(frozen=True)
+@dataclass
 class CircuitResult:
     """
     Result of a circuit search.
     """
 
     circuit: Circuit  # Circuit found
-    klds: dict[int, float]  # layer idx -> KL divergence using the nodes on that layer
-    predictions: dict[int, dict]  # layer idx -> predictions from using nodes on that layer
     edge_importance: dict[Edge, float]  # edge -> importance
     token_importance: dict[Node, dict[int, float]]  # node -> upstream token idx -> importance
+    node_importance: dict[Node, float]  # node -> KLD ceiling without node
 
 
 class CircuitSearch:
@@ -64,15 +63,12 @@ class CircuitSearch:
         Search for a circuit in the model.
         """
         # Add nodes to the circuit
-        circuit_nodes = frozenset()
+        ranked_nodes = frozenset()
         for layer_idx in range(self.num_layers):
-            upstream_nodes = frozenset([node for node in circuit_nodes if node.layer_idx == layer_idx - 1])
+            upstream_nodes = frozenset([rn.node for rn in ranked_nodes if rn.node.layer_idx == layer_idx - 1])
             node_search = NodeSearch(self.model, self.create_ablator(layer_idx), self.num_samples)
             layer_nodes = node_search.search(tokens, upstream_nodes, layer_idx, target_token_idx, threshold)
-            circuit_nodes = circuit_nodes | layer_nodes
-
-        # Make circuit look more like a tree
-        # circuit_nodes = self.prune_tree(circuit_nodes)
+            ranked_nodes = ranked_nodes | layer_nodes
 
         # Iterate through each pairs of consecutive layers to calculate edge importance
         edge_importance: dict[Edge, float] = {}
@@ -80,38 +76,23 @@ class CircuitSearch:
         for upstream_layer_idx in range(self.num_layers - 1):
             upstream_ablator = self.create_ablator(upstream_layer_idx)
             edge_search = EdgeSearch(self.model, self.model_profile, upstream_ablator, self.num_samples)
-            upstream_nodes = frozenset(node for node in circuit_nodes if node.layer_idx == upstream_layer_idx)
-            downstream_nodes = frozenset(node for node in circuit_nodes if node.layer_idx == upstream_layer_idx + 1)
+            upstream_nodes = frozenset(rn.node for rn in ranked_nodes if rn.node.layer_idx == upstream_layer_idx)
+            downstream_nodes = frozenset(rn.node for rn in ranked_nodes if rn.node.layer_idx == upstream_layer_idx + 1)
             search_result = edge_search.search(tokens, upstream_nodes, downstream_nodes, target_token_idx)
             edge_importance.update(search_result.edge_importance)
             token_importance.update(search_result.token_importance)
 
         # Return circuit
-        circuit = Circuit(nodes=circuit_nodes)
-        klds, predictions = self.calculate_klds(tokens, circuit_nodes, target_token_idx)
-        return CircuitResult(circuit, klds, predictions, edge_importance, token_importance)
-
-    def prune_tree(self, circuit_nodes: frozenset[Node]) -> frozenset[Node]:
-        """
-        Remove downstream nodes that do not have any upstream nodes directly above them.
-        """
-        selected_nodes = set(circuit_nodes)
-        discarded_nodes = set({})
-        for node in sorted(circuit_nodes):
-            if node.layer_idx > 0:
-                token_idx = node.token_idx
-                upstream_idx = node.layer_idx - 1
-                if not any(n for n in selected_nodes if n.layer_idx == upstream_idx and n.token_idx == token_idx):
-                    selected_nodes.remove(node)
-                    discarded_nodes.add(node)
-
-        print(f"\nDiscarded the following nodes: {discarded_nodes}")
-        return frozenset(selected_nodes)
+        circuit_nodes = frozenset(rn.node for rn in ranked_nodes)
+        circuit_edges = frozenset(edge for edge in edge_importance if edge in circuit_nodes)
+        circuit = Circuit(nodes=circuit_nodes, edges=circuit_edges)
+        node_importance = {rn.node: rn.kld for rn in ranked_nodes}
+        return CircuitResult(circuit, edge_importance, token_importance, node_importance)
 
     def calculate_klds(
         self,
+        circuit: Circuit,
         tokens: list[int],
-        circuit_nodes: frozenset[Node],
         target_token_idx: int,
     ) -> tuple[dict[int, float], dict[int, dict]]:
         """
@@ -133,7 +114,6 @@ class CircuitSearch:
         klds: dict[int, float] = {}
         predictions: dict[int, dict] = {}
         target_logits = model_output.logits.squeeze(0)[target_token_idx]
-        circuit = Circuit(nodes=circuit_nodes)
         for layer_idx in range(self.num_layers):
             circuit_results = analyze_divergence(
                 self.model,

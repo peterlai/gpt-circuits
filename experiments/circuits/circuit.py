@@ -92,6 +92,7 @@ if __name__ == "__main__":
         model, model_profile, model_cache, num_samples, k_nearest, max_positional_coefficient
     )
     search_result = circuit_search.search(tokens, target_token_idx, threshold)
+    klds, predictions = circuit_search.calculate_klds(search_result.circuit, tokens, target_token_idx)
 
     # Print circuit nodes, grouping nodes by layer
     print("\nCircuit nodes:")
@@ -103,8 +104,8 @@ if __name__ == "__main__":
         # Group features by token idx
         grouped_nodes = defaultdict(dict)
         for node in layer_nodes:
-            # Map feature indices to KL divergence
-            grouped_nodes[node.token_idx][node.feature_idx] = 0.0
+            # Map feature indices to KLD ceilings
+            grouped_nodes[node.token_idx][node.feature_idx] = search_result.node_importance[node]
 
         # Export layer
         data = {
@@ -116,8 +117,8 @@ if __name__ == "__main__":
             "layer_idx": layer_idx,
             "threshold": threshold,
             "nodes": grouped_nodes,
-            "kld": round(search_result.klds[layer_idx], 4),
-            "predictions": search_result.predictions[layer_idx],
+            "kld": round(klds[layer_idx], 4),
+            "predictions": predictions[layer_idx],
         }
         circuit_dir.mkdir(parents=True, exist_ok=True)
         with open(circuit_dir / f"nodes.{layer_idx}.json", "w") as f:

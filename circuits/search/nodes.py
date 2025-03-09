@@ -1,4 +1,5 @@
 import math
+from dataclasses import dataclass
 from typing import Sequence
 
 import torch
@@ -7,6 +8,17 @@ from circuits import Circuit, Node
 from circuits.search.ablation import ResampleAblator
 from circuits.search.divergence import analyze_divergence, get_predictions
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
+
+
+@dataclass(frozen=True)
+class RankedNode:
+    """
+    A node and its importance.
+    """
+
+    node: Node
+    rank: int  # Node importance
+    kld: float  # KLD ceiling associated with this node
 
 
 class NodeSearch:
@@ -31,7 +43,7 @@ class NodeSearch:
         layer_idx: int,
         target_token_idx: int,
         threshold: float,
-    ) -> frozenset[Node]:
+    ) -> frozenset[RankedNode]:
         """
         Search for circuit nodes in the selected layer.
 
@@ -83,7 +95,7 @@ class NodeSearch:
         baseline_kld = basline_results.kl_divergence
 
         # Narrow down nodes to consider by selecting token indices that are most likely to be important
-        print(f"\nSearching for tokens in layer {layer_idx} with important information...")
+        print(f"\nSelecting tokens in layer {layer_idx} with important information...")
         circuit_candidates = self.select_nodes_by_token_idx(
             layer_idx,
             target_token_idx,
@@ -107,20 +119,20 @@ class NodeSearch:
 
         # Walk backwards through ranked nodes and stop when KL divergence is below search threshold.
         # NOTE: KL divergence does not monotonically decrease, which is why we need to walk backwards.
-        selected_nodes = set({})
+        selected_nodes: set[RankedNode] = set()
         previous_klds = []
-        for node, kld in reversed(ranked_nodes):
+        for ranked_node in reversed(ranked_nodes):
             # Stop if KLD is greater than average of previous 3 values
-            if len(previous_klds) >= 3 and kld > sum(previous_klds[-3:]) / 3:
+            if len(previous_klds) >= 3 and ranked_node.kld > sum(previous_klds[-3:]) / 3:
                 break
             # Add node to layer
-            selected_nodes.add(node)
+            selected_nodes.add(ranked_node)
             # Stop if KLD is below search threshold
-            if kld < threshold:
+            if ranked_node.kld < threshold:
                 break
-            previous_klds.append(kld)
+            previous_klds.append(ranked_node.kld)
 
-        print(f"Added the following nodes to layer {layer_idx}: {selected_nodes}")
+        print(f"Added the following nodes to layer {layer_idx}: {[rn.node for rn in selected_nodes]}")
         return frozenset(selected_nodes)
 
     def rank_nodes(
@@ -130,12 +142,12 @@ class NodeSearch:
         target_logits: torch.Tensor,
         feature_magnitudes: torch.Tensor,
         layer_nodes: frozenset[Node],
-    ) -> list[tuple[Node, float]]:
+    ) -> list[RankedNode]:
         """
         Rank the nodes in a layer from least to most important.
         """
         # Nodes ordered by when they were removed from the circuit
-        ranked_nodes: list[tuple[Node, float]] = []
+        ranked_nodes: list[RankedNode] = []
 
         # Starting search states
         initial_nodes = layer_nodes
@@ -169,7 +181,7 @@ class NodeSearch:
 
             # Map discard candidates to current KL divergence
             for node in discard_candidates:
-                ranked_nodes.append((node, circuit_analysis.kl_divergence))
+                ranked_nodes.append(RankedNode(node, len(layer_nodes), circuit_analysis.kl_divergence))
 
             # Print results
             print(
