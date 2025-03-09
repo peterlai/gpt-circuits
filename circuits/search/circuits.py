@@ -63,16 +63,16 @@ class CircuitSearch:
         """
         Search for a circuit in the model.
         """
-        # Add nodes to the circuit by working backwards from the last layer
+        # Add nodes to the circuit
         circuit_nodes = frozenset()
-        for layer_idx in reversed(range(self.num_layers)):
-            downstream_nodes = frozenset([node for node in circuit_nodes if node.layer_idx == layer_idx + 1])
+        for layer_idx in range(self.num_layers):
+            upstream_nodes = frozenset([node for node in circuit_nodes if node.layer_idx == layer_idx - 1])
             node_search = NodeSearch(self.model, self.create_ablator(layer_idx), self.num_samples)
-            layer_nodes = node_search.search(tokens, downstream_nodes, layer_idx, target_token_idx, threshold)
+            layer_nodes = node_search.search(tokens, upstream_nodes, layer_idx, target_token_idx, threshold)
             circuit_nodes = circuit_nodes | layer_nodes
 
         # Make circuit look more like a tree
-        circuit_nodes = self.prune_tree(circuit_nodes)
+        # circuit_nodes = self.prune_tree(circuit_nodes)
 
         # Iterate through each pairs of consecutive layers to calculate edge importance
         edge_importance: dict[Edge, float] = {}

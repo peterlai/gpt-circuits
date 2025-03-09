@@ -27,7 +27,7 @@ class NodeSearch:
     def search(
         self,
         tokens: list[int],
-        downstream_nodes: frozenset[Node],
+        upstream_nodes: frozenset[Node],
         layer_idx: int,
         target_token_idx: int,
         threshold: float,
@@ -36,14 +36,13 @@ class NodeSearch:
         Search for circuit nodes in the selected layer.
 
         :param model_output: The sparsified model output.
-        :param downstream_nodes: The downstream nodes in the circuit.
+        :param upstream_nodes: The upstream nodes in the circuit.
         :param layer_idx: The layer index to search in.
         :param target_token_idx: The target token index.
         :param threshold: The KL diverence threshold for node extraction.
         """
         # Convert tokens to tensor
         input: torch.Tensor = torch.tensor(tokens, device=self.model.config.device).unsqueeze(0)  # Shape: (1, T)
-        tokenizer = self.model.gpt.config.tokenizer
 
         # Get target logits
         with torch.no_grad():
@@ -53,8 +52,13 @@ class NodeSearch:
         feature_magnitudes = model_output.feature_magnitudes[layer_idx].squeeze(0)  # Shape: (T, F)
         target_logits = model_output.logits.squeeze(0)[target_token_idx]  # Shape: (V)
 
-        # If searching for nodes in the last layer, set start_token_idx to target_token_idx.
-        start_token_idx = target_token_idx if layer_idx == self.num_layers - 1 else 0
+        # Set starting token index
+        if layer_idx == self.num_layers - 1:
+            # In the last layer, we only care about the target token.
+            start_token_idx = target_token_idx
+        else:
+            # Tokens before the leftmost upstream node are not important.
+            start_token_idx = min([node.token_idx for node in upstream_nodes] or [0])
 
         # Get non-zero features where token index is in [start_token_idx...target_token_idx]
         layer_nodes = set({})
@@ -80,13 +84,13 @@ class NodeSearch:
 
         # Narrow down nodes to consider by selecting token indices that are most likely to be important
         print(f"\nSearching for tokens in layer {layer_idx} with important information...")
-        circuit_candidates = self.select_tokens(
+        circuit_candidates = self.select_nodes_by_token_idx(
             layer_idx,
             target_token_idx,
             target_logits,
             feature_magnitudes,
             layer_nodes,
-            downstream_nodes,
+            upstream_nodes,
             threshold=threshold / 2,  # Use lower threshold for coarse search
             max_count=16,  # Limit to 16 token indices
         )
@@ -217,14 +221,14 @@ class NodeSearch:
         least_important_nodes = set([node for node, _ in sorted_nodes[:max_count]])
         return least_important_nodes
 
-    def select_tokens(
+    def select_nodes_by_token_idx(
         self,
         layer_idx: int,
         target_token_idx: int,
         target_logits: torch.Tensor,
         feature_magnitudes: torch.Tensor,
         layer_nodes: frozenset[Node],
-        downstream_nodes: frozenset[Node],
+        upstream_nodes: frozenset[Node],
         threshold: float,
         max_count: int,
     ) -> frozenset[Node]:
@@ -236,65 +240,68 @@ class NodeSearch:
         for token_idx in range(target_token_idx + 1):
             nodes_by_token_idx[token_idx] = set({node for node in layer_nodes if node.token_idx == token_idx})
 
-        # Starting search states
-        selected_nodes: frozenset[Node] = frozenset()  # Starting nodes share token indices with downstream nodes
-        for downstream_idx in {node.token_idx for node in downstream_nodes}:
+        # Select nodes that share token indices with upstream nodes and include nodes at the target index.
+        selected_nodes: frozenset[Node] = frozenset(nodes_by_token_idx[target_token_idx])
+        for downstream_idx in {node.token_idx for node in upstream_nodes}:
             selected_nodes = frozenset(selected_nodes | nodes_by_token_idx[downstream_idx])
-        new_nodes: set[Node] = set({})
 
-        # Start search
-        while selected_nodes is not layer_nodes:
-            # Update circuit
-            selected_nodes = frozenset(selected_nodes | new_nodes)
-            selected_token_idxs = {node.token_idx for node in selected_nodes}
+        # If no upstream nodes, start search for new token indices.
+        if not upstream_nodes:
+            new_nodes: set[Node] = set({})
 
-            # Compute KL divergence
-            circuit = Circuit(nodes=selected_nodes)
-            circuit_analysis = analyze_divergence(
-                self.model,
-                self.ablator,
-                layer_idx,
-                target_token_idx,
-                target_logits,
-                [circuit],
-                feature_magnitudes,
-                num_samples=self.num_samples,
-            )[circuit]
+            # Start search
+            while selected_nodes is not layer_nodes:
+                # Update circuit
+                selected_nodes = frozenset(selected_nodes | new_nodes)
+                selected_token_idxs = {node.token_idx for node in selected_nodes}
 
-            # Print results
-            print(
-                f"Tokens: {len(set(f.token_idx for f in circuit.nodes))}/{target_token_idx + 1} - "
-                f"KL Div: {circuit_analysis.kl_divergence:.4f} - "
-                f"Added: {set([n.token_idx for n in new_nodes]) or 'None'} - "
-                f"Predictions: {circuit_analysis.predictions}"
-            )
+                # Compute KL divergence
+                circuit = Circuit(nodes=selected_nodes)
+                circuit_analysis = analyze_divergence(
+                    self.model,
+                    self.ablator,
+                    layer_idx,
+                    target_token_idx,
+                    target_logits,
+                    [circuit],
+                    feature_magnitudes,
+                    num_samples=self.num_samples,
+                )[circuit]
 
-            # If below threshold, stop search
-            if circuit_analysis.kl_divergence < threshold:
-                print("Reached target KL divergence.")
-                break
+                # Print results
+                print(
+                    f"Tokens: {len(set(f.token_idx for f in circuit.nodes))}/{target_token_idx + 1} - "
+                    f"KL Div: {circuit_analysis.kl_divergence:.4f} - "
+                    f"Added: {set([n.token_idx for n in new_nodes]) or 'None'} - "
+                    f"Predictions: {circuit_analysis.predictions}"
+                )
 
-            # Stop early if reached the max number of token indices
-            if len(selected_token_idxs) >= max_count:
-                print("Reached token limit.")
-                break
+                # If below threshold, stop search
+                if circuit_analysis.kl_divergence < threshold:
+                    print("Reached target KL divergence.")
+                    break
 
-            # If no remaining nodes, stop search
-            remaining_nodes = frozenset(layer_nodes - selected_nodes)
-            if not remaining_nodes:
-                print("No remaining nodes to add.")
-                break
+                # Stop early if reached the max number of token indices
+                if len(selected_token_idxs) >= max_count:
+                    print("Reached token limit.")
+                    break
 
-            # Find next most important token
-            most_important_token_idx = self.find_next_token(
-                layer_idx,
-                target_token_idx,
-                target_logits,
-                feature_magnitudes,
-                circuit_nodes=selected_nodes,
-                remaining_nodes=layer_nodes - selected_nodes,
-            )
-            new_nodes = nodes_by_token_idx[most_important_token_idx]
+                # If no remaining nodes, stop search
+                remaining_nodes = frozenset(layer_nodes - selected_nodes)
+                if not remaining_nodes:
+                    print("No remaining nodes to add.")
+                    break
+
+                # Find next most important token
+                most_important_token_idx = self.find_next_token(
+                    layer_idx,
+                    target_token_idx,
+                    target_logits,
+                    feature_magnitudes,
+                    circuit_nodes=selected_nodes,
+                    remaining_nodes=layer_nodes - selected_nodes,
+                )
+                new_nodes = nodes_by_token_idx[most_important_token_idx]
 
         # Return circuit
         print(f"Selected token indices: {','.join(map(str, sorted({n.token_idx for n in selected_nodes})))}")
