@@ -95,7 +95,7 @@ function FeatureSidebarSamplingStrategy() {
     >
       <span className="selected-option">
         <span>
-          {strategy === SamplingStrategies.Cluster ? "Circuit Cluster" : null}
+          {strategy === SamplingStrategies.Cluster ? "From Cluster" : null}
           {strategy === SamplingStrategies.Similar ? "Similar Activations" : null}
           {strategy === SamplingStrategies.Top ? "Top Activations" : null}
         </span>
@@ -106,7 +106,7 @@ function FeatureSidebarSamplingStrategy() {
         <ul>
           <li className="header">Sampling Strategy</li>
           <li className="option" onClick={() => setStrategy(SamplingStrategies.Cluster)}>
-            <h4>Circuit Cluster</h4>
+            <h4>From Cluster</h4>
             <p>
               Cluster dataset samples using circuit features and boost the importance of the
               selected feature.

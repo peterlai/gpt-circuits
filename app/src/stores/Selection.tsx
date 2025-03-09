@@ -28,6 +28,7 @@ const hashSelectionAtom = atomWithHash("selection", "", {
   },
 });
 
+const selectedLayerIdxAtom = atom<number | null>(null);
 const hoveredBlockAtom = atom<BlockData | null>(null);
 const selectedBlockAtom = atom<BlockData | null>(null);
 const hoveredFeatureAtom = atom<BlockFeatureData | null>(null);
@@ -96,6 +97,7 @@ export {
   hoveredUpstreamOffsetAtom,
   selectedBlockAtom,
   selectedFeatureAtom,
+  selectedLayerIdxAtom,
   selectionStateAtom,
   toggleSelectionAtom,
 };

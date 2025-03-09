@@ -17,7 +17,7 @@ class LayerProfile {
 const layerProfilesAtom = atom<LayerProfile[]>((get) => {
   const sampleData = get(sampleDataAtom).data;
   const numLayers = get(numLayersAtom);
-  if (numLayers && sampleData) {
+  if (numLayers && sampleData && sampleData.klds) {
     const layerProfiles: LayerProfile[] = [];
     for (let i = 0; i < numLayers; i++) {
       const kld = sampleData.klds[`${i}`] as number;

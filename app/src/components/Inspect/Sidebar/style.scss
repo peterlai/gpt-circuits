@@ -77,6 +77,7 @@
     }
 
     /* Header */
+    .layer-location,
     .block-location,
     .feature-location {
         display: flex;
@@ -226,6 +227,35 @@
                 padding: 5px 0 0;
                 white-space: normal;
             }
+        }
+    }
+
+    /* KLD table */
+    .klds {
+        margin: 20px 0 10px;
+
+        table {
+            --aspect-ratio: 5;
+
+            th {
+                font-weight: normal;
+                font-size: 12px;
+                line-height: 20px;
+                font-family: monospace;
+            }
+            td {
+                font-weight: normal;
+                font-size: 12px;
+                line-height: 20px;
+            }
+            th.selected {
+                font-weight: bold;
+            }
+
+            td.low { background-color: rgba(100 210 80 / 65%); }
+            td.medium { background-color: rgba(255 220 90 / 65%); }
+            td.high { background-color: rgba(240 50 50 / 65%); }
+
         }
     }
 
