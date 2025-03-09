@@ -183,7 +183,7 @@
         }
         td {
             padding: 5px;
-            --color: rgba(255, 191, 0, 1);
+            --color: rgba(255, 191, 0, 0.75);
         }
         td:last-child { --color: #ddd; }
         td .data {
@@ -201,7 +201,7 @@
             margin-left: 5px;
             color: #aaa;
         }
-        td { --color: rgba(255, 191, 0, 1); }
+        td { --color: rgba(255, 191, 0, 0.75); }
         td:last-child { --color: #ddd; }
     }
 
@@ -213,7 +213,7 @@
         h3 { margin-top: 0; }
         tr { cursor: pointer; }
         th { font-family: monospace; }
-        td { --color: rgba(255, 191, 0, 0.5); }
+        td { --color: rgba(255, 191, 0, 0.75); }
         tr.hovered { color: rgba(255, 191, 0, 1);}
 
         button {
@@ -263,11 +263,18 @@
         table {
             --aspect-ratio: 5;
 
+            tr {
+                cursor: pointer;
+            }
             th {
                 font-weight: normal;
                 font-size: 12px;
                 line-height: 20px;
                 font-family: monospace;
+                color: #aaa;
+            }
+            .focused th {
+                color: #fff;
             }
             td {
                 font-weight: normal;
@@ -281,7 +288,6 @@
             td.low { background-color: rgba(100 210 80 / 65%); }
             td.medium { background-color: rgba(255 220 90 / 65%); }
             td.high { background-color: rgba(240 50 50 / 65%); }
-
         }
     }
 

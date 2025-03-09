@@ -53,11 +53,13 @@ function CircuitPrediction() {
   const layerProfiles = useAtomValue(layerProfilesAtom);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [selectedLayerIdx, setSelectedLayerIdx] = useAtom(selectedLayerIdxAtom);
-  const focusedLayerIdx = selectedLayerIdx === null ? layerProfiles.length - 1 : selectedLayerIdx;
-  if (!layerProfiles || layerProfiles.length === 0) {
+  if (!layerProfiles || Object.keys(layerProfiles).length === 0) {
     return <></>;
   }
 
+  const orderedLayerProfiles = Object.values(layerProfiles).sort((a, b) => a.idx - b.idx);
+  const lastLayerProfile = orderedLayerProfiles.at(-1);
+  const focusedLayerIdx = selectedLayerIdx === null ? lastLayerProfile?.idx || 0 : selectedLayerIdx;
   const probabilities = layerProfiles[focusedLayerIdx]?.probabilities || {};
 
   return (
@@ -77,10 +79,15 @@ function CircuitPrediction() {
         {isMenuOpen && (
           <ul className="menu">
             <li className="header">Layers</li>
-            {layerProfiles.map((layerProfile, i) => (
-              <li key={i} className="option" onClick={() => setSelectedLayerIdx(i)}>
+            {orderedLayerProfiles.map((layerProfile) => (
+              <li
+                key={layerProfile.idx}
+                className="option"
+                onClick={() => setSelectedLayerIdx(layerProfile.idx)}
+              >
                 <h4>
-                  {i > 0 ? `Layer ${i}` : "Embedding"} &ndash; {layerProfile.kld.toFixed(2)}
+                  {layerProfile.idx > 0 ? `Layer ${layerProfile.idx}` : "Embedding"} &ndash;{" "}
+                  {layerProfile.kld.toFixed(2)}
                 </h4>
               </li>
             ))}
@@ -94,11 +101,15 @@ function CircuitPrediction() {
 
 function KldSection() {
   const layerProfiles = useAtomValue(layerProfilesAtom);
-  if (!layerProfiles || layerProfiles.length === 0) {
+  const [selectedLayerIdx, setSelectedLayerIdx] = useAtom(selectedLayerIdxAtom);
+  const orderedLayerProfiles = Object.values(layerProfiles).sort((a, b) => a.idx - b.idx);
+  const lastLayerProfile = orderedLayerProfiles.at(-1);
+  const focusedLayerIdx = selectedLayerIdx === null ? lastLayerProfile?.idx || 0 : selectedLayerIdx;
+  if (!layerProfiles || Object.keys(layerProfiles).length === 0) {
     return <></>;
   }
 
-  const maxKld = Math.max(...layerProfiles.map((layerProfile) => layerProfile.kld));
+  const maxKld = Math.max(...orderedLayerProfiles.map((layerProfile) => layerProfile.kld));
 
   return (
     <>
@@ -106,8 +117,12 @@ function KldSection() {
       <section className="klds">
         <table className="charts-css column show-primary-axis show-labels data-spacing-1">
           <tbody>
-            {layerProfiles.map((layerProfile, i) => (
-              <tr key={i}>
+            {orderedLayerProfiles.map((layerProfile) => (
+              <tr
+                key={layerProfile.idx}
+                onClick={() => setSelectedLayerIdx(layerProfile.idx)}
+                className={classNames({ focused: focusedLayerIdx === layerProfile.idx })}
+              >
                 <th>{layerProfile.idx}</th>
                 <td
                   style={
@@ -121,7 +136,7 @@ function KldSection() {
                     high: layerProfile.kld > 0.5,
                   })}
                 >
-                  {layerProfile.kld / maxKld > 0.5 ? layerProfile.kld.toFixed(2) : null}
+                  {layerProfile.kld / maxKld > 0.66 ? layerProfile.kld.toFixed(2) : null}
                 </td>
               </tr>
             ))}

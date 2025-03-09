@@ -1,5 +1,5 @@
 import { atom } from "jotai";
-import { numLayersAtom, sampleDataAtom } from "./Graph";
+import { sampleDataAtom } from "./Graph";
 
 // Represents supplementary data for a specific layer
 class LayerProfile {
@@ -14,19 +14,20 @@ class LayerProfile {
   }
 }
 
-const layerProfilesAtom = atom<LayerProfile[]>((get) => {
+const layerProfilesAtom = atom<Record<number, LayerProfile>>((get) => {
   const sampleData = get(sampleDataAtom).data;
-  const numLayers = get(numLayersAtom);
-  if (numLayers && sampleData && sampleData.klds) {
-    const layerProfiles: LayerProfile[] = [];
-    for (let i = 0; i < numLayers; i++) {
-      const kld = sampleData.klds[`${i}`] as number;
-      const probabilities = sampleData.layerProbabilities[`${i}`] as { [key: string]: number };
-      layerProfiles.push(new LayerProfile(i, kld, probabilities));
-    }
+  if (sampleData && sampleData.klds) {
+    const layerProfiles: Record<number, LayerProfile> = {};
+
+    Object.keys(sampleData.klds).forEach((layerIdxStr) => {
+      const layerIdx = parseInt(layerIdxStr);
+      const kld = sampleData.klds[layerIdxStr] as number;
+      const probabilities = sampleData.layerProbabilities[layerIdxStr] as { [key: string]: number };
+      layerProfiles[layerIdx] = new LayerProfile(layerIdx, kld, probabilities);
+    });
     return layerProfiles;
   } else {
-    return [];
+    return {};
   }
 });
 
