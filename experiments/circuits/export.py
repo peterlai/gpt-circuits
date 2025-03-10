@@ -289,7 +289,7 @@ def export_block(
 
     # Get samples that are similar to the target token
     cluster_search = ClusterSearch(model_profile, model_cache)
-    cluster = cluster_search.get_cluster(
+    cluster_samples = cluster_search.get_cluster_as_sample_set(
         layer_idx,
         token_idx,
         target_feature_magnitudes,
@@ -297,8 +297,7 @@ def export_block(
         k_nearest=25,
         feature_coefficients=np.ones_like(circuit_feature_idxs),
         positional_coefficient=0.0,
-    )
-    cluster_samples = cluster.as_sample_set().samples
+    ).samples
 
     # Data to export
     data = {

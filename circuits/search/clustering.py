@@ -72,12 +72,6 @@ class Cluster:
         feature_magnitudes = self.layer_cache.csr_matrix[sample_idxs, :].toarray()  # Shape: (num_samples, F)
         return feature_magnitudes
 
-    def as_sample_set(self) -> "ClusterSampleSet":
-        """
-        Return all nearest neighbors as a sample set.
-        """
-        return ClusterSampleSet(self)
-
 
 class ClusterSampleSet:
     """
@@ -86,27 +80,28 @@ class ClusterSampleSet:
 
     samples: list[Sample]
 
-    def __init__(self, cluster: Cluster):
+    def __init__(self, cluster: Cluster, sample_magnitudes: list[sparse.csr_matrix]):
+        """
+        Construct a sample set from a cluster of nearest neighbors.
+
+        :param cluster: Cluster of nearest neighbors.
+        :param sample_magnitudes: List of feature magnitudes for each sample.
+        :return: SampleSet representing the cluster.
+        """
         block_size = cluster.layer_cache.block_size
 
         self.samples = []
-        for shard_token_idx, mse in zip(cluster.idxs, cluster.mses):
+        for shard_token_idx, magnitudes in zip(cluster.idxs, sample_magnitudes):
             block_idx = shard_token_idx // block_size
             token_idx = shard_token_idx % block_size
-
-            # TODO: Consider better ways of normalizing magnitudes
-            magnitudes = np.zeros(shape=(1, block_size))
-            divisor = max(1e-10, cluster.max_mse)  # Avoid division by zero
-            magnitudes[0, token_idx] = 1.0 - mse / divisor
-            magnitudes = sparse.csr_matrix(magnitudes)
-
-            sample = Sample(
-                layer_idx=cluster.layer_idx,
-                block_idx=block_idx,
-                token_idx=token_idx,
-                magnitudes=magnitudes,
+            self.samples.append(
+                Sample(
+                    layer_idx=cluster.layer_idx,
+                    block_idx=block_idx,
+                    token_idx=token_idx,
+                    magnitudes=magnitudes,
+                )
             )
-            self.samples.append(sample)
 
 
 class ClusterSearch:
@@ -221,6 +216,87 @@ class ClusterSearch:
             positional_coefficient=positional_coefficient,
         )
 
+    def get_cluster_as_sample_set(
+        self,
+        layer_idx: int,
+        token_idx: int,
+        feature_magnitudes: np.ndarray,  # Shape: (F)
+        circuit_feature_idxs: np.ndarray,
+        k_nearest: int,
+        feature_coefficients: np.ndarray,  # Length must match len(circuit_feature_idxs)
+        positional_coefficient: float,
+    ) -> ClusterSampleSet:
+        """
+        Get nearest neighbors for a single token in a given circuit as a sample set.
+
+        :return: ClusterSampleSet representing nearest neighbors.
+        """
+        cluster = self.get_cluster(
+            layer_idx,
+            token_idx,
+            feature_magnitudes,
+            circuit_feature_idxs,
+            k_nearest,
+            feature_coefficients,
+            positional_coefficient,
+        )
+
+        # Prepare targets
+        target_feature_idxs = circuit_feature_idxs
+        target_feature_values = feature_magnitudes[circuit_feature_idxs]
+
+        # Get shard token indices to use for calculating MSE
+        relative_token_range = list(range(-16, 17))
+        shard_token_idxs = set()
+        for shard_token_idx in cluster.idxs:
+            shard_token_idxs.update([shard_token_idx + i for i in relative_token_range])
+
+        # Filter out negative indices and indices beyond the number of tokens in the shard
+        num_tokens = cluster.layer_cache.magnitudes.shape[0]  # type: ignore
+        shard_token_idxs = set(filter(lambda x: 0 <= x < num_tokens, shard_token_idxs))
+        shard_token_idxs = np.array(list(sorted(shard_token_idxs)))
+
+        # Map shard token indices to MSEs
+        mse_idxs, mse_values = self.get_cluster_from_candidate_idxs(
+            layer_idx,
+            token_idx,
+            shard_token_idxs,
+            target_feature_idxs,
+            target_feature_values,
+            feature_coefficients,
+            positional_coefficient,
+            len(shard_token_idxs),  # Get MSE for all shard token indices
+        )
+        shard_token_idx_to_mse = dict(zip(mse_idxs, mse_values))
+
+        # Caculate max MSE (excluding outliers)
+        max_mse = np.percentile(np.array(list(shard_token_idx_to_mse.values())), 95).item()  # 95th percentile
+
+        # Calculate sample magnitudes
+        block_size = cluster.layer_cache.block_size
+        sample_magnitudes: list[sparse.csr_matrix] = []
+        for shard_token_idx in cluster.idxs:
+            block_idx = shard_token_idx // block_size
+            token_idx = shard_token_idx % block_size
+
+            # Calculate magnitudes for each token in the relative range
+            magnitudes = np.zeros(shape=(1, block_size))
+            for offset in relative_token_range:
+                adjusted_token_idx = token_idx + offset
+                if 0 <= adjusted_token_idx < block_size:
+                    adjusted_shard_token_idx = block_idx * block_size + adjusted_token_idx
+                    mse = shard_token_idx_to_mse.get(adjusted_shard_token_idx, max_mse)
+                    divisor = max(1e-10, max_mse)  # Avoid division by zero
+                    magnitude = max(1.0 - mse / divisor, 0)  # Avoid negative values
+                    magnitude = magnitude**2  # Square to emphasize differences
+                    magnitude = magnitude if magnitude > 0.1 else 0.0  # Ignore small values
+                    magnitudes[0, adjusted_token_idx] = magnitude
+
+            magnitudes = sparse.csr_matrix(magnitudes)
+            sample_magnitudes.append(magnitudes)
+
+        return ClusterSampleSet(cluster, sample_magnitudes)
+
     def get_cluster_from_candidate_idxs(
         self,
         layer_idx: int,
@@ -276,8 +352,10 @@ class ClusterSearch:
         mses = np.mean(squared_errors, axis=-1)
 
         # Get nearest neighbors
-        num_neighbors = min(k_nearest, len(candidate_row_idxs))
-        partition_idxs = np.argpartition(mses, num_neighbors)[:num_neighbors]
+        if k_nearest < len(candidate_row_idxs):
+            partition_idxs = np.argpartition(mses, k_nearest)[:k_nearest]
+        else:
+            partition_idxs = np.arange(len(candidate_row_idxs))
         cluster_idxs: tuple[int, ...] = tuple(candidate_row_idxs[partition_idxs].tolist())  # type: ignore
         cluster_mses = tuple(mses[partition_idxs].tolist())
 
