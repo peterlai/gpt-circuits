@@ -94,7 +94,7 @@ class ClusterSampleSet:
             block_idx = shard_token_idx // block_size
             token_idx = shard_token_idx % block_size
 
-            # TODO: Calculate magnitudes based on MSE
+            # TODO: Consider better ways of normalizing magnitudes
             magnitudes = np.zeros(shape=(1, block_size))
             divisor = max(1e-10, cluster.max_mse)  # Avoid division by zero
             magnitudes[0, token_idx] = 1.0 - mse / divisor
@@ -145,95 +145,144 @@ class ClusterSearch:
         :return: Cluster representing nearest neighbor.
         """
         assert k_nearest > 0
-        assert len(circuit_feature_idxs) == len(feature_coefficients), "Each coefficient must correspond to an idx"
+        num_features = len(circuit_feature_idxs)
 
+        # Get candidate indices if there are any features to preserve
+        if num_features > 0:
+            layer_cache = self.model_cache[layer_idx]
+
+            # Calculate max MSE by averaging the squares of all coefficients
+            max_mse = np.append(feature_coefficients**2, positional_coefficient**2).mean()
+
+            # Check if nearest neighbors are cached
+            # TODO: Consider purging unused cache entries
+            circuit_feature_magnitudes = feature_magnitudes[circuit_feature_idxs]
+            cache_key = self.get_cache_key(
+                layer_idx,
+                token_idx,
+                circuit_feature_idxs,
+                circuit_feature_magnitudes,
+                k_nearest,
+                feature_coefficients,
+                positional_coefficient,
+            )
+            if cluster_idxs := self.cached_cluster_idxs.get(cache_key):
+                return Cluster(
+                    layer_cache=layer_cache,
+                    layer_idx=layer_idx,
+                    token_idx=token_idx,
+                    idxs=cluster_idxs,
+                    mses=(0.0,) * len(cluster_idxs),
+                    max_mse=max_mse,
+                )
+
+            # Get top features by magnitude to use for narrowing down candidates
+            # TODO: Consider selecting top features using normalized magnitude
+            num_top_features = max(0, min(16, num_features))  # Limit to 16 features for performance
+            select_indices = np.argsort(circuit_feature_magnitudes)[-num_top_features:]
+            top_feature_idxs = circuit_feature_idxs[select_indices]
+
+            # Find rows in layer cache with any of the top features
+            candidate_row_idxs = np.unique(layer_cache.csc_matrix[:, top_feature_idxs].nonzero()[0])
+
+            # If candidates exist, get cluster using candidate indices
+            if len(candidate_row_idxs) > 0:
+                # Use all features for calculating MSE
+                target_feature_idxs = circuit_feature_idxs
+                target_feature_values = feature_magnitudes[circuit_feature_idxs]
+                cluster_idxs, cluster_mses = self.get_cluster_from_candidate_idxs(
+                    layer_idx,
+                    token_idx,
+                    candidate_row_idxs,
+                    target_feature_idxs,
+                    target_feature_values,
+                    feature_coefficients,
+                    positional_coefficient,
+                    k_nearest,
+                )
+                cluster = Cluster(
+                    layer_cache=layer_cache,
+                    layer_idx=layer_idx,
+                    token_idx=token_idx,
+                    idxs=cluster_idxs,
+                    mses=cluster_mses,
+                    max_mse=max_mse,
+                )
+                # Cache cluster before returning it
+                self.cached_cluster_idxs[cache_key] = cluster.idxs
+                return cluster
+
+        # Fallback to random sampling
+        return self.get_random_cluster(
+            layer_idx,
+            token_idx,
+            num_samples=k_nearest,
+            feature_coefficients=feature_coefficients,
+            positional_coefficient=positional_coefficient,
+        )
+
+    def get_cluster_from_candidate_idxs(
+        self,
+        layer_idx: int,
+        token_idx: int,
+        candidate_row_idxs: np.ndarray,
+        target_feature_idxs: np.ndarray,
+        target_feature_values: np.ndarray,
+        feature_coefficients: np.ndarray,
+        positional_coefficient: float,
+        k_nearest: int,
+    ) -> tuple[tuple[int, ...], tuple[float, ...]]:
+        """
+        Get nearest neighbors from candidate indices.
+
+        :param layer_idx: Layer index from which features are sampled.
+        :param token_idx: Token index to use for positional distance.
+        :param candidate_row_idxs: Indices of candidate rows in the layer cache.
+        :param target_feature_idxs: Indices of features to preserve for this token.
+        :param target_feature_values: Values of features to preserve for this token.
+        :param feature_coefficients: Coefficients representing the importance of each circuit feature.
+        :param positional_coefficient: Coefficient representing the importance of positional information.
+        :param k_nearest: Number of nearest neighbors to return.
+
+        :return: Tuple representing nearest neighbors:
+            - cluster_idxs: Indices of nearest neighbors.
+            - cluster_mses: Mean squared errors of nearest neighbors.
+        """
+        assert len(target_feature_idxs) == len(feature_coefficients), "Each coefficient must correspond to an idx"
+        assert len(target_feature_idxs) == len(target_feature_values), "Each feature value must correspond to an idx"
         layer_profile = self.model_profile[layer_idx]
         layer_cache = self.model_cache[layer_idx]
         block_size = layer_cache.block_size
-        num_features = len(circuit_feature_idxs)
-
-        # If no features are in the circuit, return random cluster
-        if num_features == 0:
-            return self.get_random_cluster(
-                layer_idx,
-                token_idx,
-                num_samples=k_nearest,
-                feature_coefficients=feature_coefficients,
-                positional_coefficient=positional_coefficient,
-            )
-
-        # Calculate max MSE by averaging the squares of all coefficients
-        max_mse = np.append(feature_coefficients**2, positional_coefficient**2).mean()
-
-        # Check if nearest neighbors are cached
-        # TODO: Consider purging unused cache entries
-        circuit_feature_magnitudes = feature_magnitudes[circuit_feature_idxs]
-        cache_key = self.get_cache_key(
-            layer_idx,
-            token_idx,
-            circuit_feature_idxs,
-            circuit_feature_magnitudes,
-            k_nearest,
-            feature_coefficients,
-            positional_coefficient,
-        )
-        if cluster_idxs := self.cached_cluster_idxs.get(cache_key):
-            return Cluster(
-                layer_cache=layer_cache,
-                layer_idx=layer_idx,
-                token_idx=token_idx,
-                idxs=cluster_idxs,
-                mses=(0.0,) * len(cluster_idxs),
-                max_mse=max_mse,
-            )
-
-        # Get top features by magnitude
-        num_top_features = max(0, min(16, num_features))  # Limit to 16 features
-        # TODO: Consider selecting top features using normalized magnitude
-        select_indices = np.argsort(circuit_feature_magnitudes)[-num_top_features:]
-        top_feature_idxs = circuit_feature_idxs[select_indices]
-
-        # Find rows in layer cache with any of the top features
-        row_idxs = np.unique(layer_cache.csc_matrix[:, top_feature_idxs].nonzero()[0])
 
         # Create matrix of token magnitudes to sample from
-        candidate_samples = layer_cache.csc_matrix[:, circuit_feature_idxs][row_idxs, :].toarray()
-        target_values = feature_magnitudes[circuit_feature_idxs]
+        candidate_samples = layer_cache.csc_matrix[:, target_feature_idxs][candidate_row_idxs, :].toarray()
 
         # Calculate normalization coefficients
-        norm_coefficients = np.ones_like(target_values)
-        for i, feature_idx in enumerate(circuit_feature_idxs):
+        norm_coefficients = np.ones_like(target_feature_values)
+        for i, feature_idx in enumerate(target_feature_idxs):
             feature_profile = layer_profile[int(feature_idx)]
             norm_coefficients[i] = 1.0 / feature_profile.max
 
         # Add positional information
-        positional_distances = np.abs((row_idxs % block_size) - token_idx).astype(np.float32)
+        positional_distances = np.abs((candidate_row_idxs % block_size) - token_idx).astype(np.float32)
         positional_distances = positional_distances / block_size  # Scale to [0, 1]
         candidate_samples = np.column_stack((candidate_samples, positional_distances))  # Add column
-        target_values = np.append(target_values, 0.0)  # Add target
+        target_feature_values = np.append(target_feature_values, 0.0)  # Add target
         norm_coefficients = np.append(norm_coefficients, 1.0)
 
         # Calculate MSE
         multipliers = np.append(feature_coefficients, positional_coefficient)  # How important is each dimension?
-        errors = (candidate_samples - target_values) * norm_coefficients * multipliers
-        mses = np.mean(errors**2, axis=-1)
+        squared_errors = ((candidate_samples - target_feature_values) * norm_coefficients * multipliers) ** 2
+        mses = np.mean(squared_errors, axis=-1)
 
         # Get nearest neighbors
-        num_neighbors = min(k_nearest, len(row_idxs))
-        argsort_idxs = np.argsort(mses)[:num_neighbors]
-        cluster_idxs = tuple(row_idxs[argsort_idxs].tolist())
-        cluster_mses = tuple(mses[argsort_idxs].tolist())
+        num_neighbors = min(k_nearest, len(candidate_row_idxs))
+        partition_idxs = np.argpartition(mses, num_neighbors)[:num_neighbors]
+        cluster_idxs: tuple[int, ...] = tuple(candidate_row_idxs[partition_idxs].tolist())  # type: ignore
+        cluster_mses = tuple(mses[partition_idxs].tolist())
 
-        # Cache cluster data
-        self.cached_cluster_idxs[cache_key] = cluster_idxs
-        return Cluster(
-            layer_cache=layer_cache,
-            layer_idx=layer_idx,
-            token_idx=token_idx,
-            idxs=cluster_idxs,
-            mses=cluster_mses,
-            max_mse=max_mse,
-        )
+        # Return cluster
+        return cluster_idxs, cluster_mses
 
     def get_random_cluster(
         self,
