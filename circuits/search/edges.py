@@ -63,6 +63,7 @@ class EdgeSearch:
         assert len(downstream_nodes) > 0
         downstream_idx = next(iter(downstream_nodes)).layer_idx
         upstream_idx = downstream_idx - 1
+        print(f"\nAnalyzing edge importance between layers {upstream_idx} and {downstream_idx}...")
 
         # Convert tokens to tensor
         input: torch.Tensor = torch.tensor(tokens, device=self.model.config.device).unsqueeze(0)  # Shape: (1, T)
@@ -80,55 +81,168 @@ class EdgeSearch:
             for downstream in sorted(downstream_nodes):
                 if upstream.token_idx <= downstream.token_idx:
                     all_edges.add(Edge(upstream, downstream))
+        all_edges = frozenset(all_edges)
 
         # Set baseline MSE to use for comparisons
         baseline_mses = self.estimate_downstream_mses(
             downstream_nodes,
-            frozenset(all_edges),
+            all_edges,
             upstream_magnitudes,
             original_downstream_magnitudes,
             target_token_idx,
         )
 
+        # Compute edge importance
+        edge_importance = self.compute_edge_importance(
+            all_edges,
+            downstream_nodes,
+            baseline_mses,
+            upstream_magnitudes,
+            original_downstream_magnitudes,
+            target_token_idx,
+        )
+
+        # Compute token importance
+        token_importance = self.compute_token_importance(
+            all_edges,
+            downstream_nodes,
+            baseline_mses,
+            upstream_magnitudes,
+            original_downstream_magnitudes,
+            target_token_idx,
+        )
+
+        return EdgeSearchResult(edge_importance=edge_importance, token_importance=token_importance)
+
+    def compute_edge_importance(
+        self,
+        all_edges: frozenset[Edge],
+        downstream_nodes: frozenset[Node],
+        baseline_mses: dict[Node, float],
+        upstream_magnitudes: torch.Tensor,
+        original_downstream_magnitudes: torch.Tensor,  # Shape: (T, F)
+        target_token_idx: int,
+    ) -> dict[Edge, float]:
+        """
+        Compute the importance of edges between upstream and downstream nodes.
+
+        :param all_edges: Set of all possible edges between layers
+        :param downstream_nodes: Set of downstream nodes
+        :param baseline_mses: The baseline mean-squared error per downstream node
+        :param upstream_magnitudes: The upstream feature magnitudes (shape: T, F)
+        :param original_downstream_magnitudes: The original downstream feature magnitudes (shape: T, F)
+        :param target_token_idx: The target token index
+
+        :return: Dictionary mapping edges to their importance scores
+        """
         # Map edges to ablation effects
         ablation_mses = self.estimate_edge_ablation_effects(
             downstream_nodes,
-            frozenset(all_edges),
+            all_edges,
             upstream_magnitudes,
             original_downstream_magnitudes,
             target_token_idx,
         )
 
         # Calculate MSE increase from baseline
-        edge_importance = {}
+        edge_mse_increase = {}
         for edge, mse in sorted(ablation_mses.items(), key=lambda x: x[0]):
             baseline_mse = baseline_mses[edge.downstream]
-            print(f"Edge {edge} - Baseline MSE: {baseline_mse:.4f} - Ablation MSE: {mse:.4f}")
-            edge_importance[edge] = (mse - baseline_mse) / baseline_mse  # normalized MSE increase
+            edge_mse_increase[edge] = mse - baseline_mse
 
-        # For each downstream node, map upstream token indicies to an MSE
+        # Calculate MSE increase stats per downstream node
+        min_mse_increases: dict[Node, float] = {}
+        max_mse_increases: dict[Node, float] = {}
+        for downstream_node in downstream_nodes:
+            upstream_edges = {edge for edge in edge_mse_increase.keys() if edge.downstream == downstream_node}
+            mse_increases = [edge_mse_increase[edge] for edge in upstream_edges]
+            min_mse_increase = min(mse_increases, default=0)
+            min_mse_increases[downstream_node] = min_mse_increase
+            max_mse_increase = max(mse_increases, default=0)
+            max_mse_increases[downstream_node] = max_mse_increase
+
+        # Print MSE increase stats
+        for downstream_node in sorted(downstream_nodes):
+            print(
+                f"Edges from {downstream_node} - "
+                f"Baseline: {baseline_mses[downstream_node]:.4f} - "
+                f"Min MSE increase: {min_mse_increases[downstream_node]:.4f} - "
+                f"Max MSE increase: {max_mse_increases[downstream_node]:.4f}"
+            )
+
+        # Normalize MSE increase by max MSE increase
+        edge_importance = {}
+        for edge, mse_increase in edge_mse_increase.items():
+            mse_increase = max(mse_increase, 0)  # Avoid negative values
+            max_mse_increase = max(max_mse_increases[edge.downstream], 1e-6)  # Avoid negative values
+            edge_importance[edge] = mse_increase / max_mse_increase
+
+        return edge_importance
+
+    def compute_token_importance(
+        self,
+        all_edges: frozenset[Edge],
+        downstream_nodes: frozenset[Node],
+        baseline_mses: dict[Node, float],
+        upstream_magnitudes: torch.Tensor,
+        original_downstream_magnitudes: torch.Tensor,
+        target_token_idx: int,
+    ) -> dict[Node, dict[int, float]]:
+        """
+        Compute the importance of upstream tokens for downstream nodes.
+
+        :param all_edges: Set of all possible edges between layers
+        :param downstream_nodes: Set of downstream nodes
+        :param baseline_mses: The baseline mean-squared error per downstream node
+        :param upstream_magnitudes: The upstream feature magnitudes (shape: T, F)
+        :param original_downstream_magnitudes: The original downstream feature magnitudes (shape: T, F)
+        :param target_token_idx: The target token index
+
+        :return: Dictionary mapping downstream nodes to dictionaries of token indices and their importance scores
+        """
+        # For each downstream node, map upstream token indices to an MSE
         token_ablation_mses = self.estimate_token_ablation_effects(
             downstream_nodes,
-            frozenset(all_edges),
+            all_edges,
             upstream_magnitudes,
             original_downstream_magnitudes,
             target_token_idx,
         )
 
         # Calculate token MSE increase from baseline
-        token_importance = defaultdict(dict)
+        token_mse_increases = defaultdict(dict)
         for downstream_node, upstream_token_mses in sorted(token_ablation_mses.items(), key=lambda x: x[0]):
             for token_idx, token_mse in sorted(upstream_token_mses.items(), key=lambda x: x[0]):
-                # Calculate normalized MSE increase
                 baseline_mse = baseline_mses[downstream_node]
-                print(
-                    f"Upstream from {downstream_node} to {token_idx} - "
-                    f"Baseline MSE: {baseline_mse:.4f} - "
-                    f"Ablation MSE: {token_mse:.4f}"
-                )
-                token_importance[downstream_node][token_idx] = (token_mse - baseline_mse) / baseline_mse
+                token_mse_increases[downstream_node][token_idx] = token_mse - baseline_mse
 
-        return EdgeSearchResult(edge_importance=edge_importance, token_importance=token_importance)
+        # Calculate MSE increase stats per downstream node
+        min_mse_increases: dict[Node, float] = {}
+        max_mse_increases: dict[Node, float] = {}
+        for downstream_node in downstream_nodes:
+            min_mse_increase = min(token_mse_increases[downstream_node].values(), default=0)
+            min_mse_increases[downstream_node] = min_mse_increase
+            max_mse_increase = max(token_mse_increases[downstream_node].values(), default=0)
+            max_mse_increases[downstream_node] = max_mse_increase
+
+        # Print MSE increase stats
+        for downstream_node in sorted(downstream_nodes):
+            print(
+                f"Tokens from {downstream_node} - "
+                f"Baseline: {baseline_mses[downstream_node]:.4f} - "
+                f"Min MSE increase: {min_mse_increases[downstream_node]:.4f} - "
+                f"Max MSE increase: {max_mse_increases[downstream_node]:.4f}"
+            )
+
+        # Normalize MSE increase by max MSE increase
+        token_importance = defaultdict(dict)
+        for downstream_node, token_mses in token_mse_increases.items():
+            for token_idx, mse_increase in token_mses.items():
+                mse_increase = max(mse_increase, 0)  # Avoid negative values
+                max_mse_increase = max(max_mse_increases[downstream_node], 1e-6)  # Avoid negative value
+                token_importance[downstream_node][token_idx] = mse_increase / max_mse_increase
+
+        return token_importance
 
     def estimate_token_ablation_effects(
         self,

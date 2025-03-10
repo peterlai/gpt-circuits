@@ -194,7 +194,7 @@ def construct_circuit(gpt_config: GPTConfig, node_importance, edge_importance, t
 
     # Filter edges based on nodes and importance
     for edge, importance in edge_importance.items():
-        if edge.upstream in nodes and edge.downstream in nodes and importance > 0.1:
+        if edge.upstream in nodes and edge.downstream in nodes and importance > 0.01:
             edges.add(edge)
 
     # Try to add an edge to nodes with no upstream connections

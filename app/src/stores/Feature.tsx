@@ -101,7 +101,7 @@ class FeatureModifier {
       if (ablationWeight !== 0) {
         if (ablationWeight < 0.1) {
           this.fillWeight = 1;
-        } else if (ablationWeight < 5.0) {
+        } else if (ablationWeight < 0.9) {
           this.fillWeight = 2;
         } else {
           this.fillWeight = 3;

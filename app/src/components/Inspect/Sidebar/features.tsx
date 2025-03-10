@@ -220,6 +220,10 @@ function UpstreamAblationsSection({
   const maxAblation = Math.max(
     ...upstreamAblations.map(([, offset]) => feature.groupAblations[offset])
   );
+  console.log(
+    maxAblation,
+    upstreamAblations.map(([, offset]) => feature.groupAblations[offset])
+  );
 
   return (
     <section className="ablations">
