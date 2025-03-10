@@ -218,11 +218,8 @@ function UpstreamAblationsSection({
 
   // Compute the maximum ablation value for the chart
   const maxAblation = Math.max(
+    1e-6, // Avoid division by zero
     ...upstreamAblations.map(([, offset]) => feature.groupAblations[offset])
-  );
-  console.log(
-    maxAblation,
-    upstreamAblations.map(([, offset]) => feature.groupAblations[offset])
   );
 
   return (
@@ -250,7 +247,7 @@ function UpstreamAblationsSection({
               <td
                 style={
                   {
-                    "--size": feature.groupAblations[offset] / maxAblation,
+                    "--size": Math.max(0.001, feature.groupAblations[offset] / maxAblation),
                   } as React.CSSProperties
                 }
               ></td>
