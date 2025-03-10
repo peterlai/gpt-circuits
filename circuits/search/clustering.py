@@ -33,7 +33,6 @@ class Cluster:
     token_idx: int
     idxs: tuple[int, ...]
     mses: tuple[float, ...]
-    max_mse: float  # Max MSE that is possible based on the coefficients used as multipliers
 
     def __init__(
         self,
@@ -42,14 +41,12 @@ class Cluster:
         token_idx: int,
         idxs: tuple[int, ...],
         mses: tuple[float, ...],
-        max_mse: float,
     ):
         self.layer_cache = layer_cache
         self.layer_idx = layer_idx
         self.token_idx = token_idx
         self.idxs = idxs
         self.mses = mses
-        self.max_mse = max_mse
 
     def sample_magnitudes(self, num_samples: int) -> sparse.csr_matrix:
         """
@@ -146,9 +143,6 @@ class ClusterSearch:
         if num_features > 0:
             layer_cache = self.model_cache[layer_idx]
 
-            # Calculate max MSE by averaging the squares of all coefficients
-            max_mse = np.append(feature_coefficients**2, positional_coefficient**2).mean()
-
             # Check if nearest neighbors are cached
             # TODO: Consider purging unused cache entries
             circuit_feature_magnitudes = feature_magnitudes[circuit_feature_idxs]
@@ -168,7 +162,6 @@ class ClusterSearch:
                     token_idx=token_idx,
                     idxs=cluster_idxs,
                     mses=(0.0,) * len(cluster_idxs),
-                    max_mse=max_mse,
                 )
 
             # Get top features by magnitude to use for narrowing down candidates
@@ -201,7 +194,6 @@ class ClusterSearch:
                     token_idx=token_idx,
                     idxs=cluster_idxs,
                     mses=cluster_mses,
-                    max_mse=max_mse,
                 )
                 # Cache cluster before returning it
                 self.cached_cluster_idxs[cache_key] = cluster.idxs
@@ -212,7 +204,6 @@ class ClusterSearch:
             layer_idx,
             token_idx,
             num_samples=k_nearest,
-            feature_coefficients=feature_coefficients,
             positional_coefficient=positional_coefficient,
         )
 
@@ -289,7 +280,7 @@ class ClusterSearch:
                     divisor = max(1e-10, max_mse)  # Avoid division by zero
                     magnitude = max(1.0 - mse / divisor, 0)  # Avoid negative values
                     magnitude = magnitude**2  # Square to emphasize differences
-                    magnitude = magnitude if magnitude > 0.1 else 0.0  # Ignore small values
+                    magnitude = magnitude if magnitude > 0.3 else 0.0  # Ignore small values
                     magnitudes[0, adjusted_token_idx] = magnitude
 
             magnitudes = sparse.csr_matrix(magnitudes)
@@ -367,7 +358,6 @@ class ClusterSearch:
         layer_idx: int,
         token_idx: int,
         num_samples: int,
-        feature_coefficients: np.ndarray,
         positional_coefficient: float,
     ) -> Cluster:
         """
@@ -376,7 +366,6 @@ class ClusterSearch:
         :param layer_idx: Layer index from which features are sampled.
         :param token_idx: Token index from which features are sampled.
         :param num_samples: Number of samples to include in the cluster.
-        :param feature_coefficients: Coefficients representing the importance of each circuit feature.
         :param positional_coefficient: Coefficient representing the importance of positional information.
 
         :return: Cluster representing random samples.
@@ -384,9 +373,6 @@ class ClusterSearch:
         layer_cache = self.model_cache[layer_idx]
         block_size = layer_cache.block_size
         num_shard_tokens: int = layer_cache.magnitudes.shape[0]  # type: ignore
-
-        # Calculate max MSE by averaging the squares of all coefficients
-        max_mse = np.append(feature_coefficients**2, positional_coefficient**2).mean()
 
         # Choose cluster indices
         block_idxs = np.random.choice(range(num_shard_tokens // block_size), size=num_samples, replace=False)
@@ -404,7 +390,6 @@ class ClusterSearch:
             token_idx=token_idx,
             idxs=cluster_idxs,
             mses=cluster_mses,
-            max_mse=max_mse,
         )
 
     def get_cache_key(

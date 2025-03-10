@@ -108,7 +108,6 @@ class ResampleAblator:
                 layer_idx,
                 token_idx,
                 num_samples,
-                feature_coefficients,
                 self.positional_coefficient,
             )
 
