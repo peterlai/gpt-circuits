@@ -107,6 +107,9 @@ if __name__ == "__main__":
             # Map feature indices to KLD ceilings
             grouped_nodes[node.token_idx][node.feature_idx] = search_result.node_importance[node]
 
+        # Positional coefficient used for clustering
+        positional_coefficient = search_result.positional_coefficients[layer_idx]
+
         # Export layer
         data = {
             "data_dir": args.data_dir,
@@ -116,6 +119,7 @@ if __name__ == "__main__":
             "token_idx": target_token_idx,
             "layer_idx": layer_idx,
             "threshold": threshold,
+            "positional_coefficient": positional_coefficient,
             "nodes": grouped_nodes,
             "kld": round(klds[layer_idx], 4),
             "predictions": predictions[layer_idx],

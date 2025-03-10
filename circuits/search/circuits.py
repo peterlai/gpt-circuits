@@ -22,6 +22,7 @@ class CircuitResult:
     edge_importance: dict[Edge, float]  # edge -> importance
     token_importance: dict[Node, dict[int, float]]  # node -> upstream token idx -> importance
     node_importance: dict[Node, float]  # node -> KLD ceiling without node
+    positional_coefficients: dict[int, float]  # layer_idx -> positional coefficient
 
 
 class CircuitSearch:
@@ -82,12 +83,15 @@ class CircuitSearch:
             edge_importance.update(search_result.edge_importance)
             token_importance.update(search_result.token_importance)
 
+        # Store positional coefficients
+        positional_coefficients = {idx: self.get_positional_coefficient(idx) for idx in range(self.num_layers)}
+
         # Return circuit
         circuit_nodes = frozenset(rn.node for rn in ranked_nodes)
         circuit_edges = frozenset(edge for edge in edge_importance if edge in circuit_nodes)
         circuit = Circuit(nodes=circuit_nodes, edges=circuit_edges)
         node_importance = {rn.node: rn.kld for rn in ranked_nodes}
-        return CircuitResult(circuit, edge_importance, token_importance, node_importance)
+        return CircuitResult(circuit, edge_importance, token_importance, node_importance, positional_coefficients)
 
     def calculate_klds(
         self,
@@ -137,8 +141,7 @@ class CircuitSearch:
 
         :param layer_idx: The layer index from which feature magnitudes will be ablated.
         """
-        # Use lower positional coefficient for downstream layers
-        positional_coefficient = self.max_positional_coefficient * (1.0 - layer_idx / (self.num_layers - 1))
+        positional_coefficient = self.get_positional_coefficient(layer_idx)
 
         return ResampleAblator(
             self.model_profile,
@@ -146,6 +149,13 @@ class CircuitSearch:
             k_nearest=self.k_nearest,
             positional_coefficient=positional_coefficient,
         )
+
+    def get_positional_coefficient(self, layer_idx: int) -> float:
+        """
+        Get the positional coefficient for a given layer.
+        """
+        # Use smaller positional coefficient for downstream layers ending at 0
+        return self.max_positional_coefficient * (1.0 - layer_idx / (self.num_layers - 1))
 
     @property
     def num_layers(self) -> int:

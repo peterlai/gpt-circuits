@@ -247,7 +247,8 @@ class ClusterSearch:
         shard_token_idxs = set(filter(lambda x: 0 <= x < num_tokens, shard_token_idxs))
         shard_token_idxs = np.array(list(sorted(shard_token_idxs)))
 
-        # Map shard token indices to MSEs
+        # Map shard token indices to MSEs that ignore positional information
+        # NOTE: Positional information makes interpreting the sample magnitudes more difficult
         mse_idxs, mse_values = self.get_cluster_from_candidate_idxs(
             layer_idx,
             token_idx,
@@ -255,13 +256,14 @@ class ClusterSearch:
             target_feature_idxs,
             target_feature_values,
             feature_coefficients,
-            positional_coefficient,
-            len(shard_token_idxs),  # Get MSE for all shard token indices
+            positional_coefficient=0.0,
+            k_nearest=len(shard_token_idxs),  # Get MSE for all shard token indices
         )
         shard_token_idx_to_mse = dict(zip(mse_idxs, mse_values))
 
-        # Caculate max MSE (excluding outliers)
-        max_mse = np.percentile(np.array(list(shard_token_idx_to_mse.values())), 95).item()  # 95th percentile
+        # Caculate max MSE using percentile
+        # We want at most 75% of the samples to have a non-zero magnitude
+        max_mse = np.percentile(np.array(list(shard_token_idx_to_mse.values())), 75).item()
 
         # Calculate sample magnitudes
         block_size = cluster.layer_cache.block_size
@@ -280,7 +282,7 @@ class ClusterSearch:
                     divisor = max(1e-10, max_mse)  # Avoid division by zero
                     magnitude = max(1.0 - mse / divisor, 0)  # Avoid negative values
                     magnitude = magnitude**2  # Square to emphasize differences
-                    magnitude = magnitude if magnitude > 0.3 else 0.0  # Ignore small values
+                    magnitude = magnitude if magnitude > 0.1 else 0.0  # Ignore small values
                     magnitudes[0, adjusted_token_idx] = magnitude
 
             magnitudes = sparse.csr_matrix(magnitudes)

@@ -81,6 +81,7 @@ def main():
     node_importance: dict[Node, float] = {}
     layer_klds: dict[int, float] = {}
     layer_predictions: dict[int, dict[str, float]] = {}
+    positional_coefficients: dict[int, float] = {}
     for layer_idx in range(model.gpt.config.n_layer + 1):
         with open(circuit_dir / f"nodes.{layer_idx}.json", "r") as f:
             data = json.load(f)
@@ -95,6 +96,8 @@ def main():
             layer_klds[layer_idx] = data["kld"]
             # Load predictions
             layer_predictions[layer_idx] = data["predictions"]
+            # Load positional coefficient
+            positional_coefficients[layer_idx] = data["positional_coefficient"]
 
     # Gather circuit edges
     edge_importance: dict[Edge, float] = {}
@@ -131,6 +134,7 @@ def main():
         data_dir,
         tokens,
         target_token_idx,
+        positional_coefficients,
     )
     # Export features
     export_features(
@@ -144,6 +148,7 @@ def main():
         data_dir,
         tokens,
         target_token_idx,
+        positional_coefficients,
     )
 
     # Export data.json
@@ -233,6 +238,7 @@ def export_blocks(
     data_dir: Path,
     tokens: list[int],
     target_token_idx: int,
+    positional_coefficients: dict[int, float],
 ):
     """
     Create a JSON file with samples for every block in the circuit.
@@ -265,6 +271,7 @@ def export_blocks(
             layer_idx,
             token_idx,
             target_token_idx,
+            positional_coefficients[layer_idx],
         )
 
 
@@ -279,6 +286,7 @@ def export_block(
     layer_idx: int,
     token_idx: int,
     target_token_idx: int,
+    positional_coefficient: float,
 ):
     """
     Create a JSON file with samples for a specific block in the circuit.
@@ -296,7 +304,7 @@ def export_block(
         circuit_feature_idxs,
         k_nearest=25,
         feature_coefficients=np.ones_like(circuit_feature_idxs),
-        positional_coefficient=0.0,
+        positional_coefficient=positional_coefficient,
     ).samples
 
     # Data to export
@@ -341,6 +349,7 @@ def export_features(
     data_dir: Path,
     tokens: list[int],
     target_token_idx: int,
+    positional_coefficients: dict[int, float],
 ):
     """
     Create a JSON file with feature metrics for every feature in the circuit.
@@ -373,6 +382,7 @@ def export_features(
             token_idx,
             feature_idx,
             target_token_idx,
+            positional_coefficients[layer_idx],
         )
 
     # Export features without circuit context
@@ -470,6 +480,7 @@ def export_circuit_feature(
     token_idx: int,
     feature_idx: int,
     target_token_idx: int,
+    positional_coefficient: float,
 ):
     """
     Create a JSON file with feature metrics for a specific feature in the circuit.
@@ -483,8 +494,8 @@ def export_circuit_feature(
     circuit_feature_idxs = np.array([node.feature_idx for node in nodes if node in target_nodes])
 
     # Magnify the importance of the targeted feature
-    feature_coefficients = np.full_like(circuit_feature_idxs, 0.04, dtype=np.float32)
-    feature_coefficients[np.where(circuit_feature_idxs == feature_idx)[0]] = 1.0
+    feature_coefficients = np.full_like(circuit_feature_idxs, 1.0, dtype=np.float32)
+    feature_coefficients[np.where(circuit_feature_idxs == feature_idx)[0]] = 25.0
 
     # Get samples that are similar to the target token
     num_samples = 25
@@ -495,10 +506,9 @@ def export_circuit_feature(
         token_idx,
         target_feature_magnitudes,
         circuit_feature_idxs,
-        # Use more neighbors if more than one feature dimension
         k_nearest=k_nearest,
         feature_coefficients=feature_coefficients,
-        positional_coefficient=0.0,
+        positional_coefficient=positional_coefficient,
     )
 
     # Choose random samples from the cluster
