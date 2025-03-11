@@ -62,7 +62,7 @@ if __name__ == "__main__":
     model_cache = ModelCache(checkpoint_dir)
 
     # Set feature ablation strategy
-    num_samples = 64  # Number of samples to use for estimating KL divergence
+    num_samples = 128  # Number of samples to use for estimating KL divergence
     k_nearest = 256  # How many nearest neighbors to consider in resampling
     max_positional_coefficient = 2.0  # How important is the position of a feature
 

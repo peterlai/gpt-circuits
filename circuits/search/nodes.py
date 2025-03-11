@@ -90,7 +90,7 @@ class NodeSearch:
             target_logits,
             [baseline_circuit],
             feature_magnitudes,
-            num_samples=self.num_samples * 4,  # Increase samples for baseline
+            num_samples=self.num_samples,
         )[baseline_circuit]
         baseline_kld = basline_results.kl_divergence
 

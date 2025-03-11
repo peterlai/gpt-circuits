@@ -127,7 +127,7 @@ class CircuitSearch:
                 target_logits,
                 [circuit],
                 model_output.feature_magnitudes[layer_idx].squeeze(0),  # Shape: (T, F)
-                self.num_samples * 4,  # Increase samples for final calculation
+                min(self.k_nearest or int(1e10), self.num_samples * 4),  # Increase samples for final calculation
             )[circuit]
             klds[layer_idx] = circuit_results.kl_divergence
             predictions[layer_idx] = circuit_results.predictions
