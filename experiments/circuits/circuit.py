@@ -33,6 +33,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", type=str, default="train", help="Dataset split to use")
     parser.add_argument("--model", type=str, default="e2e.jumprelu.shakespeare_64x4", help="Model to analyze")
     parser.add_argument("--threshold", type=float, default=0.1, help="Max threshold for KL divergence")
+    parser.add_argument("--num_samples", type=int, default=64, help="Number of samples to use for estimating KLD")
+    parser.add_argument("--k_nearest", type=int, default=256, help="Number of neighbors to consider in resampling")
     return parser.parse_args()
 
 
@@ -62,8 +64,8 @@ if __name__ == "__main__":
     model_cache = ModelCache(checkpoint_dir)
 
     # Set feature ablation strategy
-    num_samples = 128  # Number of samples to use for estimating KL divergence
-    k_nearest = 256  # How many nearest neighbors to consider in resampling
+    num_samples = args.num_samples  # Number of samples to use for estimating KL divergence
+    k_nearest = args.k_nearest  # How many nearest neighbors to consider in resampling
     max_positional_coefficient = 2.0  # How important is the position of a feature
 
     # Load shard

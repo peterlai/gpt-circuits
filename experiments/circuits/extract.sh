@@ -25,7 +25,7 @@ echo "Extracting '$CIRCUIT_NAME'"
 trap 'kill $(jobs -p) 2>/dev/null' EXIT INT
 
 # Extract nodes and edges
-python -m experiments.circuits.circuit --split=$SPLIT --sequence_idx=$SEQUENCE_IDX --token_idx=$TOKEN_IDX
+python -m experiments.circuits.circuit --split=$SPLIT --sequence_idx=$SEQUENCE_IDX --token_idx=$TOKEN_IDX --threshold=0.15 --num_samples=256
 
 # Export circuit to visualizer
-python -m experiments.circuits.export --circuit=$CIRCUIT_NAME --dirname=$DIRNAME
+python -m experiments.circuits.export --dirname=$DIRNAME --circuit=$CIRCUIT_NAME

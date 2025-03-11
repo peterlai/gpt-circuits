@@ -47,6 +47,8 @@ class CircuitSearch:
         :param k_nearest: The number of nearest neighbors to use for clustering.
         :param max_positional_coefficient: The starting coefficient to use for positional distance when clustering.
         """
+        assert 0 < num_samples <= (k_nearest or int(1e10))
+
         self.model = model
         self.model_profile = model_profile
         self.model_cache = model_cache

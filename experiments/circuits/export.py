@@ -33,7 +33,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dirname", type=str, help="Output directory name")
     parser.add_argument("--name", type=str, default="", help="Sample name")
     parser.add_argument("--version", type=str, default="", help="Sample version")
-    parser.add_argument("--threshold", type=float, default=0.2, help="Circuit KL divergence")
     return parser.parse_args()
 
 
@@ -41,13 +40,25 @@ def main():
     # Parse command line arguments
     args = parse_args()
     sample_name = args.name if args.name else args.circuit
-    sample_version = args.version if args.version else str(args.threshold)
 
     # Set paths
     checkpoint_dir = TrainingConfig.checkpoints_dir / args.model
     circuit_dir = checkpoint_dir / "circuits" / args.circuit
     base_dir = Path("app/public/samples") / args.dirname
     features_dir = base_dir / "features"
+
+    # Load sequence args
+    with open(circuit_dir / "nodes.0.json") as f:
+        data = json.load(f)
+        data_dir: Path = Path(data["data_dir"])
+        split: str = data["split"]
+        shard_idx: int = data["shard_idx"]
+        sequence_idx: int = data["sequence_idx"]
+        target_token_idx: int = data["token_idx"]
+        threshold: float = data["threshold"]
+
+    # Set sample directory
+    sample_version = args.version if args.version else str(threshold)  # Fall back to threshold for version
     sample_dir = base_dir / "samples" / sample_name / sample_version
 
     # Load model
@@ -63,15 +74,6 @@ def main():
     model_profile = ModelProfile(checkpoint_dir)
     model_cache = ModelCache(checkpoint_dir)
     model_sample_set = ModelSampleSet(checkpoint_dir)
-
-    # Load sequence args
-    with open(circuit_dir / "nodes.0.json") as f:
-        data = json.load(f)
-        data_dir: Path = Path(data["data_dir"])
-        split: str = data["split"]
-        shard_idx: int = data["shard_idx"]
-        sequence_idx: int = data["sequence_idx"]
-        target_token_idx: int = data["token_idx"]
 
     # Get tokens
     shard_for_tokens = DatasetShard(data_dir, split, shard_idx)
@@ -122,7 +124,7 @@ def main():
                     token_importance[downstream_node][token_idx] = importance
 
     # Construct circuit
-    circuit = construct_circuit(model.gpt.config, node_importance, edge_importance, args.threshold)
+    circuit = construct_circuit(model.gpt.config, node_importance, edge_importance)
 
     # Export blocks
     export_blocks(
@@ -164,43 +166,19 @@ def main():
         layer_klds,
         layer_predictions,
         target_token_idx,
-        args.threshold,
+        threshold,
     )
 
 
-def construct_circuit(gpt_config: GPTConfig, node_importance, edge_importance, threshold) -> Circuit:
+def construct_circuit(gpt_config: GPTConfig, node_importance, edge_importance) -> Circuit:
     """
-    Construct a circuit from nodes and edges given a KLD threshold.
+    Construct a circuit from nodes and edges.
     """
-    nodes = set()
-    edges = set()
+    # Use all nodes
+    nodes = set(node_importance.keys())
 
-    # Build circuit starting from the last layer
-    for layer_idx in range(gpt_config.n_layer, -1, -1):
-        layer_nodes = set([node for node in node_importance if node.layer_idx == layer_idx])
-        layer_node_importance = {node: node_importance[node] for node in layer_nodes if node in layer_nodes}
-
-        # Find largest KLD below threshold
-        klds_below_threshold = [kld for kld in layer_node_importance.values() if kld < threshold]
-        if klds_below_threshold:
-            layer_threshold = max(kld for kld in klds_below_threshold)
-        else:
-            #  Use the smallest KLD if all are above threshold
-            layer_threshold = min(layer_node_importance.values())
-
-        # Filter nodes based various criteria
-        for node, kld in layer_node_importance.items():
-            # Include node if needed to satisfy threshold
-            if kld >= layer_threshold:
-                nodes.add(node)
-            # Include node if a downstream node exists at the same token index
-            elif node.token_idx in {n.token_idx for n in nodes if n.layer_idx == layer_idx + 1}:
-                nodes.add(node)
-
-    # Filter edges based on nodes and importance
-    for edge, importance in edge_importance.items():
-        if edge.upstream in nodes and edge.downstream in nodes and importance > 0.01:
-            edges.add(edge)
+    # Filter edges based on importance
+    edges = set(edge for edge, importance in edge_importance.items() if importance > 0.01)
 
     # Try to add an edge to nodes with no upstream connections
     for node in nodes:
