@@ -126,10 +126,10 @@ class ConnectionModifier {
       // Emphasize connection if it is related to a focused block/feature
       const ablationWeights = focusedAblations.map((ablation) => ablation.weight);
       const maxAblationWeight = Math.max(...ablationWeights);
-      if (maxAblationWeight > 5.0) {
+      if (maxAblationWeight > 0.9) {
         this.width = 2;
         this.weight = 3;
-      } else if (maxAblationWeight > 1.0) {
+      } else if (maxAblationWeight > 0.5) {
         this.width = 1;
         this.weight = 3;
       } else if (maxAblationWeight > 0.1) {
@@ -143,10 +143,10 @@ class ConnectionModifier {
       // Show default connection weight and width based on edge importance.
       const ablationWeights = connection.ablations.map((ablation) => ablation.weight);
       const maxAblationWeight = Math.max(...ablationWeights);
-      if (maxAblationWeight > 5.0) {
+      if (maxAblationWeight > 0.9) {
         this.width = 2;
         this.weight = 3;
-      } else if (maxAblationWeight > 1.0) {
+      } else if (maxAblationWeight > 0.5) {
         this.width = 1;
         this.weight = 2;
       } else if (maxAblationWeight > 0.1) {

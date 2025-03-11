@@ -7,7 +7,7 @@ import { Sidebar } from "../../components/Inspect/Sidebar";
 import { Navbar } from "../../components/Navbar";
 import { modelIdAtom, sampleIdAtom, versionAtom } from "../../stores/Graph";
 import { isSidebarOpenAtom } from "../../stores/Navigation";
-import { toggleSelectionAtom } from "../../stores/Selection";
+import { selectedLayerIdxAtom, toggleSelectionAtom } from "../../stores/Selection";
 
 import "./style.scss";
 
@@ -22,12 +22,14 @@ function Inspect() {
   const setModelId = useSetAtom(modelIdAtom);
   const setVersion = useSetAtom(versionAtom);
   const toggleSelection = useSetAtom(toggleSelectionAtom);
+  const setSelectedLayerIdx = useSetAtom(selectedLayerIdxAtom);
   const isSidebarOpen = useAtomValue(isSidebarOpenAtom);
 
   // Reset selection state if sample ID changes.
   useEffect(() => {
     toggleSelection(null);
-  }, [sampleIdFromUrl, toggleSelection]);
+    setSelectedLayerIdx(null);
+  }, [sampleIdFromUrl, toggleSelection, setSelectedLayerIdx]);
 
   // Set sample ID and feature from URL params.
   useEffect(() => {

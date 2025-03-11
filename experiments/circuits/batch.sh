@@ -30,4 +30,4 @@ VAL_TOKEN_IDS=(15524 69324 75324 85424)
 process_token_ids "toy-v0" "train" "${TRAIN_TOKEN_IDS[@]}"
 
 # Process validation data
-pocess_token_ids "toy-local" "val" "${VAL_TOKEN_IDS[@]}"
+process_token_ids "toy-v0" "val" "${VAL_TOKEN_IDS[@]}"

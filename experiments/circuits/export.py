@@ -15,13 +15,8 @@ from circuits import Circuit, Edge, Node, json_prettyprint
 from circuits.features.cache import ModelCache
 from circuits.features.profiles import FeatureProfile, ModelProfile
 from circuits.features.samples import ModelSampleSet, Sample
-from circuits.search.ablation import ResampleAblator
 from circuits.search.clustering import ClusterSearch
-from circuits.search.divergence import (
-    get_predicted_logits,
-    get_predictions,
-    patch_feature_magnitudes,
-)
+from circuits.search.divergence import get_predictions
 from config import Config, TrainingConfig
 from config.gpt.models import GPTConfig
 from data.dataloaders import DatasetShard
@@ -38,7 +33,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dirname", type=str, help="Output directory name")
     parser.add_argument("--name", type=str, default="", help="Sample name")
     parser.add_argument("--version", type=str, default="", help="Sample version")
-    parser.add_argument("--threshold", type=float, default=0.2, help="Circuit KL divergence")
     return parser.parse_args()
 
 
@@ -46,13 +40,25 @@ def main():
     # Parse command line arguments
     args = parse_args()
     sample_name = args.name if args.name else args.circuit
-    sample_version = args.version if args.version else str(args.threshold)
 
     # Set paths
     checkpoint_dir = TrainingConfig.checkpoints_dir / args.model
     circuit_dir = checkpoint_dir / "circuits" / args.circuit
     base_dir = Path("app/public/samples") / args.dirname
     features_dir = base_dir / "features"
+
+    # Load sequence args
+    with open(circuit_dir / "nodes.0.json") as f:
+        data = json.load(f)
+        data_dir: Path = Path(data["data_dir"])
+        split: str = data["split"]
+        shard_idx: int = data["shard_idx"]
+        sequence_idx: int = data["sequence_idx"]
+        target_token_idx: int = data["token_idx"]
+        threshold: float = data["threshold"]
+
+    # Set sample directory
+    sample_version = args.version if args.version else str(threshold)  # Fall back to threshold for version
     sample_dir = base_dir / "samples" / sample_name / sample_version
 
     # Load model
@@ -69,30 +75,31 @@ def main():
     model_cache = ModelCache(checkpoint_dir)
     model_sample_set = ModelSampleSet(checkpoint_dir)
 
-    # Load sequence args
-    with open(circuit_dir / "nodes.0.json") as f:
-        data = json.load(f)
-        data_dir: Path = Path(data["data_dir"])
-        split: str = data["split"]
-        shard_idx: int = data["shard_idx"]
-        sequence_idx: int = data["sequence_idx"]
-        target_token_idx: int = data["token_idx"]
-
     # Get tokens
     shard_for_tokens = DatasetShard(data_dir, split, shard_idx)
     tokens: list[int] = shard_for_tokens.tokens[sequence_idx : sequence_idx + model.config.block_size].tolist()
 
     # Gather circuit nodes
     node_importance: dict[Node, float] = {}
+    layer_klds: dict[int, float] = {}
+    layer_predictions: dict[int, dict[str, float]] = {}
+    positional_coefficients: dict[int, float] = {}
     for layer_idx in range(model.gpt.config.n_layer + 1):
         with open(circuit_dir / f"nodes.{layer_idx}.json", "r") as f:
             data = json.load(f)
+            # Load nodes
             for token_str, features in data["nodes"].items():
                 token_idx = int(token_str)
                 for feature_str, kld in features.items():
                     feature_idx = int(feature_str)
                     node = Node(layer_idx, token_idx, feature_idx)
                     node_importance[node] = kld
+            # Load KLD
+            layer_klds[layer_idx] = data["kld"]
+            # Load predictions
+            layer_predictions[layer_idx] = data["predictions"]
+            # Load positional coefficient
+            positional_coefficients[layer_idx] = data["positional_coefficient"]
 
     # Gather circuit edges
     edge_importance: dict[Edge, float] = {}
@@ -117,7 +124,7 @@ def main():
                     token_importance[downstream_node][token_idx] = importance
 
     # Construct circuit
-    circuit = construct_circuit(model.gpt.config, node_importance, edge_importance, args.threshold)
+    circuit = construct_circuit(model.gpt.config, node_importance, edge_importance)
 
     # Export blocks
     export_blocks(
@@ -129,6 +136,7 @@ def main():
         data_dir,
         tokens,
         target_token_idx,
+        positional_coefficients,
     )
     # Export features
     export_features(
@@ -142,6 +150,7 @@ def main():
         data_dir,
         tokens,
         target_token_idx,
+        positional_coefficients,
     )
 
     # Export data.json
@@ -154,44 +163,22 @@ def main():
         circuit,
         edge_importance,
         token_importance,
+        layer_klds,
+        layer_predictions,
         target_token_idx,
-        args.threshold,
+        threshold,
     )
 
 
-def construct_circuit(gpt_config: GPTConfig, node_importance, edge_importance, threshold) -> Circuit:
+def construct_circuit(gpt_config: GPTConfig, node_importance, edge_importance) -> Circuit:
     """
-    Construct a circuit from nodes and edges given a KLD threshold.
+    Construct a circuit from nodes and edges.
     """
-    nodes = set()
-    edges = set()
+    # Use all nodes
+    nodes = set(node_importance.keys())
 
-    # Build circuit starting from the last layer
-    for layer_idx in range(gpt_config.n_layer, -1, -1):
-        layer_nodes = set([node for node in node_importance if node.layer_idx == layer_idx])
-        layer_node_importance = {node: node_importance[node] for node in layer_nodes if node in layer_nodes}
-
-        # Find largest KLD below threshold
-        klds_below_threshold = [kld for kld in layer_node_importance.values() if kld < threshold]
-        if klds_below_threshold:
-            layer_threshold = max(kld for kld in klds_below_threshold)
-        else:
-            #  Use the smallest KLD if all are above threshold
-            layer_threshold = min(layer_node_importance.values())
-
-        # Filter nodes based various criteria
-        for node, kld in layer_node_importance.items():
-            # Include node if needed to satisfy threshold
-            if kld >= layer_threshold:
-                nodes.add(node)
-            # Include node if a downstream node exists at the same token index
-            elif node.token_idx in {n.token_idx for n in nodes if n.layer_idx == layer_idx + 1}:
-                nodes.add(node)
-
-    # Filter edges based on nodes and importance
-    for edge, importance in edge_importance.items():
-        if edge.upstream in nodes and edge.downstream in nodes and importance > 0.1:
-            edges.add(edge)
+    # Filter edges based on importance
+    edges = set(edge for edge, importance in edge_importance.items() if importance > 0.01)
 
     # Try to add an edge to nodes with no upstream connections
     for node in nodes:
@@ -229,6 +216,7 @@ def export_blocks(
     data_dir: Path,
     tokens: list[int],
     target_token_idx: int,
+    positional_coefficients: dict[int, float],
 ):
     """
     Create a JSON file with samples for every block in the circuit.
@@ -261,6 +249,7 @@ def export_blocks(
             layer_idx,
             token_idx,
             target_token_idx,
+            positional_coefficients[layer_idx],
         )
 
 
@@ -275,6 +264,7 @@ def export_block(
     layer_idx: int,
     token_idx: int,
     target_token_idx: int,
+    positional_coefficient: float,
 ):
     """
     Create a JSON file with samples for a specific block in the circuit.
@@ -285,16 +275,15 @@ def export_block(
 
     # Get samples that are similar to the target token
     cluster_search = ClusterSearch(model_profile, model_cache)
-    cluster = cluster_search.get_cluster(
+    cluster_samples = cluster_search.get_cluster_as_sample_set(
         layer_idx,
         token_idx,
         target_feature_magnitudes,
         circuit_feature_idxs,
         k_nearest=25,
         feature_coefficients=np.ones_like(circuit_feature_idxs),
-        positional_coefficient=0.0,
-    )
-    cluster_samples = cluster.as_sample_set().samples
+        positional_coefficient=positional_coefficient,
+    ).samples
 
     # Data to export
     data = {
@@ -338,6 +327,7 @@ def export_features(
     data_dir: Path,
     tokens: list[int],
     target_token_idx: int,
+    positional_coefficients: dict[int, float],
 ):
     """
     Create a JSON file with feature metrics for every feature in the circuit.
@@ -370,6 +360,7 @@ def export_features(
             token_idx,
             feature_idx,
             target_token_idx,
+            positional_coefficients[layer_idx],
         )
 
     # Export features without circuit context
@@ -467,6 +458,7 @@ def export_circuit_feature(
     token_idx: int,
     feature_idx: int,
     target_token_idx: int,
+    positional_coefficient: float,
 ):
     """
     Create a JSON file with feature metrics for a specific feature in the circuit.
@@ -480,8 +472,8 @@ def export_circuit_feature(
     circuit_feature_idxs = np.array([node.feature_idx for node in nodes if node in target_nodes])
 
     # Magnify the importance of the targeted feature
-    feature_coefficients = np.full_like(circuit_feature_idxs, 0.04, dtype=np.float32)
-    feature_coefficients[np.where(circuit_feature_idxs == feature_idx)[0]] = 1.0
+    feature_coefficients = np.full_like(circuit_feature_idxs, 1.0, dtype=np.float32)
+    feature_coefficients[np.where(circuit_feature_idxs == feature_idx)[0]] = 25.0
 
     # Get samples that are similar to the target token
     num_samples = 25
@@ -492,10 +484,9 @@ def export_circuit_feature(
         token_idx,
         target_feature_magnitudes,
         circuit_feature_idxs,
-        # Use more neighbors if more than one feature dimension
         k_nearest=k_nearest,
         feature_coefficients=feature_coefficients,
-        positional_coefficient=0.0,
+        positional_coefficient=positional_coefficient,
     )
 
     # Choose random samples from the cluster
@@ -578,6 +569,8 @@ def export_circuit_data(
     circuit: Circuit,
     edge_importance: dict[Edge, float],
     token_importance: dict[Node, dict[int, float]],
+    layer_klds: dict[int, float],
+    layer_predictions: dict[int, dict[str, float]],
     target_token_idx: int,
     threshold: float,
 ):
@@ -599,6 +592,11 @@ def export_circuit_data(
         "kldThreshold": threshold,
     }
 
+    # Set KLDs
+    data["klds"] = {}
+    for layer_idx in range(model.gpt.config.n_layer + 1):
+        data["klds"][layer_idx] = round(layer_klds[layer_idx], 3)
+
     # Set feature magnitudes
     data["activations"] = {}
     data["normalizedActivations"] = {}
@@ -614,25 +612,12 @@ def export_circuit_data(
     data["probabilities"] = {k: round(v / 100.0, 3) for k, v in probabilities.items() if v > 0.1}
 
     # Set circuit probabilities
-    ablator = ResampleAblator(model_profile, model_cache, 128, 0.0)
-    last_layer_idx = model.gpt.config.n_layer
-    feature_magnitudes = output.feature_magnitudes[last_layer_idx][0]
-    patched_feature_magnitudes = patch_feature_magnitudes(
-        ablator,
-        last_layer_idx,
-        target_token_idx,
-        [circuit],
-        feature_magnitudes,
-        num_samples=128,
-    )
-    predicted_logits = get_predicted_logits(
-        model,
-        last_layer_idx,
-        patched_feature_magnitudes,
-        target_token_idx,
-    )[circuit]
-    predicted_probabilities = get_predictions(model.gpt.config.tokenizer, predicted_logits, 128)
-    data["circuitProbabilities"] = {k: round(v / 100.0, 3) for k, v in predicted_probabilities.items() if v > 0.1}
+    data["layerProbabilities"] = {}
+    for layer_idx in range(model.gpt.config.n_layer + 1):
+        layer_probabilities = layer_predictions[layer_idx]
+        data["layerProbabilities"][layer_idx] = {
+            k: round(v / 100.0, 3) for k, v in layer_probabilities.items() if v > 0.1
+        }
 
     # Set ablation graph
     data["graph"] = {}

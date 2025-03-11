@@ -18,7 +18,7 @@ if (buildMode) {
 } else {
     modelsDir = 'public/samples';
     allowedModelPrefixes = ["toy"];
-    ignoredModelPrefixes = ["toy-v0"];
+    ignoredModelPrefixes = []; // ["toy-v0"];
 }
 
 // If building for deploying, clean up build directory
