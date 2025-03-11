@@ -8,7 +8,7 @@ import "./Intro.scss";
 function Intro() {
   const modelId = "toy-v0";
   const sampleId = "val.0.69248.76";
-  const version = "0.15";
+  const version = "0.1";
   const selectionKey = "0.2";
   const embeddedSamplePath = `#${getEmbeddedSamplePath(modelId, sampleId, version, selectionKey)}`;
   const [isMenuOpen, setIsMenuOpen] = useAtom(isMenuOpenAtom);
