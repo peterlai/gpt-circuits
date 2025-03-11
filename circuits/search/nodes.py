@@ -122,8 +122,8 @@ class NodeSearch:
         selected_nodes: set[RankedNode] = set()
         previous_klds = []
         for ranked_node in reversed(ranked_nodes):
-            # Stop if KLD is greater than average of previous 3 values
-            if len(previous_klds) >= 3 and ranked_node.kld > sum(previous_klds[-3:]) / 3:
+            # Stop if KLD is greater than average of previous few values
+            if len(previous_klds) >= 7 and ranked_node.kld > sum(previous_klds[-7:]) / 7:
                 break
             # Add node to layer
             selected_nodes.add(ranked_node)
