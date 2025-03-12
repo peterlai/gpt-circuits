@@ -27,7 +27,8 @@ from circuits.search.ablation import ZeroAblator
 from circuits.search.divergence import compute_downstream_magnitudes, get_predicted_logits_from_full_circuit
 from circuits.search.edges import compute_downstream_magnitudes_from_edges
 
-from xavier.utils import compute_kl_divergence, create_full_edge_set, select_edges_from_array
+from xavier.utils import compute_kl_divergence, create_full_edge_set, select_edges_from_array, create_tokenless_edges_from_array
+import time
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Plot KL divergence between random and full circuits')
@@ -75,7 +76,7 @@ def main():
     print("Setting up computation parameters...")
     ablator = ZeroAblator()
     layer_num = args.layer
-    target_token_idx = 1 # Computations scale very badly when increasing this token
+    target_token_idx = 12 
     num_downstream_features = model.config.n_features[layer_num]
     num_upstream_features = model.config.n_features[layer_num+1]
     num_samples = 2
@@ -101,13 +102,14 @@ def main():
     )   
     
     # Create random edges and compute KL divergences
-    # min_edges = 10
-    # max_edges = num_downstream_features*num_upstream_features
-    # num_circuits = 5
-    # num_edges_array = np.flip(np.linspace(min_edges, max_edges, num_circuits, dtype=int))
+    min_edges = 10
+    max_edges = num_downstream_features*num_upstream_features-1
+    num_circuits = 8
+    num_edges_array = np.flip(np.linspace(min_edges, max_edges, num_circuits, dtype=int))
 
     # Selecting a few edge numbers for testing
-    num_edges_array = np.array([num_downstream_features * num_upstream_features, num_downstream_features * num_upstream_features - 1, 10])
+    # num_edges_array = np.array([num_downstream_features * num_upstream_features - 1, ])
+    # num_edges_array = np.array([num_downstream_features * num_upstream_features - 1])
     
     
     kl_divergences = []
@@ -120,7 +122,7 @@ def main():
     for num_edges in num_edges_array:    
         # Update random edges
         random_edge_arr = full_edge_arr[:num_edges]
-        random_edges = select_edges_from_array(random_edge_arr, layer_num, target_token_idx)
+        random_edges = create_tokenless_edges_from_array(random_edge_arr, layer_num)
 
         print(f"Computing for {num_edges} random edges...")
         
@@ -136,7 +138,6 @@ def main():
 
         else:
             # Compute downstream magnitudes from random edges
-            ## This is taking way too long, make more efficient...
             random_downstream_magnitudes = compute_downstream_magnitudes_from_edges(
                 model,
                 ablator,
@@ -145,6 +146,7 @@ def main():
                 target_token_idx,
                 num_samples
             )
+
             
             # Get random circuit logits
             logits_random = get_predicted_logits_from_full_circuit(
@@ -176,4 +178,8 @@ def main():
     print("Done!")
 
 if __name__ == "__main__":
+    start_time = time.time()
     main()
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Total execution time: {elapsed_time:.2f} seconds")

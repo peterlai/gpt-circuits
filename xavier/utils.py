@@ -3,7 +3,7 @@ import torch.nn.functional as Fn
 import random
 import numpy as np
 
-from circuits import Circuit, Edge, Node
+from circuits import Circuit, Edge, Node, TokenlessNode, TokenlessEdge
 
 def compute_kl_divergence(logits_p, logits_q):
     """
@@ -196,5 +196,33 @@ def select_edges_from_array(
         for t_down in range(target_token_idx+1)
         for f_up, f_down in edge_arr
     ])
+    
+    return edges
+
+
+def create_tokenless_edges_from_array(
+    edge_arr: np.ndarray, 
+    upstream_layer_idx: int
+):
+
+
+    # Create all possible edges
+    ## THINK ABOUT WHY WE NEED ALL POSSIBLE EDGES -- make this part more efficient
+    edges = frozenset([
+        TokenlessEdge(
+            upstream=TokenlessNode(layer_idx=upstream_layer_idx, feature_idx=f_up),
+            downstream=TokenlessNode(layer_idx=upstream_layer_idx+1, feature_idx=f_down)
+        )
+        for f_up, f_down in edge_arr
+    ])
+
+    # edges = frozenset([
+    #     Edge(
+    #         upstream=Node(layer_idx=upstream_layer_idx, token_idx=t_up, feature_idx=f_up),
+    #         downstream=Node(layer_idx=upstream_layer_idx+1, token_idx=target_token_idx, feature_idx=f_down)
+    #     )
+    #     for t_up in range(target_token_idx+1)
+    #     for f_up, f_down in edge_arr
+    # ])
     
     return edges

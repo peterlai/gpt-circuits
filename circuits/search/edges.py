@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import torch
 
-from circuits import Circuit, Edge, Node
+from circuits import Circuit, Edge, Node, TokenlessEdge, TokenlessNode
 from circuits.features.profiles import ModelProfile
 from circuits.search.ablation import Ablator
 from circuits.search.divergence import (
@@ -12,6 +12,8 @@ from circuits.search.divergence import (
 )
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
 
+import time
+from bidict import bidict
 
 @dataclass(frozen=True)
 class EdgeSearchResult:
@@ -272,10 +274,33 @@ class EdgeSearch:
 
 #########################################################################
 
+def expand_token_index(
+    nodes: frozenset[TokenlessNode],
+    target_token_idx: int,
+) -> frozenset[Node]:
+    """
+    Take a set of tokenless nodes and expand them over the target token index.
+
+    :param nodes: Set of tokenless nodes
+    :param target_token_idx: Target token index
+    :returns: Set of nodes
+    
+    """
+
+    return frozenset(
+        Node(
+            layer_idx=node.layer_idx,
+            token_idx=token_idx,
+            feature_idx=node.feature_idx
+        )
+        for node in nodes
+        for token_idx in range(target_token_idx + 1)
+    )
+
 def compute_downstream_magnitudes_from_edges(
     model: SparsifiedGPT,
     ablator: Ablator,
-    edges: frozenset[Edge],
+    edges: frozenset[TokenlessEdge],
     upstream_magnitudes: torch.Tensor,  # Shape: (T, F)
     target_token_idx: int,
     num_samples: int = 2
@@ -296,15 +321,19 @@ def compute_downstream_magnitudes_from_edges(
     downstream_nodes = frozenset({edge.downstream for edge in edges})
     
     # Map downstream nodes to upstream dependencies
-    node_to_dependencies: dict[Node, frozenset[Node]] = {}
+    tokenless_node_to_dependencies: dict[TokenlessNode, frozenset[TokenlessNode]] = {}
     for node in downstream_nodes:
-        node_to_dependencies[node] = frozenset({edge.upstream for edge in edges if edge.downstream == node})
-    dependencies_to_nodes: dict[frozenset[Node], set[Node]] = defaultdict(set)
-    for node, dependencies in node_to_dependencies.items():
-        dependencies_to_nodes[dependencies].add(node)
+        tokenless_node_to_dependencies[node] = frozenset({edge.upstream for edge in edges if edge.downstream == node})
+    dependencies_to_tokenless_nodes: dict[frozenset[TokenlessNode], set[TokenlessNode]] = defaultdict(set)
+    for node, dependencies in tokenless_node_to_dependencies.items():
+        dependencies_to_tokenless_nodes[dependencies].add(node)
+
+    # Create a bidirectional mapping between dependencies (TokenlessNodes) and expanded dependencies (Nodes)
+    expanded_dependencies = bidict({dependencies: expand_token_index(dependencies, target_token_idx) for dependencies in dependencies_to_tokenless_nodes.keys()})
 
     # Patch upstream feature magnitudes for each set of dependencies
-    circuit_variants = [Circuit(nodes=dependencies) for dependencies in dependencies_to_nodes.keys()]
+    # Expand dependencies over the token index
+    circuit_variants = [Circuit(nodes=expanded_dependencies[dependencies]) for dependencies in dependencies_to_tokenless_nodes.keys()]
     upstream_layer_idx = next(iter(downstream_nodes)).layer_idx - 1
     patched_upstream_magnitudes = patch_feature_magnitudes(  # Shape: (num_samples, T, F)
         ablator,
@@ -345,10 +374,12 @@ def compute_downstream_magnitudes_from_edges(
     
     # Now fill in the actual computed values from our circuit variants
     for circuit_variant, magnitudes in sampled_downstream_magnitudes.items():
-        for node in dependencies_to_nodes[circuit_variant.nodes]:
-            node_sampled_magnitudes = magnitudes[:, node.token_idx, node.feature_idx]
-            result[node.token_idx, node.feature_idx] = torch.mean(node_sampled_magnitudes, dim=0)
+        # Compress circuit_variant.nodes over the token index
+        for node in dependencies_to_tokenless_nodes[expanded_dependencies.inverse[circuit_variant.nodes]]:
+            node_sampled_magnitudes = magnitudes[:, :target_token_idx+1, node.feature_idx]
+            result[:target_token_idx+1, node.feature_idx] = torch.mean(node_sampled_magnitudes, dim=0)
     
     # Normalization?
     
     return result
+
