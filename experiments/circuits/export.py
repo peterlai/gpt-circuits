@@ -6,12 +6,13 @@ $ python -m experiments.circuits.export --circuit=val.0.5120.15 --dirname=toy-lo
 
 import argparse
 import json
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 import torch
 
-from circuits import Circuit, Edge, Node, json_prettyprint
+from circuits import Circuit, Edge, EdgeGroup, Node, json_prettyprint
 from circuits.features.cache import ModelCache
 from circuits.features.profiles import FeatureProfile, ModelProfile
 from circuits.features.samples import ModelSampleSet, Sample
@@ -96,7 +97,7 @@ def main():
 
     # Gather circuit edges
     edge_importance: dict[Edge, float] = {}
-    token_importance: dict[Node, dict[int, float]] = {}
+    token_importance: dict[EdgeGroup, float] = {}
     for layer in range(1, model.gpt.config.n_layer + 1):
         with open(circuit_dir / f"edges.{layer}.json", "r") as f:
             data = json.load(f)
@@ -108,13 +109,12 @@ def main():
                     edge = Edge(upstream_node, downstream_node)
                     edge_importance[edge] = importance
             # Get token importance
-            for edge_key, upstream_tokens in data["upstream_tokens"].items():
-                downstream_node = Node(*map(int, edge_key.split(".")))
-                for token_str, importance in upstream_tokens.items():
-                    token_idx = int(token_str)
-                    if downstream_node not in token_importance:
-                        token_importance[downstream_node] = {}
-                    token_importance[downstream_node][token_idx] = importance
+            for downstream_key, upstream_tokens in data["tokens"].items():
+                _, downstream_token_idx = map(int, downstream_key.split("."))
+                for upstream_key, importance in upstream_tokens.items():
+                    upstream_layer_idx, upstream_token_idx = map(int, upstream_key.split("."))
+                    edge_group = EdgeGroup(upstream_layer_idx, upstream_token_idx, downstream_token_idx)
+                    token_importance[edge_group] = importance
 
     # Construct circuit
     circuit = construct_circuit(model.gpt.config, node_importance, edge_importance)
@@ -556,7 +556,7 @@ def export_circuit_data(
     model_profile: ModelProfile,
     circuit: Circuit,
     edge_importance: dict[Edge, float],
-    token_importance: dict[Node, dict[int, float]],
+    token_importance: dict[EdgeGroup, float],
     layer_klds: dict[int, float],
     layer_predictions: dict[int, dict[str, float]],
     target_token_idx: int,
@@ -617,15 +617,30 @@ def export_circuit_data(
         data["graph"][node_to_key(downstream_node, target_token_idx)] = dependencies
 
     # Set block importance
-    data["blockImportance"] = {}
-    for downstream_node in sorted(set(edge.downstream for edge in circuit.edges)):
-        groups = []
-        upstream_edges = [edge for edge in circuit.edges if edge.downstream == downstream_node]
-        upstream_blocks = set((edge.upstream.layer_idx, edge.upstream.token_idx) for edge in upstream_edges)
-        for layer_idx, token_idx in sorted(upstream_blocks):
-            block_weight = token_importance[downstream_node].get(token_idx, 0.0)
-            groups.append([f"{target_token_idx - token_idx}.{layer_idx}", block_weight])
-        data["blockImportance"][node_to_key(downstream_node, target_token_idx)] = groups
+    block_importance = defaultdict(dict)
+    for edge_group, importance in sorted(token_importance.items(), key=lambda x: x[0]):
+        # Does this edge group represent at least one edge in the circuit?
+        num_matches = 0
+        for edge in circuit.edges:
+            if edge_group.downstream_layer_idx == edge.downstream.layer_idx:
+                if edge_group.downstream_token_idx == edge.downstream.token_idx:
+                    if edge_group.upstream_layer_idx == edge.upstream.layer_idx:
+                        if edge_group.upstream_token_idx == edge.upstream.token_idx:
+                            num_matches += 1
+        if num_matches == 0:
+            continue
+        downstream_key = f"{target_token_idx - edge_group.downstream_token_idx}.{edge_group.downstream_layer_idx}"
+        upstream_key = f"{target_token_idx - edge_group.upstream_token_idx}.{edge_group.upstream_layer_idx}"
+        block_importance[downstream_key][upstream_key] = round(importance, 3)
+    # Sort by keys (upstream_key and downstream_key)
+    data["blockImportance"] = {
+        downstream_key: [(upstream_key, inner_dict[upstream_key]) for upstream_key in sorted(inner_dict.keys())]
+        for downstream_key, inner_dict in sorted(
+            block_importance.items(),
+            # We want to sort by layer first, then by token index
+            key=lambda x: list(reversed(list(map(int, x[0].split("."))))),
+        )
+    }
 
     # Export to data.json
     sample_dir.mkdir(parents=True, exist_ok=True)

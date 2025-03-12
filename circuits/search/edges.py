@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 import torch
 
-from circuits import Circuit, Edge, Node
+from circuits import Circuit, Edge, EdgeGroup, Node
 from circuits.features.profiles import ModelProfile
 from circuits.search.ablation import ResampleAblator
 from circuits.search.divergence import (
@@ -22,9 +22,8 @@ class EdgeSearchResult:
     # Maps an edge to a normalized MSE increase
     edge_importance: dict[Edge, float]
 
-    # Maps a downstream node to the normalized MSE increase that results from ablating all features at each upstream
-    # token index.
-    token_importance: dict[Node, dict[int, float]]
+    # Maps an edge group to a normalized MSE increase
+    token_importance: dict[EdgeGroup, float]
 
 
 class EdgeSearch:
@@ -84,7 +83,7 @@ class EdgeSearch:
         all_edges = frozenset(all_edges)
 
         # Set baseline MSE to use for comparisons
-        baseline_mses = self.estimate_downstream_mses(
+        baseline_mses = self.estimate_downstream_node_mses(
             downstream_nodes,
             all_edges,
             upstream_magnitudes,
@@ -128,7 +127,7 @@ class EdgeSearch:
 
         :param all_edges: Set of all possible edges between layers
         :param downstream_nodes: Set of downstream nodes
-        :param baseline_mses: The baseline mean-squared error per downstream node
+        :param baseline_mses: Dictionary mapping downstream nodes to their baseline mean-squared errors
         :param upstream_magnitudes: The upstream feature magnitudes (shape: T, F)
         :param original_downstream_magnitudes: The original downstream feature magnitudes (shape: T, F)
         :param target_token_idx: The target token index
@@ -164,7 +163,7 @@ class EdgeSearch:
         # Print MSE increase stats
         for downstream_node in sorted(downstream_nodes):
             print(
-                f"Edges from {downstream_node} - "
+                f"Upstream from {downstream_node} - "
                 f"Baseline: {baseline_mses[downstream_node]:.4f} - "
                 f"Min MSE increase: {min_mse_increases[downstream_node]:.4f} - "
                 f"Max MSE increase: {max_mse_increases[downstream_node]:.4f}"
@@ -187,20 +186,30 @@ class EdgeSearch:
         upstream_magnitudes: torch.Tensor,
         original_downstream_magnitudes: torch.Tensor,
         target_token_idx: int,
-    ) -> dict[Node, dict[int, float]]:
+    ) -> dict[EdgeGroup, float]:
         """
-        Compute the importance of upstream tokens for downstream nodes.
+        Compute the importance of upstream tokens for downstream tokens.
 
         :param all_edges: Set of all possible edges between layers
         :param downstream_nodes: Set of downstream nodes
-        :param baseline_mses: The baseline mean-squared error per downstream node
+        :param baseline_mses: Dictionary mapping downstream nodes to their baseline mean-squared errors
         :param upstream_magnitudes: The upstream feature magnitudes (shape: T, F)
         :param original_downstream_magnitudes: The original downstream feature magnitudes (shape: T, F)
         :param target_token_idx: The target token index
 
-        :return: Dictionary mapping downstream nodes to dictionaries of token indices and their importance scores
+        :return: Dictionary mapping downstream token indicies to upstream token indices and their importance scores
         """
-        # For each downstream node, map upstream token indices to an MSE
+        # Downstream token indices
+        upstream_layer_idx = next(iter(downstream_nodes)).layer_idx - 1
+        downstream_token_idxs = tuple(sorted({node.token_idx for node in downstream_nodes}))
+
+        # Set baseline MSE to use for comparisons
+        token_baseline_mses: dict[int, float] = {}
+        for downstream_token_idx in downstream_token_idxs:
+            baseline_node_mses = [mse for node, mse in baseline_mses.items() if node.token_idx == downstream_token_idx]
+            token_baseline_mses[downstream_token_idx] = sum(baseline_node_mses) / len(baseline_node_mses)
+
+        # For each downstream token index, map upstream token indices to an MSE
         token_ablation_mses = self.estimate_token_ablation_effects(
             downstream_nodes,
             all_edges,
@@ -211,36 +220,37 @@ class EdgeSearch:
 
         # Calculate token MSE increase from baseline
         token_mse_increases = defaultdict(dict)
-        for downstream_node, upstream_token_mses in sorted(token_ablation_mses.items(), key=lambda x: x[0]):
-            for token_idx, token_mse in sorted(upstream_token_mses.items(), key=lambda x: x[0]):
-                baseline_mse = baseline_mses[downstream_node]
-                token_mse_increases[downstream_node][token_idx] = token_mse - baseline_mse
+        for downstream_token_idx, upstream_token_mses in sorted(token_ablation_mses.items(), key=lambda x: x[0]):
+            for upstream_token_idx, token_mse in sorted(upstream_token_mses.items(), key=lambda x: x[0]):
+                baseline_mse = token_baseline_mses[downstream_token_idx]
+                token_mse_increases[downstream_token_idx][upstream_token_idx] = token_mse - baseline_mse
 
         # Calculate MSE increase stats per downstream node
-        min_mse_increases: dict[Node, float] = {}
-        max_mse_increases: dict[Node, float] = {}
-        for downstream_node in downstream_nodes:
-            min_mse_increase = min(token_mse_increases[downstream_node].values(), default=0)
-            min_mse_increases[downstream_node] = min_mse_increase
-            max_mse_increase = max(token_mse_increases[downstream_node].values(), default=0)
-            max_mse_increases[downstream_node] = max_mse_increase
+        min_mse_increases: dict[int, float] = {}
+        max_mse_increases: dict[int, float] = {}
+        for downstream_token_idx in downstream_token_idxs:
+            min_mse_increase = min(token_mse_increases[downstream_token_idx].values(), default=0)
+            min_mse_increases[downstream_token_idx] = min_mse_increase
+            max_mse_increase = max(token_mse_increases[downstream_token_idx].values(), default=0)
+            max_mse_increases[downstream_token_idx] = max_mse_increase
 
         # Print MSE increase stats
-        for downstream_node in sorted(downstream_nodes):
+        for downstream_token_idx in downstream_token_idxs:
             print(
-                f"Tokens from {downstream_node} - "
-                f"Baseline: {baseline_mses[downstream_node]:.4f} - "
-                f"Min MSE increase: {min_mse_increases[downstream_node]:.4f} - "
-                f"Max MSE increase: {max_mse_increases[downstream_node]:.4f}"
+                f"Upstream from token {downstream_token_idx} - "
+                f"Baseline: {token_baseline_mses[downstream_token_idx]:.4f} - "
+                f"Min MSE increase: {min_mse_increases[downstream_token_idx]:.4f} - "
+                f"Max MSE increase: {max_mse_increases[downstream_token_idx]:.4f}"
             )
 
         # Normalize MSE increase by max MSE increase
-        token_importance = defaultdict(dict)
-        for downstream_node, token_mses in token_mse_increases.items():
-            for token_idx, mse_increase in token_mses.items():
+        token_importance = {}
+        for downstream_token_idx, token_mses in token_mse_increases.items():
+            for upstream_token_idx, mse_increase in token_mses.items():
+                edge_group = EdgeGroup(upstream_layer_idx, upstream_token_idx, downstream_token_idx)
                 mse_increase = max(mse_increase, 0)  # Avoid negative values
-                max_mse_increase = max(max_mse_increases[downstream_node], 1e-6)  # Avoid negative value
-                token_importance[downstream_node][token_idx] = mse_increase / max_mse_increase
+                max_mse_increase = max(max_mse_increases[downstream_token_idx], 1e-6)  # Avoid negative value
+                token_importance[edge_group] = mse_increase / max_mse_increase
 
         return token_importance
 
@@ -251,7 +261,7 @@ class EdgeSearch:
         upstream_magnitudes: torch.Tensor,  # Shape: (T, F)
         original_downstream_magnitudes: torch.Tensor,  # Shape: (T, F)
         target_token_idx: int,
-    ) -> dict[Node, dict[int, float]]:
+    ) -> dict[int, dict[int, float]]:
         """
         Estimate the downstream feature mean-squared error that results from ablating each token in a circuit.
 
@@ -261,11 +271,11 @@ class EdgeSearch:
         :param original_downstream_magnitudes: The original downstream feature magnitudes.
         :param target_token_idx: The target token index.
         """
-        token_ablation_mses = defaultdict(dict)
+        token_ablation_mses = defaultdict(lambda: defaultdict(list))
         for token_idx in sorted({edge.upstream.token_idx for edge in all_edges}):
             # Exclude edges that are connected to the target token
             patched_edges = frozenset({edge for edge in all_edges if edge.upstream.token_idx != token_idx})
-            estimated_mses = self.estimate_downstream_mses(
+            estimated_mses = self.estimate_downstream_node_mses(
                 downstream_nodes,
                 patched_edges,
                 upstream_magnitudes,
@@ -275,9 +285,16 @@ class EdgeSearch:
             # Look for downstream nodes that have an edge to the target token
             for downstream_node in {edge.downstream for edge in all_edges if edge.upstream.token_idx == token_idx}:
                 # Set the mean-squared error from the downstream node
-                token_ablation_mses[downstream_node][token_idx] = estimated_mses[downstream_node]
+                mse = estimated_mses[downstream_node]
+                token_ablation_mses[downstream_node.token_idx][token_idx].append(mse)
 
-        return token_ablation_mses
+        # Average the MSEs for each downstream node grouped by token index
+        average_token_ablation_mses = defaultdict(dict)
+        for downstream_token_idx, upstream_token_mses in token_ablation_mses.items():
+            for upstream_token_idx, mses in upstream_token_mses.items():
+                average_token_ablation_mses[downstream_token_idx][upstream_token_idx] = sum(mses) / len(mses)
+
+        return average_token_ablation_mses
 
     def estimate_edge_ablation_effects(
         self,
@@ -307,7 +324,7 @@ class EdgeSearch:
 
         # Compute downstream feature magnitude errors that results from ablating each edge
         for edge, circuit_variant in edge_to_circuit_variant.items():
-            downstream_errors = self.estimate_downstream_mses(
+            downstream_errors = self.estimate_downstream_node_mses(
                 downstream_nodes,
                 circuit_variant.edges,
                 upstream_magnitudes,
@@ -317,7 +334,7 @@ class EdgeSearch:
             edge_to_mse[edge] = downstream_errors[edge.downstream]
         return edge_to_mse
 
-    def estimate_downstream_mses(
+    def estimate_downstream_node_mses(
         self,
         downstream_nodes: frozenset[Node],
         edges: frozenset[Edge],

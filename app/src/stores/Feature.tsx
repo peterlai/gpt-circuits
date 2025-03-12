@@ -66,7 +66,7 @@ class FeatureModifier {
       }
 
       // Check if focused feature is upstream or downstream
-      let ablationWeight: number = 0;
+      let ablationWeight: number | null = null;
       if (focusedFeature) {
         // If focused feature is upstream, activate feature
         if (Object.keys(feature.ablatedBy).includes(focusedFeature.key)) {
@@ -98,7 +98,7 @@ class FeatureModifier {
       }
 
       // If ablation weight exists, set weight
-      if (ablationWeight !== 0) {
+      if (ablationWeight !== null) {
         if (ablationWeight < 0.1) {
           this.fillWeight = 1;
         } else if (ablationWeight < 0.9) {

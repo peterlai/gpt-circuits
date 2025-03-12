@@ -43,6 +43,30 @@ class Edge:
 
 
 @dataclass(frozen=True)
+class EdgeGroup:
+    """
+    Represents a group of edges from a downstream token index to an upstream token index.
+    """
+
+    upstream_layer_idx: int
+    upstream_token_idx: int
+    downstream_token_idx: int
+
+    @property
+    def downstream_layer_idx(self) -> int:
+        return self.upstream_layer_idx + 1
+
+    def __repr__(self) -> str:
+        return f"({self.upstream_layer_idx}, {self.upstream_token_idx}) -> ({self.downstream_layer_idx}, {self.downstream_token_idx})"
+
+    def as_tuple(self) -> tuple[int, int, int]:
+        return self.upstream_layer_idx, self.upstream_token_idx, self.downstream_token_idx
+
+    def __lt__(self, other: "EdgeGroup") -> bool:
+        return self.as_tuple() < other.as_tuple()
+
+
+@dataclass(frozen=True)
 class Circuit:
     """
     Represents a set of nodes and edges.

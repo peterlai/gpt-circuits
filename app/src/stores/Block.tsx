@@ -12,6 +12,7 @@ class BlockData {
   public tokenOffset: number;
   public layerIdx: number;
   public features: { [key: string]: BlockFeatureData };
+  public upstreamWeights: Record<number, number> = {}; // Upstream token offset -> weight
 
   constructor(tokenOffset: number, layerIdx: number) {
     this.tokenOffset = tokenOffset;
@@ -70,7 +71,10 @@ class BlockFeatureData {
 
   // Returns the weight of the edge from the specified upstream token offset
   public getTokenEdgeWeight(upstreamTokenOffset: number | null) {
-    const maxEdgeWeight = Math.max(...Object.values(this.ablatedBy).map((a) => a.weight));
+    let maxEdgeWeight = Math.max(...Object.values(this.ablatedBy).map((a) => a.weight));
+    if (maxEdgeWeight === 0) {
+      return 0;
+    }
     let tokenEdgeWeights = Object.values(this.ablatedBy)
       .filter((a) => a.tokenOffset === upstreamTokenOffset)
       .map((a) => a.weight);
@@ -117,6 +121,7 @@ const blocksAtom = atom((get) => {
   const ablationGraph = data?.graph ?? {};
   const activations: { [key: string]: number } = data?.activations ?? {};
   const normalizedActivations: { [key: string]: number } = data?.normalizedActivations ?? {};
+  const upstreamTokenWeights = data?.blockImportance ?? {};
 
   // Gather all unique feature keys
   const featureKeys = new Set<string>();
@@ -140,6 +145,18 @@ const blocksAtom = atom((get) => {
       blockData.features[featureKey] ||
       new BlockFeatureData(tokenOffset, layerIdx, featureId, activation, normalizedActivation);
     blockData.features[featureKey] = featureData;
+  }
+
+  // Add upstream weights to blocks
+  for (const [downstreamKey, upstreamWeights] of Object.entries(upstreamTokenWeights)) {
+    const [tokenOffset, layerIdx] = downstreamKey.split(".").map(Number);
+    const blockKey = BlockData.getKey(tokenOffset, layerIdx);
+    const weights: Record<number, number> = {};
+    for (const [upstreamKey, weight] of upstreamWeights as [string, number][]) {
+      const upstreamTokenOffset = upstreamKey.split(".").map(Number)[0];
+      weights[upstreamTokenOffset] = weight;
+    }
+    blocks[blockKey].upstreamWeights = weights;
   }
 
   // Add ablations to features

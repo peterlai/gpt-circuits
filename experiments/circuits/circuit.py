@@ -181,18 +181,23 @@ def main():
             grouped_edges[".".join(map(str, downstream_node.as_tuple()))] = upstream_to_value
 
         # Upstream token importance
-        upstream_tokens = {}
-        for node in downstream_nodes:
-            node_key = ".".join(map(str, node.as_tuple()))
-            upstream_tokens[node_key] = {}
-            for token_idx, value in search_result.token_importance[node].items():
-                upstream_tokens[node_key][token_idx] = round(value, 4)
+        upstream_tokens = defaultdict(dict)
+        upstream_edge_groups = {
+            edge_group
+            for edge_group in search_result.token_importance.keys()
+            if edge_group.downstream_layer_idx == layer_idx
+        }
+        for edge_group in upstream_edge_groups:
+            downstream_key = f"{edge_group.downstream_layer_idx}.{edge_group.downstream_token_idx}"
+            upstream_key = f"{edge_group.upstream_layer_idx}.{edge_group.upstream_token_idx}"
+            token_importance = search_result.token_importance[edge_group]
+            upstream_tokens[downstream_key][upstream_key] = round(token_importance, 4)
 
         # Export circuit features
         data = {
             "layer_idx": layer_idx,
             "edges": grouped_edges,
-            "upstream_tokens": upstream_tokens,
+            "tokens": upstream_tokens,
         }
         circuit_dir.mkdir(parents=True, exist_ok=True)
         with open(circuit_dir / f"edges.{layer_idx}.json", "w") as f:

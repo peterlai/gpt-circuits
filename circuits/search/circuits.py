@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import torch
 
-from circuits import Circuit, Edge, Node
+from circuits import Circuit, Edge, EdgeGroup, Node
 from circuits.features.cache import ModelCache
 from circuits.features.profiles import ModelProfile
 from circuits.search.ablation import ResampleAblator
@@ -20,7 +20,7 @@ class CircuitResult:
 
     circuit: Circuit  # Circuit found
     edge_importance: dict[Edge, float]  # edge -> importance
-    token_importance: dict[Node, dict[int, float]]  # node -> upstream token idx -> importance
+    token_importance: dict[EdgeGroup, float]  # token-to-token -> importance
     node_importance: dict[Node, float]  # node -> KLD ceiling without node
     positional_coefficients: dict[int, float]  # layer_idx -> positional coefficient
 
@@ -75,7 +75,7 @@ class CircuitSearch:
 
         # Iterate through each pairs of consecutive layers to calculate edge importance
         edge_importance: dict[Edge, float] = {}
-        token_importance: dict[Node, dict[int, float]] = {}
+        token_importance: dict[EdgeGroup, float] = {}
         for upstream_layer_idx in range(self.num_layers - 1):
             upstream_ablator = self.create_ablator(upstream_layer_idx)
             edge_search = EdgeSearch(self.model, self.model_profile, upstream_ablator, self.num_samples)

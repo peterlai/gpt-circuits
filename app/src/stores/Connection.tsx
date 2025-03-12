@@ -9,15 +9,18 @@ class ConnectionData {
   public upstreamTokenOffset: number;
   public downstreamTokenOffset: number;
   public ablations: AblationData[] = [];
+  public weight: number = 0; // Weight to use when no features are focused
 
   constructor(
     upstreamLayerIdx: number,
     upstreamTokenOffset: number,
-    downstreamTokenOffset: number
+    downstreamTokenOffset: number,
+    weight: number
   ) {
     this.upstreamLayerIdx = upstreamLayerIdx;
     this.upstreamTokenOffset = upstreamTokenOffset;
     this.downstreamTokenOffset = downstreamTokenOffset;
+    this.weight = weight;
   }
 
   get downstreamLayerIdx() {
@@ -103,8 +106,8 @@ class AblationData {
 
 // Represents modifiers to apply to a specific feature
 class ConnectionModifier {
-  public weight: number = 0;
-  public width: number = 0;
+  public weight: number = 0; // Line opacity
+  public width: number = 0; // Line width
   public isGray: boolean = false;
 
   constructor(connection: ConnectionData, selectionState: SelectionState) {
@@ -112,18 +115,30 @@ class ConnectionModifier {
     this.width = 1;
 
     // Is this connection attached to anything with focus?
-    const isAnythingFocused = !!(selectionState.focusedBlock || selectionState.focusedFeature);
-    const focusedAblations = connection.ablations.filter(
-      (ablation) =>
-        ablation.upstreamBlockKey === selectionState.focusedBlock?.key ||
-        ablation.downstreamBlockKey === selectionState.focusedBlock?.key ||
-        ablation.upstreamFeatureKey === selectionState.focusedFeature?.key ||
-        ablation.downstreamFeatureKey === selectionState.focusedFeature?.key
-    );
-    const hasFocus = isAnythingFocused && focusedAblations.length > 0;
+    const isAnythingFocused = !!selectionState.focusedBlock || !!selectionState.focusedFeature;
+    let hasBlockFocus = false;
+    let hasFeatureFocus = false;
+    let focusedAblations: AblationData[] = [];
+    if (selectionState.focusedBlock) {
+      if (
+        (selectionState.focusedBlock.layerIdx === connection.upstreamLayerIdx &&
+          selectionState.focusedBlock.tokenOffset === connection.upstreamTokenOffset) ||
+        (selectionState.focusedBlock.layerIdx === connection.downstreamLayerIdx &&
+          selectionState.focusedBlock.tokenOffset === connection.downstreamTokenOffset)
+      ) {
+        hasBlockFocus = true;
+      }
+    } else if (selectionState.focusedFeature) {
+      focusedAblations = connection.ablations.filter(
+        (ablation) =>
+          ablation.upstreamFeatureKey === selectionState.focusedFeature?.key ||
+          ablation.downstreamFeatureKey === selectionState.focusedFeature?.key
+      );
+      hasFeatureFocus = focusedAblations.length > 0;
+    }
 
-    if (hasFocus) {
-      // Emphasize connection if it is related to a focused block/feature
+    if (hasFeatureFocus) {
+      // Emphasize connections related to the focused feature.
       const ablationWeights = focusedAblations.map((ablation) => ablation.weight);
       const maxAblationWeight = Math.max(...ablationWeights);
       if (maxAblationWeight > 0.9) {
@@ -139,17 +154,15 @@ class ConnectionModifier {
         this.width = 1;
         this.weight = 1;
       }
-    } else if (!isAnythingFocused) {
-      // Show default connection weight and width based on edge importance.
-      const ablationWeights = connection.ablations.map((ablation) => ablation.weight);
-      const maxAblationWeight = Math.max(...ablationWeights);
-      if (maxAblationWeight > 0.9) {
+    } else if (hasBlockFocus || !isAnythingFocused) {
+      // Show default connection weight and width.
+      if (connection.weight > 0.9) {
         this.width = 2;
         this.weight = 3;
-      } else if (maxAblationWeight > 0.5) {
+      } else if (connection.weight > 0.5) {
         this.width = 1;
         this.weight = 2;
-      } else if (maxAblationWeight > 0.1) {
+      } else if (connection.weight > 0.1) {
         this.width = 1;
         this.weight = 1;
       } else {
@@ -188,7 +201,8 @@ const connectionsAtom = atom((get) => {
           new ConnectionData(
             upstreamAblation.layerIdx,
             upstreamAblation.tokenOffset,
-            feature.tokenOffset
+            feature.tokenOffset,
+            block.upstreamWeights[upstreamAblation.tokenOffset]
           );
         connections[connectionKey] = connection;
         // Add ablation to connection
