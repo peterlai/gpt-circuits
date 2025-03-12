@@ -232,3 +232,39 @@ def get_predicted_logits_from_full_circuit(
     logits = predicted_logits[full_circuit]
     
     return logits
+
+@torch.no_grad()
+def get_batched_predicted_logits_from_full_circuit(
+    model: SparsifiedGPT,
+    layer_idx: int,
+    feature_magnitudes: torch.Tensor,  # Shape: (num_batches, num_samples, T, F)
+    target_token_idx: int
+):
+    """
+    Get predicted logits for the full circuit when using batched patched feature magnitudes.
+
+    :param model: Model to use for prediction
+    :param layer_idx: Layer index of feature_magnitudes
+    :param feature_magnitudes: Batched patched feature magnitudes tensor
+    :param target_token_idx: Target token index
+    :return: Predicted logits for each batch, shape: (num_batches, V)
+    """
+    num_batches = feature_magnitudes.shape[0]
+    batch_logits = []
+    
+    for batch_idx in range(num_batches):
+        # Process each batch individually
+        batch_magnitudes = feature_magnitudes[batch_idx]  # Shape: (num_samples, T, F)
+        
+        # Get logits for this batch
+        logits = get_predicted_logits_from_full_circuit(
+            model, 
+            layer_idx, 
+            batch_magnitudes, 
+            target_token_idx
+        )
+        
+        batch_logits.append(logits)
+    
+    # Stack the results
+    return torch.stack(batch_logits)

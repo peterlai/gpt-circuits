@@ -382,3 +382,40 @@ def compute_downstream_magnitudes_from_edges(
     
     return result
 
+def compute_batched_downstream_magnitudes_from_edges(
+    model: SparsifiedGPT,
+    ablator: Ablator,
+    edges: frozenset[TokenlessEdge],
+    upstream_magnitudes: torch.Tensor,  # Shape: (num_batches, T, F)
+    target_token_idx: int,
+    num_samples: int = 2
+) -> torch.Tensor: # Shape: (num_batches, T, F)
+    """
+    Compute downstream feature magnitudes using only the provided edges and upstream magnitudes.
+    Processes multiple batches of upstream magnitudes in parallel.
+    
+    :param model: Model to use for computation
+    :param ablator: Ablator to use for patching
+    :param edges: Circuit edges defining connections from layer L to layer L+1
+    :param upstream_magnitudes: Upstream feature magnitudes tensor from layer L
+    :param target_token_idx: Target token index
+    :param num_samples: Number of samples for patching
+    :returns: Downstream feature magnitudes tensor at layer L+1
+    """
+    num_batches = upstream_magnitudes.shape[0]
+    result_list = []
+    
+    for batch_idx in range(num_batches):
+        # Process each batch individually using the single-batch function
+        batch_result = compute_downstream_magnitudes_from_edges(
+            model=model,
+            ablator=ablator,
+            edges=edges,
+            upstream_magnitudes=upstream_magnitudes[batch_idx],
+            target_token_idx=target_token_idx,
+            num_samples=num_samples
+        )
+        result_list.append(batch_result)
+    
+    # Stack results to match input shape
+    return torch.stack(result_list)
