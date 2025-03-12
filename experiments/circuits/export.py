@@ -1,7 +1,7 @@
 """
 Export circuit for visualization using Node app.
 
-$ python -m experiments.circuits.export --circuit=train.0.0.51 --dirname=toy-local
+$ python -m experiments.circuits.export --circuit=val.0.5120.15 --dirname=toy-local
 """
 
 import argparse
@@ -16,7 +16,6 @@ from circuits.features.cache import ModelCache
 from circuits.features.profiles import FeatureProfile, ModelProfile
 from circuits.features.samples import ModelSampleSet, Sample
 from circuits.search.clustering import ClusterSearch
-from circuits.search.divergence import get_predictions
 from config import Config, TrainingConfig
 from config.gpt.models import GPTConfig
 from data.dataloaders import DatasetShard
@@ -47,15 +46,13 @@ def main():
     base_dir = Path("app/public/samples") / args.dirname
     features_dir = base_dir / "features"
 
-    # Load sequence args
-    with open(circuit_dir / "nodes.0.json") as f:
+    # Load search configuration and tokens
+    with open(circuit_dir / "config.json") as f:
         data = json.load(f)
-        data_dir: Path = Path(data["data_dir"])
-        split: str = data["split"]
-        shard_idx: int = data["shard_idx"]
-        sequence_idx: int = data["sequence_idx"]
-        target_token_idx: int = data["token_idx"]
         threshold: float = data["threshold"]
+        tokens: list[int] = data["tokens"]
+        target_token_idx: int = data["target_token_idx"]
+        target_predictions: dict[str, float] = data.get("predictions", {})
 
     # Set sample directory
     sample_version = args.version if args.version else str(threshold)  # Fall back to threshold for version
@@ -74,10 +71,6 @@ def main():
     model_profile = ModelProfile(checkpoint_dir)
     model_cache = ModelCache(checkpoint_dir)
     model_sample_set = ModelSampleSet(checkpoint_dir)
-
-    # Get tokens
-    shard_for_tokens = DatasetShard(data_dir, split, shard_idx)
-    tokens: list[int] = shard_for_tokens.tokens[sequence_idx : sequence_idx + model.config.block_size].tolist()
 
     # Gather circuit nodes
     node_importance: dict[Node, float] = {}
@@ -133,7 +126,6 @@ def main():
         model_profile,
         model_cache,
         circuit.nodes,
-        data_dir,
         tokens,
         target_token_idx,
         positional_coefficients,
@@ -147,7 +139,6 @@ def main():
         model_profile,
         model_cache,
         model_sample_set,
-        data_dir,
         tokens,
         target_token_idx,
         positional_coefficients,
@@ -159,13 +150,13 @@ def main():
         sample_dir,
         model,
         model_profile,
-        model_cache,
         circuit,
         edge_importance,
         token_importance,
         layer_klds,
         layer_predictions,
         target_token_idx,
+        target_predictions,
         threshold,
     )
 
@@ -213,7 +204,6 @@ def export_blocks(
     model_profile: ModelProfile,
     model_cache: ModelCache,
     nodes: frozenset[Node],
-    data_dir: Path,
     tokens: list[int],
     target_token_idx: int,
     positional_coefficients: dict[int, float],
@@ -234,7 +224,7 @@ def export_blocks(
         blocks.add((node.layer_idx, node.token_idx))
 
     # Get shard that was used for caching feature magnitudes
-    shard = model_cache.get_shard(data_dir)
+    shard = model_cache.get_shard()
 
     # Export each block
     for layer_idx, token_idx in blocks:
@@ -324,7 +314,6 @@ def export_features(
     model_profile: ModelProfile,
     model_cache: ModelCache,
     model_sample_set: ModelSampleSet,
-    data_dir: Path,
     tokens: list[int],
     target_token_idx: int,
     positional_coefficients: dict[int, float],
@@ -340,7 +329,7 @@ def export_features(
         output: SparsifiedGPTOutput = model(input)
 
     # Get shard that was used for caching feature magnitudes
-    shard = model_cache.get_shard(data_dir)
+    shard = model_cache.get_shard()
 
     # Export features with circuit context
     for node in nodes:
@@ -565,13 +554,13 @@ def export_circuit_data(
     sample_dir: Path,
     model: SparsifiedGPT,
     model_profile: ModelProfile,
-    model_cache: ModelCache,
     circuit: Circuit,
     edge_importance: dict[Edge, float],
     token_importance: dict[Node, dict[int, float]],
     layer_klds: dict[int, float],
     layer_predictions: dict[int, dict[str, float]],
     target_token_idx: int,
+    target_predictions: dict[str, float],
     threshold: float,
 ):
     """
@@ -607,9 +596,7 @@ def export_circuit_data(
         data["normalizedActivations"][node_to_key(node, target_token_idx)] = round(magnitude * norm_coefficient, 3)
 
     # Set probabilities
-    logits = output.logits[0, target_token_idx, :]
-    probabilities = get_predictions(model.gpt.config.tokenizer, logits, 128)
-    data["probabilities"] = {k: round(v / 100.0, 3) for k, v in probabilities.items() if v > 0.1}
+    data["probabilities"] = {k: round(v / 100.0, 3) for k, v in target_predictions.items() if v > 0.1}
 
     # Set circuit probabilities
     data["layerProbabilities"] = {}

@@ -22,6 +22,7 @@ class ModelCache:
         """
         Cached feature magnitudes for every layer of a model.
         """
+        self.data_dir: str = ""
         self.split = ""
         self.shard_idx = 0
         self.block_size = 0
@@ -36,6 +37,7 @@ class ModelCache:
             # Load metadata
             with open(checkpoint_dir / self.filename, "r") as f:
                 meta = json.load(f)
+                self.data_dir = meta["data_dir"]
                 self.split = meta["split"]
                 self.shard_idx = meta["shard_idx"]
                 self.block_size = meta["block_size"]
@@ -58,6 +60,7 @@ class ModelCache:
         """
         Compute feature magnitudes to cache for a model.
         """
+        self.data_dir = str(shard.dir_path)
         self.split = shard.split
         self.shard_idx = shard.shard_idx
         self.block_size = model.config.block_size
@@ -106,6 +109,7 @@ class ModelCache:
         """
         # Save metadata
         meta = {
+            "data_dir": self.data_dir,
             "split": self.split,
             "shard_idx": self.shard_idx,
             "block_size": self.block_size,
@@ -125,12 +129,12 @@ class ModelCache:
         """
         return "metrics.magnitudes.json"
 
-    def get_shard(self, data_dir: Path) -> DatasetShard:
+    def get_shard(self) -> DatasetShard:
         """
         Return the shard that was used to compute the feature magnitudes.
         """
         return DatasetShard(
-            dir_path=data_dir,
+            dir_path=Path(self.data_dir),
             split=self.split,
             shard_idx=self.shard_idx,
         )

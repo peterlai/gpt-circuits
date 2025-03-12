@@ -2,10 +2,12 @@
 Find and export the circuit needed to reconstruct the output logits of a model to within a certain KL divergence
 threshold.
 
+$ python -m experiments.circuits.circuit --text="Are you now going to discredit him?" --token_idx=28
 $ python -m experiments.circuits.circuit --split=val --sequence_idx=5120 --token_idx=15
 """
 
 import argparse
+import hashlib
 from collections import defaultdict
 from pathlib import Path
 
@@ -26,29 +28,52 @@ def parse_args() -> argparse.Namespace:
     Parse command line arguments.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument("--sequence_idx", type=int, help="Index for start of sequence [0...shard.tokens.size)")
-    parser.add_argument("--token_idx", type=int, help="Index for token in the sequence [0...block_size)")
-    parser.add_argument("--shard_idx", type=int, default=0, help="Shard to load data from")
+    parser.add_argument("--model", type=str, default="e2e.jumprelu.shakespeare_64x4", help="Model to analyze")
+    # For analyzing a custom sequence
+    parser.add_argument("--text", type=str, help="Custom text to analyze")
+    # For analyzing a specific sequence in a dataset
     parser.add_argument("--data_dir", type=str, default="data/shakespeare", help="Dataset split to use")
     parser.add_argument("--split", type=str, default="train", help="Dataset split to use")
-    parser.add_argument("--model", type=str, default="e2e.jumprelu.shakespeare_64x4", help="Model to analyze")
+    parser.add_argument("--shard_idx", type=int, default=0, help="Shard to load data from")
+    parser.add_argument("--sequence_idx", type=int, help="Index for start of sequence [0...shard.tokens.size)")
+    # Circuit extraction parameters
+    parser.add_argument("--token_idx", type=int, help="Index for token in the sequence [0...block_size)")
     parser.add_argument("--threshold", type=float, default=0.1, help="Max threshold for KL divergence")
     parser.add_argument("--num_samples", type=int, default=64, help="Number of samples to use for estimating KLD")
     parser.add_argument("--k_nearest", type=int, default=256, help="Number of neighbors to consider in resampling")
     return parser.parse_args()
 
 
-if __name__ == "__main__":
+def load_tokens(model: SparsifiedGPT, args: argparse.Namespace) -> tuple[list[int], str]:
+    """
+    Return the tokens to use for the circuit search.
+
+    :param args: Command line arguments
+    :return: Tuple of tokens and recommended dirname
+    """
+    if text := args.text:
+        # Tokenize custom text
+        trimmed_text = (text + " " * model.config.block_size)[: model.config.block_size]
+        tokenizer = model.gpt.config.tokenizer
+        tokens = tokenizer.encode(trimmed_text)[: model.config.block_size]
+        hash_prefix = hashlib.sha256(text.encode("utf-8")).hexdigest()[:7]
+        dirname = f"{hash_prefix}.{args.token_idx}"
+        return tokens, dirname
+    else:
+        # Load tokens from dataset shard
+        shard_token_idx = args.sequence_idx
+        shard = DatasetShard(dir_path=Path(args.data_dir), split=args.split, shard_idx=args.shard_idx)
+        tokens: list[int] = shard.tokens[shard_token_idx : shard_token_idx + model.config.block_size].tolist()
+        dirname = f"{args.split}.{args.shard_idx}.{shard_token_idx}.{args.token_idx}"
+        return tokens, dirname
+
+
+def main():
     # Parse command line arguments
     args = parse_args()
     threshold = args.threshold
-    shard_token_idx = args.sequence_idx
     target_token_idx = args.token_idx
-
-    # Set paths
     checkpoint_dir = TrainingConfig.checkpoints_dir / args.model
-    dirname = f"{args.split}.{args.shard_idx}.{shard_token_idx}.{target_token_idx}"
-    circuit_dir = checkpoint_dir / "circuits" / dirname
 
     # Load model
     defaults = Config()
@@ -59,6 +84,12 @@ if __name__ == "__main__":
     if defaults.compile:
         model = torch.compile(model)  # type: ignore
 
+    # Load tokens
+    tokens, dirname = load_tokens(model, args)
+
+    # Set output directory
+    circuit_dir = checkpoint_dir / "circuits" / dirname
+
     # Load cached metrics and feature magnitudes
     model_profile = ModelProfile(checkpoint_dir)
     model_cache = ModelCache(checkpoint_dir)
@@ -68,12 +99,8 @@ if __name__ == "__main__":
     k_nearest = args.k_nearest  # How many nearest neighbors to consider in resampling
     max_positional_coefficient = 2.0  # How important is the position of a feature
 
-    # Load shard
-    shard = DatasetShard(dir_path=Path(args.data_dir), split=args.split, shard_idx=args.shard_idx)
-
     # Get token sequence
     tokenizer = model.gpt.config.tokenizer
-    tokens: list[int] = shard.tokens[shard_token_idx : shard_token_idx + model.config.block_size].tolist()
     decoded_tokens = tokenizer.decode_sequence(tokens)
     decoded_target = tokenizer.decode_token(tokens[target_token_idx])
     print(f'Using sequence: "{decoded_tokens.replace("\n", "\\n")}"')
@@ -96,6 +123,18 @@ if __name__ == "__main__":
     search_result = circuit_search.search(tokens, target_token_idx, threshold)
     klds, predictions = circuit_search.calculate_klds(search_result.circuit, tokens, target_token_idx)
 
+    # Export circuit search configuration
+    config_path = circuit_dir / "config.json"
+    circuit_dir.mkdir(parents=True, exist_ok=True)
+    with open(config_path, "w") as f:
+        data = {
+            "tokens": tokens,
+            "target_token_idx": target_token_idx,
+            "threshold": threshold,
+            "predictions": target_predictions,
+        }
+        f.write(json_prettyprint(data))
+
     # Print circuit nodes, grouping nodes by layer
     print("\nCircuit nodes:")
     for layer_idx in range(model.gpt.config.n_layer + 1):
@@ -114,17 +153,11 @@ if __name__ == "__main__":
 
         # Export layer
         data = {
-            "data_dir": args.data_dir,
-            "split": args.split,
-            "shard_idx": args.shard_idx,
-            "sequence_idx": shard_token_idx,
-            "token_idx": target_token_idx,
             "layer_idx": layer_idx,
-            "threshold": threshold,
             "positional_coefficient": positional_coefficient,
-            "nodes": grouped_nodes,
             "kld": round(klds[layer_idx], 4),
             "predictions": predictions[layer_idx],
+            "nodes": grouped_nodes,
         }
         circuit_dir.mkdir(parents=True, exist_ok=True)
         with open(circuit_dir / f"nodes.{layer_idx}.json", "w") as f:
@@ -157,11 +190,6 @@ if __name__ == "__main__":
 
         # Export circuit features
         data = {
-            "data_dir": args.data_dir,
-            "split": args.split,
-            "shard_idx": args.shard_idx,
-            "sequence_idx": shard_token_idx,
-            "token_idx": target_token_idx,
             "layer_idx": layer_idx,
             "edges": grouped_edges,
             "upstream_tokens": upstream_tokens,
@@ -169,3 +197,9 @@ if __name__ == "__main__":
         circuit_dir.mkdir(parents=True, exist_ok=True)
         with open(circuit_dir / f"edges.{layer_idx}.json", "w") as f:
             f.write(json_prettyprint(data))
+
+    print(f"\nExported circuit to {circuit_dir}")
+
+
+if __name__ == "__main__":
+    main()
