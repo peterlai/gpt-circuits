@@ -216,12 +216,6 @@ function UpstreamAblationsSection({
   // Compute ideal width for chart labels (in ch units)
   const chartLabelSize = Math.max(...upstreamAblations.map(([token]) => token.length)) + 2;
 
-  // Compute the maximum ablation value for the chart
-  const maxAblation = Math.max(
-    1e-6, // Avoid division by zero
-    ...upstreamAblations.map(([, offset]) => feature.groupAblations[offset])
-  );
-
   return (
     <section className="ablations">
       <h3>Upstream Tokens</h3>
@@ -247,7 +241,7 @@ function UpstreamAblationsSection({
               <td
                 style={
                   {
-                    "--size": Math.max(0.001, feature.groupAblations[offset] / maxAblation),
+                    "--size": Math.max(0.001, feature.getTokenEdgeWeight(offset)),
                   } as React.CSSProperties
                 }
               ></td>
