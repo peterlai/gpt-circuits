@@ -5,3 +5,4 @@ datasets
 tiktoken
 gpustat
 safetensors
+bidict
