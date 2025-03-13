@@ -591,7 +591,6 @@ def export_circuit_data(
         "decodedTokens": [model.gpt.config.tokenizer.decode_token(token) for token in tokens],
         "targetIdx": target_token_idx,
         "kldThreshold": threshold,
-        "tags": tags,
     }
 
     # Set KLDs
