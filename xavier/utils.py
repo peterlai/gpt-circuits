@@ -205,9 +205,6 @@ def create_tokenless_edges_from_array(
     upstream_layer_idx: int
 ):
 
-
-    # Create all possible edges
-    ## THINK ABOUT WHY WE NEED ALL POSSIBLE EDGES -- make this part more efficient
     edges = frozenset([
         TokenlessEdge(
             upstream=TokenlessNode(layer_idx=upstream_layer_idx, feature_idx=f_up),
@@ -215,14 +212,26 @@ def create_tokenless_edges_from_array(
         )
         for f_up, f_down in edge_arr
     ])
-
-    # edges = frozenset([
-    #     Edge(
-    #         upstream=Node(layer_idx=upstream_layer_idx, token_idx=t_up, feature_idx=f_up),
-    #         downstream=Node(layer_idx=upstream_layer_idx+1, token_idx=target_token_idx, feature_idx=f_down)
-    #     )
-    #     for t_up in range(target_token_idx+1)
-    #     for f_up, f_down in edge_arr
-    # ])
     
     return edges
+
+
+def get_attribution_rankings(attribution_tensor):
+
+    flattened = attribution_tensor.flatten()
+    
+    # Get the indices that would sort the array in descending order (top N only)
+    sorted_indices = torch.argsort(flattened, descending=True)
+    
+    # Store the top indices and their values in a structured way
+    ranked_indices = []
+    attribution_values = []
+    
+    for i in range(len(sorted_indices)):
+        idx = sorted_indices[i].item()
+        # Convert flat index to 2D coordinates
+        row, col = idx // attribution_tensor.shape[1], idx % attribution_tensor.shape[1]
+        ranked_indices.append((row, col))
+        attribution_values.append(attribution_tensor[row, col].item())
+    
+    return ranked_indices, attribution_values

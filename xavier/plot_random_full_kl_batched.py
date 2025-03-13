@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from safetensors.torch import load_model
 import json
 import argparse
+from safetensors.torch import load_file
 
 # Path setup
 project_root = Path(__file__).parent.parent
@@ -25,7 +26,7 @@ from circuits.search.ablation import ZeroAblator
 from circuits.search.divergence import get_batched_predicted_logits_from_full_circuit
 from circuits.search.edges import compute_batched_downstream_magnitudes_from_edges
 
-from xavier.utils import compute_kl_divergence, create_tokenless_edges_from_array
+from xavier.utils import compute_kl_divergence, create_tokenless_edges_from_array, get_attribution_rankings
 import time
 
 def parse_arguments():
@@ -72,8 +73,8 @@ def main():
     model, device = load_model_and_weights()
 
     # Set up data parameters
-    num_prompts = 3
-    sequence_length = 44
+    num_prompts = 1
+    sequence_length = 128
 
     # Load validation data
     val_array = np.load('../data/shakespeare/val_000000.npy')
@@ -122,6 +123,13 @@ def main():
     # Create random edge array 
     edge_arr = np.array([(a,b) for a in range(num_upstream_features) for b in range(num_downstream_features)])
     full_edge_arr = np.random.permutation(edge_arr)
+
+    # # Load gradient attributions
+    # file_path = "../Andy/data/attributions.safetensors"
+    # tensors = load_file(file_path)
+
+    # # Get attribution rankings
+    # full_edge_arr, _ = get_attribution_rankings(tensors[f'attributions{layer_num}-{layer_num+1}'])
 
     
     for num_edges in num_edges_array:    

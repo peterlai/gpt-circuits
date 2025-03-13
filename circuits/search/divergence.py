@@ -203,7 +203,7 @@ def get_predicted_logits_from_full_circuit(
     layer_idx: int,
     feature_magnitudes: torch.Tensor,  # Shape: (num_samples, T, F)
     target_token_idx
-):
+) -> dict[Circuit, torch.Tensor]:  # Shape: (num_samples, V)
     """
     Get predicted logits for the full circuit when using patched feature magnitudes.
 
@@ -239,7 +239,7 @@ def get_batched_predicted_logits_from_full_circuit(
     layer_idx: int,
     feature_magnitudes: torch.Tensor,  # Shape: (num_batches, num_samples, T, F)
     target_token_idx: int
-):
+) -> dict[Circuit, torch.Tensor]:  # Shape: (num_batches, num_samples, V)
     """
     Get predicted logits for the full circuit when using batched patched feature magnitudes.
 
