@@ -161,7 +161,7 @@ def main():
     )
 
 
-def construct_circuit(gpt_config: GPTConfig, node_importance, edge_importance) -> Circuit:
+def construct_circuit(gpt_config: GPTConfig, node_importance, edge_importance: dict[Edge, float]) -> Circuit:
     """
     Construct a circuit from nodes and edges.
     """
@@ -179,7 +179,12 @@ def construct_circuit(gpt_config: GPTConfig, node_importance, edge_importance) -
         if not any(edge.downstream == node for edge in edges):
             # Find the most important edge
             candidates = [e for e in edge_importance.keys() if e.downstream == node and e.upstream in nodes]
-            if best_candidate := max(candidates, key=lambda e: edge_importance[e], default=None):
+            if best_candidate := max(
+                candidates,
+                # Break ties by upstream token index
+                key=lambda e: (edge_importance[e], e.upstream.token_idx),
+                default=None,
+            ):
                 edges.add(best_candidate)
 
     # Try to add an edge to nodes with no downstream connections
@@ -190,7 +195,12 @@ def construct_circuit(gpt_config: GPTConfig, node_importance, edge_importance) -
         if not any(edge.upstream == node for edge in edges):
             # Find the most important edge
             candidates = [e for e in edge_importance.keys() if e.upstream == node and e.downstream in nodes]
-            if best_candidate := max(candidates, key=lambda e: edge_importance[e], default=None):
+            if best_candidate := max(
+                candidates,
+                # Break ties by upstream token index
+                key=lambda e: (edge_importance[e], e.upstream.token_idx),
+                default=None,
+            ):
                 edges.add(best_candidate)
 
     # Create circuit

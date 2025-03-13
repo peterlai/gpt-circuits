@@ -177,7 +177,7 @@ def main():
             ]
             upstream_to_value = {}
             for edge, value in sorted(edges, key=lambda x: x[0]):
-                upstream_to_value[".".join(map(str, edge.upstream.as_tuple()))] = round(value, 4)
+                upstream_to_value[".".join(map(str, edge.upstream.as_tuple()))] = round(value, 5)
             grouped_edges[".".join(map(str, downstream_node.as_tuple()))] = upstream_to_value
 
         # Upstream token importance
@@ -191,7 +191,7 @@ def main():
             downstream_key = f"{edge_group.downstream_layer_idx}.{edge_group.downstream_token_idx}"
             upstream_key = f"{edge_group.upstream_layer_idx}.{edge_group.upstream_token_idx}"
             token_importance = search_result.token_importance[edge_group]
-            upstream_tokens[downstream_key][upstream_key] = round(token_importance, 4)
+            upstream_tokens[downstream_key][upstream_key] = round(token_importance, 5)
 
         # Export circuit features
         data = {

@@ -12,7 +12,7 @@ class BlockData {
   public tokenOffset: number;
   public layerIdx: number;
   public features: { [key: string]: BlockFeatureData };
-  public upstreamWeights: Record<number, number> = {}; // Upstream token offset -> weight
+  public upstreamImportances: Record<number, number> = {}; // Upstream token offset -> weight
 
   constructor(tokenOffset: number, layerIdx: number) {
     this.tokenOffset = tokenOffset;
@@ -121,7 +121,7 @@ const blocksAtom = atom((get) => {
   const ablationGraph = data?.graph ?? {};
   const activations: { [key: string]: number } = data?.activations ?? {};
   const normalizedActivations: { [key: string]: number } = data?.normalizedActivations ?? {};
-  const upstreamTokenWeights = data?.blockImportance ?? {};
+  const upstreamTokenImportances = data?.blockImportance ?? {};
 
   // Gather all unique feature keys
   const featureKeys = new Set<string>();
@@ -148,15 +148,15 @@ const blocksAtom = atom((get) => {
   }
 
   // Add upstream weights to blocks
-  for (const [downstreamKey, upstreamWeights] of Object.entries(upstreamTokenWeights)) {
+  for (const [downstreamKey, upstreamImportances] of Object.entries(upstreamTokenImportances)) {
     const [tokenOffset, layerIdx] = downstreamKey.split(".").map(Number);
     const blockKey = BlockData.getKey(tokenOffset, layerIdx);
-    const weights: Record<number, number> = {};
-    for (const [upstreamKey, weight] of upstreamWeights as [string, number][]) {
+    const importances: Record<number, number> = {};
+    for (const [upstreamKey, importance] of upstreamImportances as [string, number][]) {
       const upstreamTokenOffset = upstreamKey.split(".").map(Number)[0];
-      weights[upstreamTokenOffset] = weight;
+      importances[upstreamTokenOffset] = importance;
     }
-    blocks[blockKey].upstreamWeights = weights;
+    blocks[blockKey].upstreamImportances = importances;
   }
 
   // Add ablations to features

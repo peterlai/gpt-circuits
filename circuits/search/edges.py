@@ -72,7 +72,6 @@ class EdgeSearch:
             model_output: SparsifiedGPTOutput = self.model(input)
 
         upstream_magnitudes = model_output.feature_magnitudes[upstream_idx].squeeze(0)  # Shape: (T, F)
-        original_downstream_magnitudes = model_output.feature_magnitudes[downstream_idx].squeeze(0)  # Shape: (T, F)
 
         # Find all edges that could exist between upstream and downstream nodes
         all_edges = set()
@@ -82,12 +81,22 @@ class EdgeSearch:
                     all_edges.add(Edge(upstream, downstream))
         all_edges = frozenset(all_edges)
 
+        # Get average downstream feature magnitudes
+        # NOTE: We get better results from averaging sampled magnitudes than we do from using the original
+        # downstream feature magnitudes from the model output.
+        downstream_means = self.estimate_downstream_node_means(
+            downstream_nodes,
+            all_edges,
+            upstream_magnitudes,
+            target_token_idx,
+        )
+
         # Set baseline MSE to use for comparisons
         baseline_mses = self.estimate_downstream_node_mses(
             downstream_nodes,
             all_edges,
             upstream_magnitudes,
-            original_downstream_magnitudes,
+            downstream_means,
             target_token_idx,
         )
 
@@ -97,7 +106,7 @@ class EdgeSearch:
             downstream_nodes,
             baseline_mses,
             upstream_magnitudes,
-            original_downstream_magnitudes,
+            downstream_means,
             target_token_idx,
         )
 
@@ -107,7 +116,7 @@ class EdgeSearch:
             downstream_nodes,
             baseline_mses,
             upstream_magnitudes,
-            original_downstream_magnitudes,
+            downstream_means,
             target_token_idx,
         )
 
@@ -119,7 +128,7 @@ class EdgeSearch:
         downstream_nodes: frozenset[Node],
         baseline_mses: dict[Node, float],
         upstream_magnitudes: torch.Tensor,
-        original_downstream_magnitudes: torch.Tensor,  # Shape: (T, F)
+        downstream_means: dict[Node, float],
         target_token_idx: int,
     ) -> dict[Edge, float]:
         """
@@ -129,7 +138,7 @@ class EdgeSearch:
         :param downstream_nodes: Set of downstream nodes
         :param baseline_mses: Dictionary mapping downstream nodes to their baseline mean-squared errors
         :param upstream_magnitudes: The upstream feature magnitudes (shape: T, F)
-        :param original_downstream_magnitudes: The original downstream feature magnitudes (shape: T, F)
+        :param downstream_means: The downstream feature magnitudes to use for calculating the mean-squared error
         :param target_token_idx: The target token index
 
         :return: Dictionary mapping edges to their importance scores
@@ -139,7 +148,7 @@ class EdgeSearch:
             downstream_nodes,
             all_edges,
             upstream_magnitudes,
-            original_downstream_magnitudes,
+            downstream_means,
             target_token_idx,
         )
 
@@ -184,7 +193,7 @@ class EdgeSearch:
         downstream_nodes: frozenset[Node],
         baseline_mses: dict[Node, float],
         upstream_magnitudes: torch.Tensor,
-        original_downstream_magnitudes: torch.Tensor,
+        downstream_means: dict[Node, float],
         target_token_idx: int,
     ) -> dict[EdgeGroup, float]:
         """
@@ -194,7 +203,7 @@ class EdgeSearch:
         :param downstream_nodes: Set of downstream nodes
         :param baseline_mses: Dictionary mapping downstream nodes to their baseline mean-squared errors
         :param upstream_magnitudes: The upstream feature magnitudes (shape: T, F)
-        :param original_downstream_magnitudes: The original downstream feature magnitudes (shape: T, F)
+        :param downstream_means: The downstream feature magnitudes to use for calculating the mean-squared error
         :param target_token_idx: The target token index
 
         :return: Dictionary mapping downstream token indicies to upstream token indices and their importance scores
@@ -214,7 +223,7 @@ class EdgeSearch:
             downstream_nodes,
             all_edges,
             upstream_magnitudes,
-            original_downstream_magnitudes,
+            downstream_means,
             target_token_idx,
         )
 
@@ -259,7 +268,7 @@ class EdgeSearch:
         downstream_nodes: frozenset[Node],
         all_edges: frozenset[Edge],
         upstream_magnitudes: torch.Tensor,  # Shape: (T, F)
-        original_downstream_magnitudes: torch.Tensor,  # Shape: (T, F)
+        downstream_means: dict[Node, float],  # Shape: (T, F)
         target_token_idx: int,
     ) -> dict[int, dict[int, float]]:
         """
@@ -268,7 +277,7 @@ class EdgeSearch:
         :param downstream_nodes: The downstream nodes to use for deriving downstream feature magnitudes.
         :param edges: The edges to use for deriving downstream feature magnitudes.
         :param upstream_magnitudes: The upstream feature magnitudes.
-        :param original_downstream_magnitudes: The original downstream feature magnitudes.
+        :param downstream_means: The downstream feature magnitudes to use for calculating the mean-squared error.
         :param target_token_idx: The target token index.
         """
         token_ablation_mses = defaultdict(lambda: defaultdict(list))
@@ -279,7 +288,7 @@ class EdgeSearch:
                 downstream_nodes,
                 patched_edges,
                 upstream_magnitudes,
-                original_downstream_magnitudes,
+                downstream_means,
                 target_token_idx,
             )
             # Look for downstream nodes that have an edge to the target token
@@ -301,7 +310,7 @@ class EdgeSearch:
         downstream_nodes: frozenset[Node],
         edges: frozenset[Edge],
         upstream_magnitudes: torch.Tensor,  # Shape: (T, F)
-        original_downstream_magnitudes: torch.Tensor,  # Shape: (T, F)
+        downstream_means: dict[Node, float],  # Shape: (T, F)
         target_token_idx: int,
     ) -> dict[Edge, float]:
         """
@@ -310,7 +319,7 @@ class EdgeSearch:
         :param downstream_nodes: The downstream nodes to use for deriving downstream feature magnitudes.
         :param edges: The edges to use for deriving downstream feature magnitudes.
         :param upstream_magnitudes: The upstream feature magnitudes.
-        :param original_downstream_magnitudes: The original downstream feature magnitudes.
+        :param downstream_means: The downstream feature magnitudes to use for calculating the mean-squared error.
         :param target_token_idx: The target token index.
         """
         # Maps edge to downstream mean-squared error
@@ -328,7 +337,7 @@ class EdgeSearch:
                 downstream_nodes,
                 circuit_variant.edges,
                 upstream_magnitudes,
-                original_downstream_magnitudes,
+                downstream_means,
                 target_token_idx,
             )
             edge_to_mse[edge] = downstream_errors[edge.downstream]
@@ -339,7 +348,7 @@ class EdgeSearch:
         downstream_nodes: frozenset[Node],
         edges: frozenset[Edge],
         upstream_magnitudes: torch.Tensor,  # Shape: (T, F)
-        original_downstream_magnitudes: torch.Tensor,  # Shape: (T, F)
+        downstream_means: dict[Node, float],
         target_token_idx: int,
     ) -> dict[Node, float]:
         """
@@ -349,10 +358,85 @@ class EdgeSearch:
         :param downstream_nodes: The downstream nodes to use for deriving downstream feature magnitudes.
         :param edges: The edges to use for deriving downstream feature magnitudes.
         :param upstream_magnitudes: The upstream feature magnitudes.
-        :param original_downstream_magnitudes: The original downstream feature magnitudes.
+        :param downstream_means: The downstream feature magnitudes to use for calculating the mean-squared error.
         :param target_token_idx: The target token index.
 
         :return: The mean-squared error per downstream node.
+        """
+        # Get feature magnitude samples
+        sampled_feature_magnitudes = self.sample_downstream_feature_magnitudes(
+            downstream_nodes,
+            edges,
+            upstream_magnitudes,
+            target_token_idx,
+            num_samples=self.num_samples,
+        )  # Shape: (num_samples, T, F)
+
+        # Caculate normalization coefficients for downstream features, which scale magnitudes to [0, 1]
+        norm_coefficients = torch.ones(len(downstream_nodes))
+        downstream_layer_idx = next(iter(downstream_nodes)).layer_idx
+        layer_profile = self.model_profile[downstream_layer_idx]
+        for i, node in enumerate(sampled_feature_magnitudes.keys()):
+            feature_profile = layer_profile[int(node.feature_idx)]
+            norm_coefficients[i] = 1.0 / feature_profile.max
+
+        # Calculate mean-squared error from original downstream feature magnitudes
+        downstream_mses = {}
+        for node, magnitudes in sampled_feature_magnitudes.items():
+            original_magnitude = downstream_means[node]
+            normalized_mse = torch.mean((norm_coefficients[i] * (magnitudes - original_magnitude)) ** 2)
+            downstream_mses[node] = normalized_mse.item()
+        return downstream_mses
+
+    def estimate_downstream_node_means(
+        self,
+        downstream_nodes: frozenset[Node],
+        edges: frozenset[Edge],
+        upstream_magnitudes: torch.Tensor,  # Shape: (T, F)
+        target_token_idx: int,
+    ) -> dict[Node, float]:
+        """
+        Use downstream feature magnitudes derived from upstream feature magnitudes and edges to produce a mean per
+        downstream node.
+
+        :param downstream_nodes: The downstream nodes to use for deriving downstream feature magnitudes.
+        :param edges: The edges to use for deriving downstream feature magnitudes.
+        :param upstream_magnitudes: The upstream feature magnitudes.
+        :param target_token_idx: The target token index.
+
+        :return: The mean per downstream node.
+        """
+        sampled_feature_magnitudes = self.sample_downstream_feature_magnitudes(
+            downstream_nodes,
+            edges,
+            upstream_magnitudes,
+            target_token_idx,
+            # Use a larger number of samples to get a more accurate mean
+            num_samples=min(self.num_samples * 4, self.upstream_ablator.k_nearest or int(1e10)),
+        )
+        # Calculate mean from sampled feature magnitudes
+        downstream_means = {}
+        for node, magnitudes in sampled_feature_magnitudes.items():
+            downstream_means[node] = torch.mean(magnitudes).item()
+        return downstream_means
+
+    def sample_downstream_feature_magnitudes(
+        self,
+        downstream_nodes: frozenset[Node],
+        edges: frozenset[Edge],
+        upstream_magnitudes: torch.Tensor,  # Shape: (T, F)
+        target_token_idx: int,
+        num_samples: int,
+    ) -> dict[Node, torch.Tensor]:
+        """
+        Sample downstream feature magnitudes derived from upstream feature magnitudes and edges.
+
+        :param downstream_nodes: The downstream nodes to use for deriving downstream feature magnitudes.
+        :param edges: The edges to use for deriving downstream feature magnitudes.
+        :param upstream_magnitudes: The upstream feature magnitudes.
+        :param downstream_means: The downstream feature magnitudes to use for calculating the mean-squared error.
+        :param target_token_idx: The target token index.
+        :param num_samples: The number of samples to produce per feature.
         """
         # Map downstream nodes to upstream dependencies
         node_to_dependencies: dict[Node, frozenset[Node]] = {}
@@ -371,7 +455,7 @@ class EdgeSearch:
             target_token_idx,
             circuit_variants,
             upstream_magnitudes,
-            num_samples=self.num_samples,
+            num_samples=num_samples,
         )
 
         # Compute downstream feature magnitudes for each set of dependencies
@@ -382,25 +466,12 @@ class EdgeSearch:
         )
 
         # Map each downstream node to a set of sampled feature magnitudes
-        node_to_sampled_magnitudes: dict[Node, torch.Tensor] = {}
+        sampled_magnitudes: dict[Node, torch.Tensor] = {}
         for circuit_variant, magnitudes in sampled_downstream_magnitudes.items():
             for node in dependencies_to_nodes[circuit_variant.nodes]:
-                node_to_sampled_magnitudes[node] = magnitudes[:, node.token_idx, node.feature_idx]
+                sampled_magnitudes[node] = magnitudes[:, node.token_idx, node.feature_idx]
 
-        # Caculate normalization coefficients for downstream features, which scale magnitudes to [0, 1]
-        norm_coefficients = torch.ones(len(downstream_nodes))
-        layer_profile = self.model_profile[upstream_layer_idx + 1]
-        for i, node in enumerate(node_to_sampled_magnitudes.keys()):
-            feature_profile = layer_profile[int(node.feature_idx)]
-            norm_coefficients[i] = 1.0 / feature_profile.max
-
-        # Calculate mean-squared error from original downstream feature magnitudes
-        downstream_mses = {}
-        for node, sampled_magnitudes in node_to_sampled_magnitudes.items():
-            original_magnitude = original_downstream_magnitudes[node.token_idx, node.feature_idx]
-            normalized_mse = torch.mean((norm_coefficients[i] * (sampled_magnitudes - original_magnitude)) ** 2)
-            downstream_mses[node] = normalized_mse.item()
-        return downstream_mses
+        return sampled_magnitudes
 
     @property
     def num_layers(self) -> int:

@@ -67,13 +67,10 @@ function BlockProfile({ block }: { block: BlockData }) {
     return [token, offset] as [string, number];
   });
 
-  // Map offsets to token edge weights
-  const tokenEdgeWeights = {} as Record<number, number>;
+  // Map offsets to token importance
+  const tokenImportances = {} as Record<number, number>;
   upstreamOffsets.forEach((offset) => {
-    tokenEdgeWeights[offset] = Math.max(
-      0.001,
-      Math.max(...allAblations.filter((a) => a.tokenOffset === offset).map((a) => a.weight))
-    );
+    tokenImportances[offset] = Math.max(0.001, block.upstreamImportances[offset]);
   });
 
   // Compute ideal width for chart labels (in ch units)
@@ -104,7 +101,7 @@ function BlockProfile({ block }: { block: BlockData }) {
               <td
                 style={
                   {
-                    "--size": tokenEdgeWeights[offset],
+                    "--size": tokenImportances[offset],
                   } as React.CSSProperties
                 }
               ></td>

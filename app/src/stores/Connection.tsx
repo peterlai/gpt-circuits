@@ -9,18 +9,19 @@ class ConnectionData {
   public upstreamTokenOffset: number;
   public downstreamTokenOffset: number;
   public ablations: AblationData[] = [];
-  public weight: number = 0; // Weight to use when no features are focused
+  // Importance of the upstream block to the downstream block - [0, 1] where 1 is most important.
+  public importance: number = 0;
 
   constructor(
     upstreamLayerIdx: number,
     upstreamTokenOffset: number,
     downstreamTokenOffset: number,
-    weight: number
+    importance: number
   ) {
     this.upstreamLayerIdx = upstreamLayerIdx;
     this.upstreamTokenOffset = upstreamTokenOffset;
     this.downstreamTokenOffset = downstreamTokenOffset;
-    this.weight = weight;
+    this.importance = importance;
   }
 
   get downstreamLayerIdx() {
@@ -156,13 +157,13 @@ class ConnectionModifier {
       }
     } else if (hasBlockFocus || !isAnythingFocused) {
       // Show default connection weight and width.
-      if (connection.weight > 0.9) {
+      if (connection.importance > 0.9) {
         this.width = 2;
         this.weight = 3;
-      } else if (connection.weight > 0.5) {
+      } else if (connection.importance > 0.5) {
         this.width = 1;
         this.weight = 2;
-      } else if (connection.weight > 0.1) {
+      } else if (connection.importance > 0.1) {
         this.width = 1;
         this.weight = 1;
       } else {
@@ -202,7 +203,7 @@ const connectionsAtom = atom((get) => {
             upstreamAblation.layerIdx,
             upstreamAblation.tokenOffset,
             feature.tokenOffset,
-            block.upstreamWeights[upstreamAblation.tokenOffset]
+            block.upstreamImportances[upstreamAblation.tokenOffset]
           );
         connections[connectionKey] = connection;
         // Add ablation to connection
