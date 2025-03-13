@@ -33,6 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dirname", type=str, help="Output directory name")
     parser.add_argument("--name", type=str, default="", help="Sample name")
     parser.add_argument("--version", type=str, default="", help="Sample version")
+    parser.add_argument("--tags", type=str, default="", help="Space-separated tags for the sample")
     return parser.parse_args()
 
 
@@ -40,6 +41,7 @@ def main():
     # Parse command line arguments
     args = parse_args()
     sample_name = args.name if args.name else args.circuit
+    tags = args.tags.split() if args.tags else []
 
     # Set paths
     checkpoint_dir = TrainingConfig.checkpoints_dir / args.model
@@ -74,7 +76,7 @@ def main():
     model_sample_set = ModelSampleSet(checkpoint_dir)
 
     # Gather circuit nodes
-    node_importance: dict[Node, float] = {}
+    node_ranks: dict[Node, int] = {}
     layer_klds: dict[int, float] = {}
     layer_predictions: dict[int, dict[str, float]] = {}
     positional_coefficients: dict[int, float] = {}
@@ -84,10 +86,10 @@ def main():
             # Load nodes
             for token_str, features in data["nodes"].items():
                 token_idx = int(token_str)
-                for feature_str, kld in features.items():
+                for feature_str, rank in features.items():
                     feature_idx = int(feature_str)
                     node = Node(layer_idx, token_idx, feature_idx)
-                    node_importance[node] = kld
+                    node_ranks[node] = rank
             # Load KLD
             layer_klds[layer_idx] = data["kld"]
             # Load predictions
@@ -117,7 +119,7 @@ def main():
                     token_importance[edge_group] = importance
 
     # Construct circuit
-    circuit = construct_circuit(model.gpt.config, node_importance, edge_importance)
+    circuit = construct_circuit(model.gpt.config, set(node_ranks.keys()), edge_importance)
 
     # Export blocks
     export_blocks(
@@ -151,6 +153,7 @@ def main():
         model,
         model_profile,
         circuit,
+        node_ranks,
         edge_importance,
         token_importance,
         layer_klds,
@@ -158,15 +161,16 @@ def main():
         target_token_idx,
         target_predictions,
         threshold,
+        tags,
     )
 
 
-def construct_circuit(gpt_config: GPTConfig, node_importance, edge_importance: dict[Edge, float]) -> Circuit:
+def construct_circuit(gpt_config: GPTConfig, nodes: set[Node], edge_importance: dict[Edge, float]) -> Circuit:
     """
     Construct a circuit from nodes and edges.
     """
     # Use all nodes
-    nodes = set(node_importance.keys())
+    nodes = set(nodes)
 
     # Filter edges based on importance
     edges = set(edge for edge, importance in edge_importance.items() if importance > 0.01)
@@ -565,6 +569,7 @@ def export_circuit_data(
     model: SparsifiedGPT,
     model_profile: ModelProfile,
     circuit: Circuit,
+    node_ranks: dict[Node, int],
     edge_importance: dict[Edge, float],
     token_importance: dict[EdgeGroup, float],
     layer_klds: dict[int, float],
@@ -572,6 +577,7 @@ def export_circuit_data(
     target_token_idx: int,
     target_predictions: dict[str, float],
     threshold: float,
+    tags: list[str],
 ):
     """
     Export sample data to data.json
@@ -589,6 +595,7 @@ def export_circuit_data(
         "decodedTokens": [model.gpt.config.tokenizer.decode_token(token) for token in tokens],
         "targetIdx": target_token_idx,
         "kldThreshold": threshold,
+        "tags": tags,
     }
 
     # Set KLDs
@@ -651,6 +658,18 @@ def export_circuit_data(
             key=lambda x: list(reversed(list(map(int, x[0].split("."))))),
         )
     }
+
+    # Set node importance
+    num_nodes_per_layer = defaultdict(int)
+    for node in circuit.nodes:
+        num_nodes_per_layer[node.layer_idx] += 1
+    node_importance = {}
+    for node in sorted(circuit.nodes):
+        importance = 1 - (
+            (node_ranks[node] - 1) / num_nodes_per_layer[node.layer_idx]
+        )  # Normalize by number of nodes in layer
+        node_importance[node_to_key(node, target_token_idx)] = round(importance, 3)
+    data["featureImportance"] = node_importance
 
     # Export to data.json
     sample_dir.mkdir(parents=True, exist_ok=True)

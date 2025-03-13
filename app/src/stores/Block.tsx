@@ -43,6 +43,7 @@ class BlockFeatureData {
   public featureId: number;
   public activation: number;
   public normalizedActivation: number;
+  public importance: number = 0; // [0, 1]
   public ablatedBy: { [key: string]: UpstreamAblationData };
 
   constructor(
@@ -50,13 +51,15 @@ class BlockFeatureData {
     layerIdx: number,
     featureId: number,
     activation: number,
-    normalizedActivation: number
+    normalizedActivation: number,
+    importance: number
   ) {
     this.tokenOffset = tokenOffset;
     this.layerIdx = layerIdx;
     this.featureId = featureId;
     this.activation = activation;
     this.normalizedActivation = normalizedActivation;
+    this.importance = importance;
     this.ablatedBy = {};
   }
 
@@ -122,6 +125,7 @@ const blocksAtom = atom((get) => {
   const activations: { [key: string]: number } = data?.activations ?? {};
   const normalizedActivations: { [key: string]: number } = data?.normalizedActivations ?? {};
   const upstreamTokenImportances = data?.blockImportance ?? {};
+  const featureImportances: { [key: string]: number } = data?.featureImportance ?? {};
 
   // Gather all unique feature keys
   const featureKeys = new Set<string>();
@@ -141,9 +145,17 @@ const blocksAtom = atom((get) => {
 
     const activation = activations[featureKey] || 0;
     const normalizedActivation = normalizedActivations[featureKey] || 0;
+    const featureImportance = featureImportances[featureKey] || 0;
     const featureData =
       blockData.features[featureKey] ||
-      new BlockFeatureData(tokenOffset, layerIdx, featureId, activation, normalizedActivation);
+      new BlockFeatureData(
+        tokenOffset,
+        layerIdx,
+        featureId,
+        activation,
+        normalizedActivation,
+        featureImportance
+      );
     blockData.features[featureKey] = featureData;
   }
 

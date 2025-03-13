@@ -19,9 +19,10 @@ class CircuitResult:
     """
 
     circuit: Circuit  # Circuit found
-    edge_importance: dict[Edge, float]  # edge -> importance
-    token_importance: dict[EdgeGroup, float]  # token-to-token -> importance
-    node_importance: dict[Node, float]  # node -> KLD ceiling without node
+    edge_importances: dict[Edge, float]  # edge -> importance
+    token_importances: dict[EdgeGroup, float]  # token-to-token -> importance
+    node_importances: dict[Node, float]  # node -> KLD ceiling without node
+    node_ranks: dict[Node, int]  # node -> layer rank (1 is the most important)
     positional_coefficients: dict[int, float]  # layer_idx -> positional coefficient
 
 
@@ -74,26 +75,34 @@ class CircuitSearch:
             ranked_nodes = ranked_nodes | layer_nodes
 
         # Iterate through each pairs of consecutive layers to calculate edge importance
-        edge_importance: dict[Edge, float] = {}
-        token_importance: dict[EdgeGroup, float] = {}
+        edge_importances: dict[Edge, float] = {}
+        token_importances: dict[EdgeGroup, float] = {}
         for upstream_layer_idx in range(self.num_layers - 1):
             upstream_ablator = self.create_ablator(upstream_layer_idx)
             edge_search = EdgeSearch(self.model, self.model_profile, upstream_ablator, self.num_samples)
             upstream_nodes = frozenset(rn.node for rn in ranked_nodes if rn.node.layer_idx == upstream_layer_idx)
             downstream_nodes = frozenset(rn.node for rn in ranked_nodes if rn.node.layer_idx == upstream_layer_idx + 1)
             search_result = edge_search.search(tokens, upstream_nodes, downstream_nodes, target_token_idx)
-            edge_importance.update(search_result.edge_importance)
-            token_importance.update(search_result.token_importance)
+            edge_importances.update(search_result.edge_importance)
+            token_importances.update(search_result.token_importance)
 
         # Store positional coefficients
         positional_coefficients = {idx: self.get_positional_coefficient(idx) for idx in range(self.num_layers)}
 
         # Return circuit
         circuit_nodes = frozenset(rn.node for rn in ranked_nodes)
-        circuit_edges = frozenset(edge for edge in edge_importance if edge in circuit_nodes)
+        circuit_edges = frozenset(edge for edge in edge_importances if edge in circuit_nodes)
         circuit = Circuit(nodes=circuit_nodes, edges=circuit_edges)
-        node_importance = {rn.node: rn.kld for rn in ranked_nodes}
-        return CircuitResult(circuit, edge_importance, token_importance, node_importance, positional_coefficients)
+        node_importances = {rn.node: rn.kld for rn in ranked_nodes}
+        node_ranks = {rn.node: rn.rank for rn in ranked_nodes}
+        return CircuitResult(
+            circuit,
+            edge_importances,
+            token_importances,
+            node_importances,
+            node_ranks,
+            positional_coefficients,
+        )
 
     def calculate_klds(
         self,

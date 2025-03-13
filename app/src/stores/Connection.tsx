@@ -145,7 +145,7 @@ class ConnectionModifier {
       if (maxAblationWeight > 0.9) {
         this.width = 2;
         this.weight = 3;
-      } else if (maxAblationWeight > 0.5) {
+      } else if (maxAblationWeight > 0.25) {
         this.width = 1;
         this.weight = 3;
       } else if (maxAblationWeight > 0.1) {
@@ -160,7 +160,7 @@ class ConnectionModifier {
       if (connection.importance > 0.9) {
         this.width = 2;
         this.weight = 3;
-      } else if (connection.importance > 0.5) {
+      } else if (connection.importance > 0.25) {
         this.width = 1;
         this.weight = 2;
       } else if (connection.importance > 0.1) {

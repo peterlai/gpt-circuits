@@ -32,10 +32,10 @@ class FeatureModifier {
     this.isHovered = feature.key === selectionState.hoveredFeature?.key;
     this.isSelected = feature.key === selectionState.selectedFeature?.key;
 
-    // Set text weight using normalized activation
-    if (feature.normalizedActivation < 0.5) {
+    // Set text weight using feature importance
+    if (feature.importance < 0.5) {
       this.textWeight = 1;
-    } else if (feature.normalizedActivation < 0.65) {
+    } else if (feature.importance < 0.9) {
       this.textWeight = 2;
     } else {
       this.textWeight = 3;

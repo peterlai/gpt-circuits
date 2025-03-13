@@ -145,8 +145,8 @@ def main():
         # Group features by token idx
         grouped_nodes = defaultdict(dict)
         for node in layer_nodes:
-            # Map feature indices to KLD ceilings
-            grouped_nodes[node.token_idx][node.feature_idx] = search_result.node_importance[node]
+            # Map feature indices to rank
+            grouped_nodes[node.token_idx][node.feature_idx] = search_result.node_ranks[node]
 
         # Positional coefficient used for clustering
         positional_coefficient = search_result.positional_coefficients[layer_idx]
@@ -172,7 +172,7 @@ def main():
         for downstream_node in sorted(downstream_nodes):
             edges = [
                 (edge, value)
-                for edge, value in search_result.edge_importance.items()
+                for edge, value in search_result.edge_importances.items()
                 if edge.downstream == downstream_node
             ]
             upstream_to_value = {}
@@ -184,13 +184,13 @@ def main():
         upstream_tokens = defaultdict(dict)
         upstream_edge_groups = {
             edge_group
-            for edge_group in search_result.token_importance.keys()
+            for edge_group in search_result.token_importances.keys()
             if edge_group.downstream_layer_idx == layer_idx
         }
         for edge_group in upstream_edge_groups:
             downstream_key = f"{edge_group.downstream_layer_idx}.{edge_group.downstream_token_idx}"
             upstream_key = f"{edge_group.upstream_layer_idx}.{edge_group.upstream_token_idx}"
-            token_importance = search_result.token_importance[edge_group]
+            token_importance = search_result.token_importances[edge_group]
             upstream_tokens[downstream_key][upstream_key] = round(token_importance, 5)
 
         # Export circuit features
