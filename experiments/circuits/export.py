@@ -33,7 +33,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dirname", type=str, help="Output directory name")
     parser.add_argument("--name", type=str, default="", help="Sample name")
     parser.add_argument("--version", type=str, default="", help="Sample version")
-    parser.add_argument("--tags", type=str, default="", help="Space-separated tags for the sample")
     return parser.parse_args()
 
 
@@ -41,7 +40,6 @@ def main():
     # Parse command line arguments
     args = parse_args()
     sample_name = args.name if args.name else args.circuit
-    tags = args.tags.split() if args.tags else []
 
     # Set paths
     checkpoint_dir = TrainingConfig.checkpoints_dir / args.model
@@ -161,7 +159,6 @@ def main():
         target_token_idx,
         target_predictions,
         threshold,
-        tags,
     )
 
 
@@ -577,7 +574,6 @@ def export_circuit_data(
     target_token_idx: int,
     target_predictions: dict[str, float],
     threshold: float,
-    tags: list[str],
 ):
     """
     Export sample data to data.json
