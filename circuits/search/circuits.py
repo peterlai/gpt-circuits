@@ -56,7 +56,6 @@ class CircuitSearch:
         self,
         tokens: list[int],
         target_token_idx: int,
-        threshold: float,
     ) -> CircuitResult:
         """
         Search for a circuit in the model.
@@ -66,7 +65,7 @@ class CircuitSearch:
         for layer_idx in range(self.num_layers):
             upstream_nodes = frozenset([rn.node for rn in ranked_nodes if rn.node.layer_idx == layer_idx - 1])
             node_search = NodeSearch(self.model, self.create_ablator(layer_idx), self.config)
-            layer_nodes = node_search.search(tokens, upstream_nodes, layer_idx, target_token_idx, threshold)
+            layer_nodes = node_search.search(tokens, upstream_nodes, layer_idx, target_token_idx)
             ranked_nodes = ranked_nodes | layer_nodes
 
         # Iterate through each pairs of consecutive layers to calculate edge importance

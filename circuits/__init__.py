@@ -9,12 +9,13 @@ class SearchConfiguration:
     Configuration to use for circuit search.
     """
 
+    threshold: float = 0.1  # target KLD for circuit extraction
     k_nearest: int | None = 256  # Number of nearest neighbors to use for clustering
     num_edge_samples: int = 64  # Number of resampling values to use for selecting edges
     num_node_samples: int = 64  # Number of resampling values to use for selecting nodes
     max_positional_coefficient: float = 2.0  # How important is the position of a feature
     max_token_positions: int = 16  # Maximum number of token positions to consider
-    rolling_window: int = 7  # Number of previous KLD values to consider for stopping search early
+    stoppage_window: int = 7  # Number of previous KLD values to consider for stopping search early
 
 
 @dataclass(frozen=True)

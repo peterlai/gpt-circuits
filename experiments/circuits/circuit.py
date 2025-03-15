@@ -7,6 +7,7 @@ $ python -m experiments.circuits.circuit --split=val --sequence_idx=5120 --token
 """
 
 import argparse
+import dataclasses
 import hashlib
 from collections import defaultdict
 from pathlib import Path
@@ -36,17 +37,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--split", type=str, default="train", help="Dataset split to use")
     parser.add_argument("--shard_idx", type=int, default=0, help="Shard to load data from")
     parser.add_argument("--sequence_idx", type=int, help="Index for start of sequence [0...shard.tokens.size)")
-    # Circuit extraction parameters
     parser.add_argument("--token_idx", type=int, help="Index for token in the sequence [0...block_size)")
-    parser.add_argument("--threshold", type=float, default=0.1, help="Max threshold for KL divergence")
-    # Special `k_nearest` values: -1 for conventional resampling, 0 for zero ablation
-    parser.add_argument("--k_nearest", type=int, help="Number of neighbors to consider when resampling")
-    parser.add_argument("--num_edge_samples", type=int, help="Number of resampling values to use for selecting edges")
-    parser.add_argument("--num_node_samples", type=int, help="Number of resampling values to use for selecting nodes")
-    # If `max_positional_coefficient` is set to 0, resampling will ignore a token's sequence position.
-    parser.add_argument("--max_positional_coefficient", type=float, help="Positional importance")
-    parser.add_argument("--max_token_positions", type=int, help="Maximum number of token positions to consider")
-    parser.add_argument("--rolling_window", type=int, help="Number of previous values to consider for early stoppage")
+    parser.add_argument("--config_name", type=str, help="Search configuration name")
     return parser.parse_args()
 
 
@@ -74,10 +66,49 @@ def load_tokens(model: SparsifiedGPT, args: argparse.Namespace) -> tuple[list[in
         return tokens, dirname
 
 
+def load_configuration(config_name: str) -> SearchConfiguration:
+    """
+    Load the search configuration from a configuration name.
+    """
+    match config_name:
+        case "ablation-cluster":
+            return SearchConfiguration(
+                threshold=0.25,
+                stoppage_window=999,  # Disable early stoppage
+            )
+        case "ablation-classic":
+            return SearchConfiguration(
+                # Use higher threshold to avoid excessive density
+                threshold=1.00,
+                k_nearest=None,
+                # Disregard token position when sampling
+                max_positional_coefficient=0.0,
+                stoppage_window=999,  # Disable early stoppage
+            )
+        case "ablation-classic-pos":
+            return SearchConfiguration(
+                # Use higher threshold to avoid excessive density
+                threshold=1.00,
+                k_nearest=None,
+                # Honor token position when sampling
+                max_positional_coefficient=1.0,
+                stoppage_window=999,  # Disable early stoppage
+            )
+        case "ablation-zero":
+            return SearchConfiguration(
+                threshold=0.25,
+                k_nearest=0,
+                num_edge_samples=1,  # Resampling isn't needed
+                num_node_samples=1,  # Resampling isn't needed
+                stoppage_window=999,  # Disable early stoppage
+            )
+        case _:
+            return SearchConfiguration()
+
+
 def main():
     # Parse command line arguments
     args = parse_args()
-    threshold = args.threshold
     target_token_idx = args.token_idx
     checkpoint_dir = TrainingConfig.checkpoints_dir / args.model
 
@@ -96,6 +127,9 @@ def main():
     # Set output directory
     circuit_dir = checkpoint_dir / "circuits" / dirname
 
+    # Setup search configuration
+    config = load_configuration(args.config_name)
+
     # Load cached metrics and feature magnitudes
     model_profile = ModelProfile(checkpoint_dir)
     model_cache = ModelCache(checkpoint_dir)
@@ -106,7 +140,7 @@ def main():
     decoded_target = tokenizer.decode_token(tokens[target_token_idx])
     print(f'Using sequence: "{decoded_tokens.replace("\n", "\\n")}"')
     print(f"Target token: `{decoded_target}` at index {args.token_idx}")
-    print(f"Target threshold: {threshold}")
+    print(f"Target threshold: {config.threshold}")
 
     # Convert tokens to tensor
     input: torch.Tensor = torch.tensor(tokens, device=model.config.device).unsqueeze(0)  # Shape: (1, T)
@@ -117,29 +151,6 @@ def main():
         target_predictions = get_predictions(tokenizer, target_logits)
         print(f"Target predictions: {target_predictions}")
 
-    # How many nearest neighbors to consider for clustering
-    defaults = SearchConfiguration()
-    match args.k_nearest:
-        # Use default value
-        case None:
-            k_nearest = defaults.k_nearest
-        # Use conventional resampling
-        case -1:
-            k_nearest = None
-        # Use assigned value
-        case _:
-            k_nearest = args.k_nearest
-
-    # Setup search configuration
-    config = SearchConfiguration(
-        k_nearest=k_nearest,
-        num_edge_samples=args.num_edge_samples or defaults.num_edge_samples,
-        num_node_samples=args.num_node_samples or defaults.num_node_samples,
-        max_positional_coefficient=args.max_positional_coefficient or defaults.max_positional_coefficient,
-        max_token_positions=args.max_token_positions or defaults.max_token_positions,
-        rolling_window=args.rolling_window or defaults.rolling_window,
-    )
-
     # Start search
     circuit_search = CircuitSearch(
         model,
@@ -147,7 +158,7 @@ def main():
         model_cache,
         config=config,
     )
-    search_result = circuit_search.search(tokens, target_token_idx, threshold)
+    search_result = circuit_search.search(tokens, target_token_idx)
     klds, predictions = circuit_search.calculate_klds(search_result.circuit, tokens, target_token_idx)
 
     # Export circuit search configuration
@@ -157,8 +168,8 @@ def main():
         data = {
             "tokens": tokens,
             "target_token_idx": target_token_idx,
-            "threshold": threshold,
             "predictions": target_predictions,
+            "search_config": dataclasses.asdict(config),
         }
         f.write(json_prettyprint(data))
 

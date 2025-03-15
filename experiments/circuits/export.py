@@ -12,7 +12,14 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from circuits import Circuit, Edge, EdgeGroup, Node, json_prettyprint
+from circuits import (
+    Circuit,
+    Edge,
+    EdgeGroup,
+    Node,
+    SearchConfiguration,
+    json_prettyprint,
+)
 from circuits.features.cache import ModelCache
 from circuits.features.profiles import FeatureProfile, ModelProfile
 from circuits.features.samples import ModelSampleSet, Sample
@@ -50,13 +57,15 @@ def main():
     # Load search configuration and tokens
     with open(circuit_dir / "config.json") as f:
         data = json.load(f)
-        threshold: float = data["threshold"]
         tokens: list[int] = data["tokens"]
         target_token_idx: int = data["target_token_idx"]
         target_predictions: dict[str, float] = data.get("predictions", {})
+        search_config = SearchConfiguration(**data["search_config"])
 
     # Set sample directory
-    sample_version = args.version if args.version else str(threshold)  # Fall back to threshold for version
+    sample_version = (
+        args.version if args.version else str(search_config.threshold)
+    )  # Fall back to threshold for version
     sample_dir = base_dir / "samples" / sample_name / sample_version
 
     # Load model
@@ -158,7 +167,7 @@ def main():
         layer_predictions,
         target_token_idx,
         target_predictions,
-        threshold,
+        search_config.threshold,
     )
 
 

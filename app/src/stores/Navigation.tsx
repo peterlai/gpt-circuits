@@ -62,7 +62,8 @@ class ModelOption {
 
   // How many layers does a model have?
   static getLayerCount(id: string): number {
-    if (id.startsWith("toy")) {
+    // TODO: Add layer count to metadata for each model.
+    if (id.startsWith("toy") || id.startsWith("ablation")) {
       return 4;
     } else if (id.startsWith("baby")) {
       return 6;

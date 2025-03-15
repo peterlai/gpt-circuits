@@ -41,7 +41,6 @@ class NodeSearch:
         upstream_nodes: frozenset[Node],
         layer_idx: int,
         target_token_idx: int,
-        threshold: float,
     ) -> frozenset[RankedNode]:
         """
         Search for circuit nodes in the selected layer.
@@ -50,7 +49,6 @@ class NodeSearch:
         :param upstream_nodes: The upstream nodes in the circuit.
         :param layer_idx: The layer index to search in.
         :param target_token_idx: The target token index.
-        :param threshold: The KL diverence threshold for node extraction.
         """
         # Convert tokens to tensor
         input: torch.Tensor = torch.tensor(tokens, device=self.model.config.device).unsqueeze(0)  # Shape: (1, T)
@@ -102,7 +100,6 @@ class NodeSearch:
             feature_magnitudes,
             layer_nodes,
             upstream_nodes,
-            threshold=threshold / 2,  # Use lower threshold for coarse search
             max_count=self.config.max_token_positions,  # Limit the number of token indices to consider
         )
 
@@ -122,13 +119,13 @@ class NodeSearch:
         previous_klds = []
         for ranked_node in reversed(ranked_nodes):
             # Stop if KLD is greater than average of previous few values
-            w = self.config.rolling_window
+            w = self.config.stoppage_window
             if len(previous_klds) >= w and ranked_node.kld > sum(previous_klds[-w:]) / w:
                 break
             # Add node to layer
             selected_nodes.add(ranked_node)
             # Stop if KLD is below search threshold
-            if ranked_node.kld < threshold:
+            if ranked_node.kld < self.config.threshold:
                 break
             previous_klds.append(ranked_node.kld)
 
@@ -241,7 +238,6 @@ class NodeSearch:
         feature_magnitudes: torch.Tensor,
         layer_nodes: frozenset[Node],
         upstream_nodes: frozenset[Node],
-        threshold: float,
         max_count: int,
     ) -> frozenset[Node]:
         """
@@ -289,7 +285,8 @@ class NodeSearch:
                 )
 
                 # If below threshold, stop search
-                if circuit_analysis.kl_divergence < threshold:
+                # NOTE: Using lower threshold for coarse token search
+                if circuit_analysis.kl_divergence < self.config.threshold / 2:
                     print("Reached target KL divergence.")
                     break
 

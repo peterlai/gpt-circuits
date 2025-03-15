@@ -18,15 +18,20 @@ process_token_ids() {
   done
 }
 
-# Setup for toy-v0
 # DIRNAME="toy-v0"
 # TRAIN_TOKEN_IDS=(7010 300553 393485 512822 780099 872699)
 # VAL_TOKEN_IDS=(15524 69324 75324 85424)
 
-# Setup for toy-local
 DIRNAME="toy-local"
 TRAIN_TOKEN_IDS=()
 VAL_TOKEN_IDS=(15 1039 2063 3087 4111 5135 6159 7183)
+
+# DIRNAME="ablation-cluster"
+# DIRNAME="ablation-zero"
+# DIRNAME="ablation-classic"
+# DIRNAME="ablation-classic-pos"
+# TRAIN_TOKEN_IDS=()
+# VAL_TOKEN_IDS=(1282 7554 8834 9218)
 
 # Process training data
 process_token_ids "${DIRNAME}" "train" "${TRAIN_TOKEN_IDS[@]}"

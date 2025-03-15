@@ -29,10 +29,7 @@ python -m experiments.circuits.circuit \
     --split=$SPLIT \
     --sequence_idx=$SEQUENCE_IDX \
     --token_idx=$TOKEN_IDX \
-    --threshold=0.1 \
-    --k_nearest=256 \
-    --num_edge_samples=64 \
-    --num_node_samples=64
+    --config_name=$DIRNAME
 
 # Export circuit to visualizer
 python -m experiments.circuits.export --dirname=$DIRNAME --circuit=$CIRCUIT_NAME
