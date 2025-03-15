@@ -19,7 +19,7 @@ process_token_ids() {
 }
 
 # Samples to use
-VAL_TOKEN_IDS=(2 1026 2050)
+VAL_TOKEN_IDS=(2 1026 2050 3074 4098 5122 6146 7170 8194 9218)
 
 # Cluster resampling
 process_token_ids "comparisons-cluster" "val" "${VAL_TOKEN_IDS[@]}"
