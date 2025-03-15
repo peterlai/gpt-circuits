@@ -48,6 +48,7 @@ class EdgeSearch:
         self.model_profile = model_profile
         self.upstream_ablator = upstream_ablator
         self.num_samples = num_samples
+        print(f"Using {num_samples} samples for edge analysis.")
 
     def search(
         self,

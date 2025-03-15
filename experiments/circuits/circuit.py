@@ -70,32 +70,31 @@ def load_configuration(config_name: str) -> SearchConfiguration:
     """
     Load the search configuration from a configuration name.
     """
+    defaults = SearchConfiguration()
+    is_comparison_experiment = config_name.startswith("comparisons")
+
     match config_name:
-        case "ablation-cluster":
+        case "ablation-cluster" | "comparisons-cluster":
             return SearchConfiguration(
                 threshold=0.25,
-                num_node_samples=256,  # Improve node selection
+                num_edge_samples=1 if is_comparison_experiment else defaults.num_edge_samples,
                 stoppage_window=999,  # Disable early stoppage
             )
-        case "ablation-classic":
+        case "comparisons-cluster-nopos":
             return SearchConfiguration(
-                # Use higher threshold to avoid excessive density
-                threshold=1.00,
-                k_nearest=None,
-                # Honor token position when sampling
-                max_positional_coefficient=1.0,
+                threshold=0.25,
+                max_positional_coefficient=0.0,  # Disable positional coefficient
+                num_edge_samples=1 if is_comparison_experiment else defaults.num_edge_samples,
                 stoppage_window=999,  # Disable early stoppage
             )
-        case "ablation-classic-v2":
+        case "ablation-classic" | "comparisons-classic":
             return SearchConfiguration(
-                # Use higher threshold to avoid excessive density
-                threshold=1.00,
+                threshold=0.25,
                 k_nearest=None,
-                # Disregard token position when sampling
-                max_positional_coefficient=0.0,
+                num_edge_samples=1 if is_comparison_experiment else defaults.num_edge_samples,
                 stoppage_window=999,  # Disable early stoppage
             )
-        case "ablation-zero":
+        case "ablation-zero" | "comparisons-zero":
             return SearchConfiguration(
                 threshold=0.25,
                 k_nearest=0,
