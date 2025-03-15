@@ -17,7 +17,7 @@ if (buildMode) {
     hiddenModelPrefixes = ["ablation"];
 } else {
     modelsDir = 'public/samples';
-    indexedModelPrefixes = ["toy", "ablation"];
+    indexedModelPrefixes = ["toy", "ablation", "comparisons"];
     hiddenModelPrefixes = [];
 }
 
