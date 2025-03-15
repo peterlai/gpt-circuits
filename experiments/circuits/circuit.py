@@ -13,7 +13,7 @@ from pathlib import Path
 
 import torch
 
-from circuits import json_prettyprint
+from circuits import SearchConfiguration, json_prettyprint
 from circuits.features.cache import ModelCache
 from circuits.features.profiles import ModelProfile
 from circuits.search.circuits import CircuitSearch
@@ -39,8 +39,14 @@ def parse_args() -> argparse.Namespace:
     # Circuit extraction parameters
     parser.add_argument("--token_idx", type=int, help="Index for token in the sequence [0...block_size)")
     parser.add_argument("--threshold", type=float, default=0.1, help="Max threshold for KL divergence")
-    parser.add_argument("--num_samples", type=int, default=64, help="Number of samples to use for estimating KLD")
-    parser.add_argument("--k_nearest", type=int, default=256, help="Number of neighbors to consider in resampling")
+    # Special `k_nearest` values: -1 for conventional resampling, 0 for zero ablation
+    parser.add_argument("--k_nearest", type=int, help="Number of neighbors to consider when resampling")
+    parser.add_argument("--num_edge_samples", type=int, help="Number of resampling values to use for selecting edges")
+    parser.add_argument("--num_node_samples", type=int, help="Number of resampling values to use for selecting nodes")
+    # If `max_positional_coefficient` is set to 0, resampling will ignore a token's sequence position.
+    parser.add_argument("--max_positional_coefficient", type=float, help="Positional importance")
+    parser.add_argument("--max_token_positions", type=int, help="Maximum number of token positions to consider")
+    parser.add_argument("--rolling_window", type=int, help="Number of previous values to consider for early stoppage")
     return parser.parse_args()
 
 
@@ -94,11 +100,6 @@ def main():
     model_profile = ModelProfile(checkpoint_dir)
     model_cache = ModelCache(checkpoint_dir)
 
-    # Set feature ablation strategy
-    num_samples = args.num_samples  # Number of samples to use for estimating KL divergence
-    k_nearest = args.k_nearest  # How many nearest neighbors to consider in resampling
-    max_positional_coefficient = 2.0  # How important is the position of a feature
-
     # Get token sequence
     tokenizer = model.gpt.config.tokenizer
     decoded_tokens = tokenizer.decode_sequence(tokens)
@@ -116,9 +117,35 @@ def main():
         target_predictions = get_predictions(tokenizer, target_logits)
         print(f"Target predictions: {target_predictions}")
 
+    # How many nearest neighbors to consider for clustering
+    defaults = SearchConfiguration()
+    match args.k_nearest:
+        # Use default value
+        case None:
+            k_nearest = defaults.k_nearest
+        # Use conventional resampling
+        case -1:
+            k_nearest = None
+        # Use assigned value
+        case _:
+            k_nearest = args.k_nearest
+
+    # Setup search configuration
+    config = SearchConfiguration(
+        k_nearest=k_nearest,
+        num_edge_samples=args.num_edge_samples or defaults.num_edge_samples,
+        num_node_samples=args.num_node_samples or defaults.num_node_samples,
+        max_positional_coefficient=args.max_positional_coefficient or defaults.max_positional_coefficient,
+        max_token_positions=args.max_token_positions or defaults.max_token_positions,
+        rolling_window=args.rolling_window or defaults.rolling_window,
+    )
+
     # Start search
     circuit_search = CircuitSearch(
-        model, model_profile, model_cache, num_samples, k_nearest, max_positional_coefficient
+        model,
+        model_profile,
+        model_cache,
+        config=config,
     )
     search_result = circuit_search.search(tokens, target_token_idx, threshold)
     klds, predictions = circuit_search.calculate_klds(search_result.circuit, tokens, target_token_idx)

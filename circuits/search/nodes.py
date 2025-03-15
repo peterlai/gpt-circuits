@@ -1,12 +1,11 @@
 import math
 from dataclasses import dataclass
-from typing import Sequence
 
 import torch
 
-from circuits import Circuit, Node
+from circuits import Circuit, Node, SearchConfiguration
 from circuits.search.ablation import ResampleAblator
-from circuits.search.divergence import analyze_divergence, get_predictions
+from circuits.search.divergence import analyze_divergence
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
 
 
@@ -26,15 +25,15 @@ class NodeSearch:
     Search for circuit nodes in a sparsified model.
     """
 
-    def __init__(self, model: SparsifiedGPT, ablator: ResampleAblator, num_samples: int):
+    def __init__(self, model: SparsifiedGPT, ablator: ResampleAblator, config: SearchConfiguration):
         """
         :param model: The sparsified model to use for circuit extraction.
         :param ablator: Ablation tecnique to use for circuit extraction.
-        :param num_samples: The number of samples to use for ablation.
+        :param config: Configuration for the search.
         """
         self.model = model
         self.ablator = ablator
-        self.num_samples = num_samples
+        self.config = config
 
     def search(
         self,
@@ -90,7 +89,7 @@ class NodeSearch:
             target_logits,
             [baseline_circuit],
             feature_magnitudes,
-            num_samples=self.num_samples,
+            num_samples=self.config.num_node_samples,
         )[baseline_circuit]
         baseline_kld = basline_results.kl_divergence
 
@@ -104,7 +103,7 @@ class NodeSearch:
             layer_nodes,
             upstream_nodes,
             threshold=threshold / 2,  # Use lower threshold for coarse search
-            max_count=16,  # Limit to 16 token indices
+            max_count=self.config.max_token_positions,  # Limit the number of token indices to consider
         )
 
         # Rank remaining features by importance
@@ -123,7 +122,8 @@ class NodeSearch:
         previous_klds = []
         for ranked_node in reversed(ranked_nodes):
             # Stop if KLD is greater than average of previous few values
-            if len(previous_klds) >= 7 and ranked_node.kld > sum(previous_klds[-7:]) / 7:
+            w = self.config.rolling_window
+            if len(previous_klds) >= w and ranked_node.kld > sum(previous_klds[-w:]) / w:
                 break
             # Add node to layer
             selected_nodes.add(ranked_node)
@@ -165,7 +165,7 @@ class NodeSearch:
                 target_logits,
                 [circuit],
                 feature_magnitudes,
-                num_samples=self.num_samples,
+                num_samples=self.config.num_node_samples,
             )[circuit]
 
             # Find discard candidates
@@ -222,7 +222,7 @@ class NodeSearch:
             target_logits,
             [variant for variant in circuit_variants.values()],
             feature_magnitudes,
-            self.num_samples,
+            self.config.num_node_samples,
         )
 
         # Map nodes to KL divergence
@@ -277,7 +277,7 @@ class NodeSearch:
                     target_logits,
                     [circuit],
                     feature_magnitudes,
-                    num_samples=self.num_samples,
+                    num_samples=self.config.num_node_samples,
                 )[circuit]
 
                 # Print results
@@ -348,7 +348,8 @@ class NodeSearch:
             target_logits,
             [variant for variant in circuit_variants.values()],
             feature_magnitudes,
-            self.num_samples * 4,  # Increase number of samples for token selection
+            # Increase number of samples for token selection
+            min(self.config.num_node_samples * 4, self.config.k_nearest or int(1e10)),
         )
 
         # Map token indices to KL divergence

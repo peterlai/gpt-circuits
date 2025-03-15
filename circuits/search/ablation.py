@@ -21,7 +21,9 @@ class ResampleAblator:
     ):
         """
         :param model_cache: Model cache to use for resampling.
-        :param k_nearest: Number of nearest neighbors to use for creating sample distributions. If `None`, use all.
+        :param k_nearest: Number of nearest neighbors to use for creating sample distributions.
+            - If `None`, use random sampling.
+            - If `0`, use zero ablation.
         :param positional_coefficient: Coefficient for positional distance in MSE.
         """
         self.model_profile = model_profile
@@ -91,50 +93,45 @@ class ResampleAblator:
         # Set the importance of each feature
         feature_coefficients = np.ones_like(circuit_feature_idxs)
 
-        if self.k_nearest is not None:
-            # Get cluster representing nearest neighbors
-            cluster = self.cluster_search.get_cluster(
-                layer_idx,
-                token_idx,
-                token_feature_magnitudes,
-                circuit_feature_idxs,
-                k_nearest=self.k_nearest,
-                feature_coefficients=feature_coefficients,
-                positional_coefficient=self.positional_coefficient,
-            )
-        else:
-            # Create a random cluster using tokens with the same token position
-            cluster = self.cluster_search.get_random_cluster(
-                layer_idx,
-                token_idx,
-                num_samples,
-                self.positional_coefficient,
-            )
+        match self.k_nearest:
+            # Conventional resampling
+            case None:
+                # Create a random cluster
+                cluster = self.cluster_search.get_random_cluster(
+                    layer_idx,
+                    token_idx,
+                    num_samples,
+                    self.positional_coefficient,
+                )
 
-        # Randomly draw sample magnitudes from the cluster
-        token_samples = cluster.sample_magnitudes(num_samples)
+                # Randomly draw sample magnitudes from the cluster
+                token_samples = cluster.sample_magnitudes(num_samples)
+
+            # Zero ablation
+            case 0:
+                token_samples = np.zeros(
+                    (num_samples, len(token_feature_magnitudes)),
+                    dtype=token_feature_magnitudes.dtype,
+                )
+
+            # Cluster resampling
+            case _:
+                # Get cluster representing nearest neighbors
+                cluster = self.cluster_search.get_cluster(
+                    layer_idx,
+                    token_idx,
+                    token_feature_magnitudes,
+                    circuit_feature_idxs,
+                    k_nearest=self.k_nearest,
+                    feature_coefficients=feature_coefficients,
+                    positional_coefficient=self.positional_coefficient,
+                )
+
+                # Randomly draw sample magnitudes from the cluster
+                token_samples = cluster.sample_magnitudes(num_samples)
 
         # Preserve circuit feature magnitudes
         token_samples[:, circuit_feature_idxs] = token_feature_magnitudes[circuit_feature_idxs]
 
         # Return token index and patched feature magnitudes
         return token_idx, torch.tensor(token_samples)
-
-
-class ZeroAblator:
-    """
-    Ablation using zeroing of patched features.
-    """
-
-    def patch(
-        self,
-        feature_magnitudes: torch.Tensor,  # Shape: (T, F)
-        feature_mask: torch.Tensor,  # Shape: (T, F)
-    ) -> torch.Tensor:  # Shape: (T, F)
-        """
-        Set non-circuit features to zero.
-        """
-        # Zero-ablate non-circuit features
-        patched_feature_magnitudes = torch.zeros_like(feature_magnitudes)
-        patched_feature_magnitudes[feature_mask] = feature_magnitudes[feature_mask]
-        return patched_feature_magnitudes

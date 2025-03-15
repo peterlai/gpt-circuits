@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import torch
 
-from circuits import Circuit, Edge, EdgeGroup, Node
+from circuits import Circuit, Edge, EdgeGroup, Node, SearchConfiguration
 from circuits.features.cache import ModelCache
 from circuits.features.profiles import ModelProfile
 from circuits.search.ablation import ResampleAblator
@@ -36,26 +36,21 @@ class CircuitSearch:
         model: SparsifiedGPT,
         model_profile: ModelProfile,
         model_cache: ModelCache,
-        num_samples: int,
-        k_nearest: int | None,
-        max_positional_coefficient: float,
+        config: SearchConfiguration,
     ):
         """
         :param model: The sparsified model to use for circuit extraction.
         :param model_profile: The model profile to use for circuit extraction.
         :param model_cache: The model cache to use for circuit extraction.
-        :param num_samples: The number of samples to use for ablation.
-        :param k_nearest: The number of nearest neighbors to use for clustering.
-        :param max_positional_coefficient: The starting coefficient to use for positional distance when clustering.
+        :param config: The configuration to use for circuit extraction.
         """
-        assert 0 < num_samples <= (k_nearest or int(1e10))
+        assert 0 < config.num_edge_samples <= (config.k_nearest or int(1e10))
+        assert 0 < config.num_node_samples <= (config.k_nearest or int(1e10))
 
         self.model = model
         self.model_profile = model_profile
         self.model_cache = model_cache
-        self.num_samples = num_samples
-        self.k_nearest = k_nearest
-        self.max_positional_coefficient = max_positional_coefficient
+        self.config = config
 
     def search(
         self,
@@ -70,7 +65,7 @@ class CircuitSearch:
         ranked_nodes = frozenset()
         for layer_idx in range(self.num_layers):
             upstream_nodes = frozenset([rn.node for rn in ranked_nodes if rn.node.layer_idx == layer_idx - 1])
-            node_search = NodeSearch(self.model, self.create_ablator(layer_idx), self.num_samples)
+            node_search = NodeSearch(self.model, self.create_ablator(layer_idx), self.config)
             layer_nodes = node_search.search(tokens, upstream_nodes, layer_idx, target_token_idx, threshold)
             ranked_nodes = ranked_nodes | layer_nodes
 
@@ -79,7 +74,7 @@ class CircuitSearch:
         token_importances: dict[EdgeGroup, float] = {}
         for upstream_layer_idx in range(self.num_layers - 1):
             upstream_ablator = self.create_ablator(upstream_layer_idx)
-            edge_search = EdgeSearch(self.model, self.model_profile, upstream_ablator, self.num_samples)
+            edge_search = EdgeSearch(self.model, self.model_profile, upstream_ablator, self.config.num_edge_samples)
             upstream_nodes = frozenset(rn.node for rn in ranked_nodes if rn.node.layer_idx == upstream_layer_idx)
             downstream_nodes = frozenset(rn.node for rn in ranked_nodes if rn.node.layer_idx == upstream_layer_idx + 1)
             search_result = edge_search.search(tokens, upstream_nodes, downstream_nodes, target_token_idx)
@@ -138,7 +133,8 @@ class CircuitSearch:
                 target_logits,
                 [circuit],
                 model_output.feature_magnitudes[layer_idx].squeeze(0),  # Shape: (T, F)
-                min(self.k_nearest or int(1e10), self.num_samples * 4),  # Increase samples for final calculation
+                # Increase samples for final calculation
+                min(self.config.num_node_samples * 4, self.config.k_nearest or int(1e10)),
             )[circuit]
             klds[layer_idx] = circuit_results.kl_divergence
             predictions[layer_idx] = circuit_results.predictions
@@ -157,7 +153,7 @@ class CircuitSearch:
         return ResampleAblator(
             self.model_profile,
             self.model_cache,
-            k_nearest=self.k_nearest,
+            k_nearest=self.config.k_nearest,
             positional_coefficient=positional_coefficient,
         )
 
@@ -166,7 +162,7 @@ class CircuitSearch:
         Get the positional coefficient for a given layer.
         """
         # Use smaller positional coefficient for downstream layers ending at 0
-        return self.max_positional_coefficient * (1.0 - layer_idx / (self.num_layers - 1))
+        return self.config.max_positional_coefficient * (1.0 - layer_idx / (self.num_layers - 1))
 
     @property
     def num_layers(self) -> int:
