@@ -6,26 +6,27 @@ const args = process.argv.slice(2);
 const buildMode = args.includes('build');
 
 let modelsDir: string;
-let allowedModelPrefixes: string[];
-let ignoredModelPrefixes: string[];
+let indexedModelPrefixes: string[]; // Show these in the menu
+let hiddenModelPrefixes: string[]; // Hide these in the UI
 
 // Set directory and prefixes based on build mode
 if (buildMode) {
     console.log("Building index for deployment");
     modelsDir = buildMode ? 'build/samples' : 'public/samples';
-    allowedModelPrefixes = ["toy-v0", "ablation"];
-    ignoredModelPrefixes = [];
+    indexedModelPrefixes = ["toy-v0"];
+    hiddenModelPrefixes = ["ablation"];
 } else {
     modelsDir = 'public/samples';
-    allowedModelPrefixes = ["toy", "ablation"];
-    ignoredModelPrefixes = []; // ["toy-v0"];
+    indexedModelPrefixes = ["toy", "ablation"];
+    hiddenModelPrefixes = [];
 }
 
 // If building for deploying, clean up build directory
 if (buildMode) {
     for (const modelName of fs.readdirSync(modelsDir)) {
-        // Preserve everything that is allowed.
-        if (allowedModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
+        // Preserve everything that is indexed or hidden.
+        if (indexedModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
+        if (hiddenModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
 
         // Remove everything else.
         const modelPath = join(modelsDir, modelName);
@@ -46,10 +47,7 @@ const index: {[key: string]: SampleEntry[]} = {};
 
 for (const modelName of fs.readdirSync(modelsDir)) {
     // Use allowlist.
-    if (!allowedModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
-
-    // Use denylist.
-    if (ignoredModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
+    if (!indexedModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
 
     // e.g. toy/
     const modelPath = join(modelsDir, modelName);
