@@ -76,6 +76,7 @@ def main():
     # Compile if enabled
     if defaults.compile:
         model = torch.compile(model)  # type: ignore
+        torch.set_float32_matmul_precision("high")
 
     # Load cached metrics and feature samples
     model_profile = ModelProfile(checkpoint_dir)
