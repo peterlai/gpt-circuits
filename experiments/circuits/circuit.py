@@ -71,7 +71,7 @@ def load_configuration(config_name: str) -> SearchConfiguration:
     Load the search configuration from a configuration name.
     """
     defaults = SearchConfiguration()
-    is_comparison_experiment = config_name.startswith("comparisons")
+    is_comparison_experiment = config_name and config_name.startswith("comparisons")
 
     match config_name:
         case "ablation-cluster" | "comparisons-cluster":
@@ -120,6 +120,7 @@ def main():
     # Compile if enabled
     if defaults.compile:
         model = torch.compile(model)  # type: ignore
+        torch.set_float32_matmul_precision("high")
 
     # Load tokens
     tokens, dirname = load_tokens(model, args)
@@ -137,8 +138,9 @@ def main():
     # Get token sequence
     tokenizer = model.gpt.config.tokenizer
     decoded_tokens = tokenizer.decode_sequence(tokens)
+    printable_tokens = decoded_tokens.replace("\n", "\\n")
     decoded_target = tokenizer.decode_token(tokens[target_token_idx])
-    print(f'Using sequence: "{decoded_tokens.replace("\n", "\\n")}"')
+    print(f'Using sequence: "{printable_tokens}"')
     print(f"Target token: `{decoded_target}` at index {args.token_idx}")
     print(f"Target threshold: {config.threshold}")
 
