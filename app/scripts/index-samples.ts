@@ -13,7 +13,7 @@ let ignoredModelPrefixes: string[];
 if (buildMode) {
     console.log("Building index for deployment");
     modelsDir = buildMode ? 'build/samples' : 'public/samples';
-    allowedModelPrefixes = ["toy-v0"];
+    allowedModelPrefixes = ["toy-v0", "ablation"];
     ignoredModelPrefixes = [];
 } else {
     modelsDir = 'public/samples';

@@ -74,6 +74,7 @@ def load_configuration(config_name: str) -> SearchConfiguration:
         case "ablation-cluster":
             return SearchConfiguration(
                 threshold=0.25,
+                num_node_samples=256,  # Improve node selection
                 stoppage_window=999,  # Disable early stoppage
             )
         case "ablation-classic":
@@ -81,17 +82,17 @@ def load_configuration(config_name: str) -> SearchConfiguration:
                 # Use higher threshold to avoid excessive density
                 threshold=1.00,
                 k_nearest=None,
-                # Disregard token position when sampling
-                max_positional_coefficient=0.0,
+                # Honor token position when sampling
+                max_positional_coefficient=1.0,
                 stoppage_window=999,  # Disable early stoppage
             )
-        case "ablation-classic-pos":
+        case "ablation-classic-v2":
             return SearchConfiguration(
                 # Use higher threshold to avoid excessive density
                 threshold=1.00,
                 k_nearest=None,
-                # Honor token position when sampling
-                max_positional_coefficient=1.0,
+                # Disregard token position when sampling
+                max_positional_coefficient=0.0,
                 stoppage_window=999,  # Disable early stoppage
             )
         case "ablation-zero":
