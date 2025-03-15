@@ -17,7 +17,7 @@ if (buildMode) {
     ignoredModelPrefixes = [];
 } else {
     modelsDir = 'public/samples';
-    allowedModelPrefixes = ["toy"];
+    allowedModelPrefixes = ["toy", "ablation"];
     ignoredModelPrefixes = []; // ["toy-v0"];
 }
 
