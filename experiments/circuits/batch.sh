@@ -26,7 +26,7 @@ process_token_ids() {
 # Setup for toy-local
 DIRNAME="toy-local"
 TRAIN_TOKEN_IDS=()
-VAL_TOKEN_IDS=(0 1039 2063 3087 4111 5135 6159 7183)
+VAL_TOKEN_IDS=(15 1039 2063 3087 4111 5135 6159 7183)
 
 # Process training data
 process_token_ids "${DIRNAME}" "train" "${TRAIN_TOKEN_IDS[@]}"
