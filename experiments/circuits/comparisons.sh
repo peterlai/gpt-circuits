@@ -12,7 +12,7 @@ trap "echo Exited!; exit;" SIGINT SIGTERM
 
 # Generate shard token IDs
 VAL_TOKEN_IDS=()
-for i in {0..2}; do
+for i in {0..10}; do
   SEQUENCE_IDX=$((i * 1024))
   TOKEN_IDX=2
   CIRCUIT_NAME="val.0.$SEQUENCE_IDX.$TOKEN_IDX"
