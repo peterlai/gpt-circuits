@@ -5,13 +5,33 @@ if [ -z "$TIMEOUT" ]; then
   exit 1
 fi
 
+# Config
+MODEL_NAME="e2e.jumprelu.shakespeare_64x4"
+
+trap "echo Exited!; exit;" SIGINT SIGTERM
+
 # Generate shard token IDs
 VAL_TOKEN_IDS=()
-for i in {0..99}; do
-  SHARD_TOKEN_ID=$((i * 1028 + 2))
+for i in {0..2}; do
+  SEQUENCE_IDX=$((i * 1024))
+  TOKEN_IDX=2
+  CIRCUIT_NAME="val.0.$SEQUENCE_IDX.$TOKEN_IDX"
 
-  $TIMEOUT 60m ./experiments/circuits/extract.sh "comparisons-cluster" "val" $SHARD_TOKEN_ID
-  $TIMEOUT 60m ./experiments/circuits/extract.sh "comparisons-cluster-nopos" "val" $SHARD_TOKEN_ID
-  $TIMEOUT 60m ./experiments/circuits/extract.sh "comparisons-zero" "val" $SHARD_TOKEN_ID
-  $TIMEOUT 60m ./experiments/circuits/extract.sh "comparisons-classic" "val" $SHARD_TOKEN_ID
+  for CONFIG_SUFFIX in "cluster-nopos" "cluster" "random-pos" "random" "zero"; do
+    # Extract circuit
+    echo "Extracting '$CIRCUIT_NAME' using '$CONFIG_SUFFIX'"
+    python -m experiments.circuits.circuit \
+      --split="val" --sequence_idx=$SEQUENCE_IDX --token_idx=$TOKEN_IDX --config_name="comparisons-$CONFIG_SUFFIX" --skip_edges
+
+    # Save results
+    CIRCUIT_FILE="checkpoints/$MODEL_NAME/circuits/$CIRCUIT_NAME/config.json"
+    DEST_DIR="checkpoints/$MODEL_NAME/ablation-comparisons/$CIRCUIT_NAME"
+
+    if [ -f "$CIRCUIT_FILE" ]; then
+      mkdir -p "$DEST_DIR"
+      cp "$CIRCUIT_FILE" "$DEST_DIR/$CONFIG_SUFFIX.json"
+    else
+      echo "Warning: $CIRCUIT_FILE does not exist. Skipping."
+    fi
+  done
 done

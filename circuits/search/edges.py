@@ -123,6 +123,34 @@ class EdgeSearch:
 
         return EdgeSearchResult(edge_importance=edge_importance, token_importance=token_importance)
 
+    def get_placeholders(
+        self,
+        upstream_nodes: frozenset[Node],
+        downstream_nodes: frozenset[Node],
+    ) -> EdgeSearchResult:
+        """
+        Get a placeholder result for edge search.
+        """
+        # Find all edges that could exist between upstream and downstream nodes
+        edges = set()
+        for upstream in sorted(upstream_nodes):
+            for downstream in sorted(downstream_nodes):
+                if upstream.token_idx <= downstream.token_idx:
+                    edges.add(Edge(upstream, downstream))
+
+        # Create all edge groups
+        edge_groups: set[EdgeGroup] = set()
+        upstream_blocks = {(node.layer_idx, node.token_idx) for node in upstream_nodes}
+        for upstream_layer_idx, upstream_token_idx in upstream_blocks:
+            downstream_token_idxs = {n.token_idx for n in downstream_nodes if n.token_idx >= upstream_token_idx}
+            for downstream_token_idx in downstream_token_idxs:
+                edge_groups.add(EdgeGroup(upstream_layer_idx, upstream_token_idx, downstream_token_idx))
+
+        return EdgeSearchResult(
+            edge_importance={edge: 1.0 for edge in edges},
+            token_importance={edge_group: 0.0 for edge_group in edge_groups},
+        )
+
     def compute_edge_importance(
         self,
         all_edges: frozenset[Edge],

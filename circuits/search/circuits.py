@@ -23,7 +23,9 @@ class CircuitResult:
     token_importances: dict[EdgeGroup, float]  # token-to-token -> importance
     node_importances: dict[Node, float]  # node -> KLD ceiling without node
     node_ranks: dict[Node, int]  # node -> layer rank (1 is the most important)
-    positional_coefficients: dict[int, float]  # layer_idx -> positional coefficient
+    positional_coefficients: dict[int, float]  # layer -> positional coefficient
+    klds: dict[int, float]  # layer -> KLD
+    predictions: dict[int, dict]  # layer -> {token: probability}
 
 
 class CircuitSearch:
@@ -56,9 +58,14 @@ class CircuitSearch:
         self,
         tokens: list[int],
         target_token_idx: int,
+        skip_edges: bool = False,
     ) -> CircuitResult:
         """
         Search for a circuit in the model.
+
+        :param tokens: The input tokens to use for circuit extraction.
+        :param target_token_idx: The index of the target token to use for circuit extraction.
+        :param skip_edges: Whether to skip edge importance calculation.
         """
         # Add nodes to the circuit
         ranked_nodes = frozenset()
@@ -76,7 +83,10 @@ class CircuitSearch:
             edge_search = EdgeSearch(self.model, self.model_profile, upstream_ablator, self.config.num_edge_samples)
             upstream_nodes = frozenset(rn.node for rn in ranked_nodes if rn.node.layer_idx == upstream_layer_idx)
             downstream_nodes = frozenset(rn.node for rn in ranked_nodes if rn.node.layer_idx == upstream_layer_idx + 1)
-            search_result = edge_search.search(tokens, upstream_nodes, downstream_nodes, target_token_idx)
+            if skip_edges:
+                search_result = edge_search.get_placeholders(upstream_nodes, downstream_nodes)
+            else:
+                search_result = edge_search.search(tokens, upstream_nodes, downstream_nodes, target_token_idx)
             edge_importances.update(search_result.edge_importance)
             token_importances.update(search_result.token_importance)
 
@@ -89,6 +99,9 @@ class CircuitSearch:
         circuit = Circuit(nodes=circuit_nodes, edges=circuit_edges)
         node_importances = {rn.node: rn.kld for rn in ranked_nodes}
         node_ranks = {rn.node: rn.rank for rn in ranked_nodes}
+        klds, predictions = self.calculate_klds(circuit, tokens, target_token_idx)
+
+        # Return circuit result
         return CircuitResult(
             circuit,
             edge_importances,
@@ -96,6 +109,8 @@ class CircuitSearch:
             node_importances,
             node_ranks,
             positional_coefficients,
+            klds,
+            predictions,
         )
 
     def calculate_klds(

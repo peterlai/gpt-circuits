@@ -60,6 +60,7 @@ def main():
         tokens: list[int] = data["tokens"]
         target_token_idx: int = data["target_token_idx"]
         target_predictions: dict[str, float] = data.get("predictions", {})
+        layer_klds: dict[int, float] = {int(k): v for k, v in data.get("klds", {}).items()}
         search_config = SearchConfiguration(**data["search_config"])
 
     # Set sample directory
@@ -85,7 +86,6 @@ def main():
 
     # Gather circuit nodes
     node_ranks: dict[Node, int] = {}
-    layer_klds: dict[int, float] = {}
     layer_predictions: dict[int, dict[str, float]] = {}
     positional_coefficients: dict[int, float] = {}
     for layer_idx in range(model.gpt.config.n_layer + 1):
@@ -98,8 +98,6 @@ def main():
                     feature_idx = int(feature_str)
                     node = Node(layer_idx, token_idx, feature_idx)
                     node_ranks[node] = rank
-            # Load KLD
-            layer_klds[layer_idx] = data["kld"]
             # Load predictions
             layer_predictions[layer_idx] = data["predictions"]
             # Load positional coefficient

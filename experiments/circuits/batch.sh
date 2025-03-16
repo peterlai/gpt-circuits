@@ -26,12 +26,6 @@ DIRNAME="toy-local"
 TRAIN_TOKEN_IDS=()
 VAL_TOKEN_IDS=(15 1039 2063 3087 4111 5135 6159 7183)
 
-# DIRNAME="ablation-cluster"
-# DIRNAME="ablation-zero"
-# DIRNAME="ablation-classic"
-# TRAIN_TOKEN_IDS=()
-# VAL_TOKEN_IDS=(1282 7554 8834 9218)
-
 # Process training data
 process_token_ids "${DIRNAME}" "train" "${TRAIN_TOKEN_IDS[@]}"
 

@@ -38,6 +38,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--shard_idx", type=int, default=0, help="Shard to load data from")
     parser.add_argument("--sequence_idx", type=int, help="Index for start of sequence [0...shard.tokens.size)")
     parser.add_argument("--token_idx", type=int, help="Index for token in the sequence [0...block_size)")
+    parser.add_argument("--skip_edges", action="store_true", help="Produce placeholder values for edges")
     parser.add_argument("--config_name", type=str, help="Search configuration name")
     return parser.parse_args()
 
@@ -71,24 +72,27 @@ def load_configuration(config_name: str) -> SearchConfiguration:
     Load the search configuration from a configuration name.
     """
     match config_name:
-        case "ablation-cluster" | "comparisons-cluster":
+        case x if x.endswith("-cluster"):
             return SearchConfiguration(
                 threshold=0.25,
-                num_node_samples=256,  # Enhance estimates
             )
-        case "comparisons-cluster-nopos":
+        case x if x.endswith("-cluster-nopos"):
             return SearchConfiguration(
                 threshold=0.25,
-                num_node_samples=256,  # Enhance estimates
                 max_positional_coefficient=0.0,  # Disable positional coefficient
             )
-        case "ablation-classic" | "comparisons-classic":
+        case x if x.endswith("-random"):
             return SearchConfiguration(
                 threshold=0.25,
                 k_nearest=None,
-                num_node_samples=256,  # Enhance estimates
+                max_positional_coefficient=0.0,  # Disable positional coefficient
             )
-        case "ablation-zero" | "comparisons-zero":
+        case x if x.endswith("-random-pos"):
+            return SearchConfiguration(
+                threshold=0.25,
+                k_nearest=None,
+            )
+        case x if x.endswith("-zero"):
             return SearchConfiguration(
                 threshold=0.25,
                 k_nearest=0,
@@ -153,8 +157,7 @@ def main():
         model_cache,
         config=config,
     )
-    search_result = circuit_search.search(tokens, target_token_idx)
-    klds, predictions = circuit_search.calculate_klds(search_result.circuit, tokens, target_token_idx)
+    search_result = circuit_search.search(tokens, target_token_idx, skip_edges=args.skip_edges)
 
     # Export circuit search configuration
     config_path = circuit_dir / "config.json"
@@ -163,7 +166,9 @@ def main():
         data = {
             "tokens": tokens,
             "target_token_idx": target_token_idx,
+            "num_nodes": len(search_result.circuit.nodes),
             "predictions": target_predictions,
+            "klds": search_result.klds,
             "search_config": dataclasses.asdict(config),
         }
         f.write(json_prettyprint(data))
@@ -188,8 +193,7 @@ def main():
         data = {
             "layer_idx": layer_idx,
             "positional_coefficient": positional_coefficient,
-            "kld": round(klds[layer_idx], 4),
-            "predictions": predictions[layer_idx],
+            "predictions": search_result.predictions[layer_idx],
             "nodes": grouped_nodes,
         }
         circuit_dir.mkdir(parents=True, exist_ok=True)
