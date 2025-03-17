@@ -106,6 +106,7 @@ def load_configuration(config_name: str) -> SearchConfiguration:
             config = SearchConfiguration(
                 threshold=0.25,
                 k_nearest=0,
+                max_positional_coefficient=0.0,  # No-op for zero ablation
                 num_edge_samples=1,  # Resampling isn't needed
                 num_node_samples=1,  # Resampling isn't needed
             )

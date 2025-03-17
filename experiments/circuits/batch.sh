@@ -30,7 +30,8 @@ VAL_TOKEN_IDS=()
 # DIRNAME="comparisons-random"
 # DIRNAME="comparisons-zero"
 # DIRNAME="comparisons-cluster"
-# VAL_TOKEN_IDS=(1282 7554 8834 9218)
+# VAL_TOKEN_IDS=(1282 7554 8834 9218) # 3 char sequences
+# VAL_TOKEN_IDS=(6159) # 16 char sequence
 
 # DIRNAME="toy-local"
 # TRAIN_TOKEN_IDS=()
