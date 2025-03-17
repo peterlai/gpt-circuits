@@ -40,6 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--token_idx", type=int, help="Index for token in the sequence [0...block_size)")
     parser.add_argument("--skip_edges", action="store_true", help="Produce placeholder values for edges")
     parser.add_argument("--config_name", type=str, help="Search configuration name")
+    parser.add_argument("--threshold", type=float, help="KLD threshold")
     return parser.parse_args()
 
 
@@ -72,36 +73,51 @@ def load_configuration(config_name: str) -> SearchConfiguration:
     """
     Load the search configuration from a configuration name.
     """
-    match config_name or "":
+    # Defaults to cluster resampling
+    config = SearchConfiguration()
+
+    match config_name:
         case x if x.endswith("-cluster"):
-            return SearchConfiguration(
+            # Cluster resampling
+            config = SearchConfiguration(
                 threshold=0.25,
             )
         case x if x.endswith("-cluster-nopos"):
-            return SearchConfiguration(
+            # Cluster resampling with without using positional informaiton
+            config = SearchConfiguration(
                 threshold=0.25,
                 max_positional_coefficient=0.0,  # Disable positional coefficient
             )
         case x if x.endswith("-random"):
-            return SearchConfiguration(
+            # Random resampling
+            config = SearchConfiguration(
                 threshold=0.25,
                 k_nearest=None,
                 max_positional_coefficient=0.0,  # Disable positional coefficient
             )
         case x if x.endswith("-random-pos"):
-            return SearchConfiguration(
+            # Random resampling from consistent token position
+            config = SearchConfiguration(
                 threshold=0.25,
                 k_nearest=None,
             )
         case x if x.endswith("-zero"):
-            return SearchConfiguration(
+            # Zero ablation
+            config = SearchConfiguration(
                 threshold=0.25,
                 k_nearest=0,
                 num_edge_samples=1,  # Resampling isn't needed
                 num_node_samples=1,  # Resampling isn't needed
             )
         case _:
-            return SearchConfiguration()
+            pass
+
+    # Increase stoppage window if extracting circuits for comparison.
+    # NOTE: Helps get over local minima. Might result in circuits with more features.
+    if config_name.startswith("comparisons-"):
+        config.stoppage_window *= 2
+
+    return config
 
 
 def main():
@@ -127,7 +143,11 @@ def main():
     circuit_dir = checkpoint_dir / "circuits" / dirname
 
     # Setup search configuration
-    config = load_configuration(args.config_name)
+    config = load_configuration(args.config_name or "")
+    if args.threshold:
+        # Override threshold if provided
+        config.threshold = args.threshold
+    print(f"Using search configuration: {dataclasses.asdict(config)}")
 
     # Load cached metrics and feature magnitudes
     model_profile = ModelProfile(checkpoint_dir)

@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass
 
 
-@dataclass(frozen=True)
+@dataclass
 class SearchConfiguration:
     """
     Configuration to use for circuit search.

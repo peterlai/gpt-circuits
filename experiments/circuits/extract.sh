@@ -1,6 +1,10 @@
 #!/bin/bash
-# Extracts a set of circuits using a given (i) a dirname, (ii) a split and (iii) and a token index.
-# Example usage: `source experiments/circuits/extract.sh toy-local train 51`
+# Extracts a set of circuits using a given
+#  (i) a dirname
+#  (ii) a split
+#  (iii) a token index
+#  (iv) a threshold
+# Example usage: `source experiments/circuits/extract.sh toy-local train 51 0.15`
 
 # Set the first positional argument as the dirname
 DIRNAME=${1}
@@ -10,6 +14,9 @@ SPLIT=${2}
 
 # Set the third positional argument as the shard token idx
 SHARD_TOKEN_IDX=${3}
+
+# Set the fourth positional argument as the threshold
+THRESHOLD=${4}
 
 # Set token idx to be the shard token idx % 128
 TOKEN_IDX=$((SHARD_TOKEN_IDX % 128))
@@ -29,7 +36,8 @@ python -m experiments.circuits.circuit \
     --split=$SPLIT \
     --sequence_idx=$SEQUENCE_IDX \
     --token_idx=$TOKEN_IDX \
-    --config_name=$DIRNAME
+    --config_name=$DIRNAME \
+    --threshold=$THRESHOLD
 
 # Export circuit to visualizer
 python -m experiments.circuits.export --dirname=$DIRNAME --circuit=$CIRCUIT_NAME

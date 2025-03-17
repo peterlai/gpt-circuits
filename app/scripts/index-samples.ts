@@ -14,10 +14,10 @@ if (buildMode) {
     console.log("Building index for deployment");
     modelsDir = buildMode ? 'build/samples' : 'public/samples';
     indexedModelPrefixes = ["toy-v0"];
-    hiddenModelPrefixes = ["ablation"];
+    hiddenModelPrefixes = ["comparisons"];
 } else {
     modelsDir = 'public/samples';
-    indexedModelPrefixes = ["toy", "ablation", "comparisons"];
+    indexedModelPrefixes = ["toy", "comparisons"];
     hiddenModelPrefixes = [];
 }
 

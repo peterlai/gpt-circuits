@@ -21,7 +21,7 @@ for i in {0..99}; do
     # Extract circuit
     echo "Extracting '$CIRCUIT_NAME' using '$CONFIG_SUFFIX'"
     python -m experiments.circuits.circuit \
-      --split="val" --sequence_idx=$SEQUENCE_IDX --token_idx=$TOKEN_IDX --config_name="comparisons-$CONFIG_SUFFIX" --skip_edges
+      --split="val" --sequence_idx=$SEQUENCE_IDX --token_idx=$TOKEN_IDX --config_name="experiment-$CONFIG_SUFFIX" --skip_edges
 
     # Save results
     CIRCUIT_FILE="checkpoints/$MODEL_NAME/circuits/$CIRCUIT_NAME/config.json"
