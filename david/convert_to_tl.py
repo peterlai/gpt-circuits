@@ -17,104 +17,102 @@ from transformers import AutoTokenizer
 from transformers import PreTrainedTokenizer
 
 from utils import generate
-name = 'shakespeare_64x4'
-config = options[name]
 
-# Load the GPT model
-model = GPT(config.gpt_config)
-model_path = os.path.join("../checkpoints", name)
-model = model.load(model_path, device=config.device)
-model.to(config.device)
+def define_model(name):
+    config = options[name]
 
-# Initialize the tokenizer
-tokenizer = ASCIITokenizer() if "shake" in name else TikTokenTokenizer()
-tokenizer.eos_token_id = ord("?")
-tokenizer.pad_token_id = ord("?")
-# Generate some text to verify the model
+    # Load the GPT model
+    model = GPT(config.gpt_config)
+    model_path = os.path.join("../checkpoints", name)
+    model = model.load(model_path, device=config.device)
+    model.to(config.device)
 
+    # Initialize the tokenizer
+    tokenizer = ASCIITokenizer() if "shake" in name else TikTokenTokenizer()
+    tokenizer.eos_token_id = ord("?")
+    tokenizer.pad_token_id = ord("?")
 
-# Create a HookedTransformerConfig
-hooked_config = HookedTransformerConfig(
-    n_layers=config.gpt_config.n_layer,
-    d_model=config.gpt_config.n_embd,
-    n_ctx=config.gpt_config.block_size,
-    d_head=config.gpt_config.n_embd // config.gpt_config.n_head,
-    d_mlp=4 * config.gpt_config.n_embd,
-    n_heads=config.gpt_config.n_head,
-    model_name=config.gpt_config.name,
-    device=config.device,
-    act_fn="gelu_pytorch_tanh",
-    d_vocab=config.gpt_config.vocab_size,
-    use_attn_result=True,
-    use_local_attn=False,
-    tokenizer_prepends_bos=True,
-    default_prepend_bos=True,
-)
-# %%
-# Initialize the HookedTransformer
-ht = HookedTransformer(hooked_config)
+    return model, tokenizer, config
 
-class ASCIITokenizer(PreTrainedTokenizer):
-    """
-    Tokenizer that treats each character in the input as a token, conforming to Hugging Face's PreTrainedTokenizer.
-    """
-    def __init__(self, tokenizer_prepend_bos=False, **kwargs):
-        super().__init__(**kwargs)
-        self.add_special_tokens({})
-        self.pad_token = "?"
-        self.eos_token = "?"
-    
-    @property
-    def vocab_size(self):
-        return 128
+def convert_gpt_to_transformer_lens(model, config):
+    # Create a HookedTransformerConfig
+    hooked_config = HookedTransformerConfig(
+        n_layers=config.gpt_config.n_layer,
+        d_model=config.gpt_config.n_embd,
+        n_ctx=config.gpt_config.block_size,
+        d_head=config.gpt_config.n_embd // config.gpt_config.n_head,
+        d_mlp=4 * config.gpt_config.n_embd,
+        n_heads=config.gpt_config.n_head,
+        model_name=config.gpt_config.name,
+        device=config.device,
+        act_fn="gelu_pytorch_tanh",
+        d_vocab=config.gpt_config.vocab_size,
+        use_attn_result=True,
+        use_local_attn=False,
+        tokenizer_prepends_bos=True,
+        default_prepend_bos=True,
+    )
+    # Initialize the HookedTransformer
+    ht = HookedTransformer(hooked_config)
 
-    def _tokenize(self, text):
-        return [c if ord(c) < 128 else "?" for c in text]
-    
-    def _convert_token_to_id(self, token):
-        return ord(token)
-    
-    def _convert_id_to_token(self, index):
-        return chr(index)
-    
-    def convert_tokens_to_string(self, tokens):
-        return "".join(tokens)
-    
-    def build_inputs_with_special_tokens(self, token_ids_0, token_ids_1=None):
-        return token_ids_0 if token_ids_1 is None else token_ids_0 + token_ids_1
-    
-    def get_vocab(self):
-        return {chr(i): i for i in range(128)}
-    
-    def decode_sequence(self, tokens):
-        return self.decode(tokens)
-    
-    def __call__(self, text, **kwargs):
-        return {
-            'input_ids': self.encode(text, **kwargs),
-            'attention_mask': torch.ones_like(self.encode(text, **kwargs))
-        }
+    class ASCIITokenizer(PreTrainedTokenizer):
+        """
+        Tokenizer that treats each character in the input as a token, conforming to Hugging Face's PreTrainedTokenizer.
+        """
+        def __init__(self, tokenizer_prepend_bos=False, **kwargs):
+            super().__init__(**kwargs)
+            self.add_special_tokens({})
+            self.pad_token = "?"
+            self.eos_token = "?"
+        
+        @property
+        def vocab_size(self):
+            return 128
 
+        def _tokenize(self, text):
+            return [c if ord(c) < 128 else "?" for c in text]
+        
+        def _convert_token_to_id(self, token):
+            return ord(token)
+        
+        def _convert_id_to_token(self, index):
+            return chr(index)
+        
+        def convert_tokens_to_string(self, tokens):
+            return "".join(tokens)
+        
+        def build_inputs_with_special_tokens(self, token_ids_0, token_ids_1=None):
+            return token_ids_0 if token_ids_1 is None else token_ids_0 + token_ids_1
+        
+        def get_vocab(self):
+            return {chr(i): i for i in range(128)}
+        
+        def decode_sequence(self, tokens):
+            return self.decode(tokens)
+        
+        def __call__(self, text, **kwargs):
+            return {
+                'input_ids': self.encode(text, **kwargs),
+                'attention_mask': torch.ones_like(self.encode(text, **kwargs))
+            }
 
-custom_tokenizer = ASCIITokenizer()
-ht.tokenizer = custom_tokenizer
+    custom_tokenizer = ASCIITokenizer()
+    ht.tokenizer = custom_tokenizer
 
-from transformer_lens.pretrained.weight_conversions import convert_nanogpt_weights
+    from transformer_lens.pretrained.weight_conversions import convert_nanogpt_weights
 
-# Convert weights using the provided function
-state_dict = convert_nanogpt_weights(model.state_dict(), hooked_config)
-for l in range(hooked_config.n_layers):
-    state_dict[f'blocks.{l}.attn.IGNORE'] = ht.blocks[l].attn.IGNORE
-    state_dict[f'blocks.{l}.attn.mask'] = ht.blocks[l].attn.mask
-    state_dict[f'unembed.b_U'] = torch.zeros_like(ht.unembed.b_U)
-# Load the converted weights into the HookedTransformer
-ht.load_state_dict(state_dict)
+    # Convert weights using the provided function
+    state_dict = convert_nanogpt_weights(model.state_dict(), hooked_config)
+    for l in range(hooked_config.n_layers):
+        state_dict[f'blocks.{l}.attn.IGNORE'] = ht.blocks[l].attn.IGNORE
+        state_dict[f'blocks.{l}.attn.mask'] = ht.blocks[l].attn.mask
+        state_dict[f'unembed.b_U'] = torch.zeros_like(ht.unembed.b_U)
+    # Load the converted weights into the HookedTransformer
+    ht.load_state_dict(state_dict)
 
+    return ht
 
-# %%
-if __name__ == "__main__":
-    # Run tests and check both models generate the same text
-    
+def run_tests(model, ht, config):
     # Generate tokens and resid once
     tokens = torch.randint(0, 100, (1, 10)).to(config.device)
     resid = torch.randn((13,7,64)).to(config.device)
@@ -189,10 +187,16 @@ if __name__ == "__main__":
         "full transformer"
     )
 
+    print("="*80)
+    print(generate(model, ht.tokenizer, "Hello, how are you?", max_length=100, temperature=0.00001))
+    print("="*80)
+    print(generate(ht, ht.tokenizer, "Hello, how are you?", max_length=100, temperature=0.00001))
+    print("="*80)
 
-
-    print("="*80)
-    print(generate(model, custom_tokenizer, "Hello, how are you?", max_length=100, temperature=0.00001))
-    print("="*80)
-    print(generate(ht, custom_tokenizer, "Hello, how are you?", max_length=100, temperature=0.00001))
-    print("="*80)
+# %%
+if __name__ == "__main__":
+    name = 'shakespeare_64x4'
+    model, tokenizer, config = define_model(name)
+    ht = convert_gpt_to_transformer_lens(model, config)
+    run_tests(model, ht, config)
+# %%
