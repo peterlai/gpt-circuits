@@ -3,7 +3,7 @@ This module contains classes for tokenizing text.
 """
 
 from enum import Enum
-from typing import Protocol
+from typing import Protocol, Literal
 
 import tiktoken
 
@@ -35,6 +35,7 @@ class Tokenizer(Protocol):
 
     # The size of the vocabulary.
     vocab_size: int
+    padding_side : Literal["left", "right"] = "right"
 
     def encode(self, text) -> list[int]:
         """
