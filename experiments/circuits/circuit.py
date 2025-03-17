@@ -52,6 +52,7 @@ def load_tokens(model: SparsifiedGPT, args: argparse.Namespace) -> tuple[list[in
     """
     if text := args.text:
         # Tokenize custom text
+        text = text.replace("\\n", "\n")  # Replace decoded newlines with actual newlines
         trimmed_text = (text + " " * model.config.block_size)[: model.config.block_size]
         tokenizer = model.gpt.config.tokenizer
         tokens = tokenizer.encode(trimmed_text)[: model.config.block_size]
@@ -135,7 +136,7 @@ def main():
     # Get token sequence
     tokenizer = model.gpt.config.tokenizer
     decoded_tokens = tokenizer.decode_sequence(tokens)
-    printable_tokens = decoded_tokens.replace("\n", "\\n")
+    printable_tokens = decoded_tokens.replace("\n", "⏎")
     decoded_target = tokenizer.decode_token(tokens[target_token_idx])
     print(f'Using sequence: "{printable_tokens}"')
     print(f"Target token: `{decoded_target}` at index {args.token_idx}")
