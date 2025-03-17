@@ -71,7 +71,7 @@ def load_configuration(config_name: str) -> SearchConfiguration:
     """
     Load the search configuration from a configuration name.
     """
-    match config_name:
+    match config_name or "":
         case x if x.endswith("-cluster"):
             return SearchConfiguration(
                 threshold=0.25,
