@@ -109,7 +109,7 @@ options: dict[str, SAETrainingConfig] = map_options(
         sae_config=sae_options["staircasex8.shakespeare_64x4"],
         **shakespeare_64x4_defaults,
         loss_coefficients=LossCoefficients(
-            sparsity=(0.02, 0.06, 0.2, 0.2, 0.5),  # Targets L0s of ~10
+            sparsity=(0.06, 0.24, 0.8, 1.0, 2.5) # Targets L0s of ~10
         ),
     ),
     SAETrainingConfig(
