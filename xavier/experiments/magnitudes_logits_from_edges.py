@@ -37,6 +37,8 @@ def main():
     parser.add_argument("--num-prompts", type=int, default=1, help="Number of prompts to use from validation data")
     parser.add_argument("--edge-selection", type=str, default="random", 
                         choices=["random", "gradient"], help="Edge selection strategy")
+    parser.add_argument("--sae-variant", type=str, default="standard", 
+                        choices=["standard", "topk", "topk-x40", "topk-staircase"], help="Type of SAE")
     parser.add_argument("--seed", type=int, default=125, help="Random seed")
     args = parser.parse_args()
     
@@ -48,6 +50,7 @@ def main():
     num_samples = args.num_samples
     num_prompts = args.num_prompts
     edge_selection = args.edge_selection
+    sae_variant = args.sae_variant
     seed = args.seed
 
     # Set random seed
@@ -60,7 +63,8 @@ def main():
     # Setup model paths
     checkpoint_dir = project_root / "checkpoints"
     gpt_dir = checkpoint_dir / "shakespeare_64x4"
-    sae_dir = checkpoint_dir / "standard.shakespeare_64x4"
+    sae_dir = checkpoint_dir / f"{sae_variant}.shakespeare_64x4"
+    # sae_dir = checkpoint_dir / f"{sae_variant}.shakespeare_64x4"
     data_dir = project_root / "data"
     
     # Load GPT model
@@ -94,7 +98,7 @@ def main():
     with open(val_data_dir, 'rb') as f:
         val_array = np.load(f)
     val_tensor = torch.from_numpy(val_array).to(torch.long)  # Convert to long tensor
-
+ 
     # Calculate number of complete chunks we can make
     sequence_length = 128 # Hardcoded for now
     target_token_idx = sequence_length - 1
@@ -111,8 +115,8 @@ def main():
         downstream_magnitudes = encoder_outputs[upstream_layer_num + 1].feature_magnitudes
     
     # Create edges
-    num_downstream_features = model.config.n_features[upstream_layer_num]
-    num_upstream_features = model.config.n_features[upstream_layer_num + 1]
+    num_upstream_features = model.config.n_features[upstream_layer_num]
+    num_downstream_features = model.config.n_features[upstream_layer_num + 1]
     
     print(f"Creating {num_edges} edges using {edge_selection} selection strategy...")
     
@@ -162,7 +166,7 @@ def main():
     
     # Create experiment output
     experiment_params = ExperimentParams(
-        task="compute_downstream_magnitudes_logits",
+        task="magnitudes",
         ablator="zero",
         edge_selection_strategy=edge_selection,
         num_edges=num_edges,
@@ -179,7 +183,7 @@ def main():
     )
     
     experiment_output = ExperimentOutput(
-        experiment_id=f"{experiment_params.task}_{upstream_layer_num}_{num_edges}_{edge_selection}",
+        experiment_id=f"{experiment_params.task}_{sae_variant}_{upstream_layer_num}_{num_edges}_{edge_selection}",
         timestamp=datetime.datetime.now(),
         model_config=config,
         experiment_params=experiment_params,
@@ -188,7 +192,7 @@ def main():
  
     # Save results
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    output_path = project_root / f"xavier/experiments/data/run_1/{experiment_output.experiment_id}_{timestamp}.safetensors"
+    output_path = project_root / f"xavier/experiments/data/run_4/{experiment_output.experiment_id}_{timestamp}.safetensors"
     experiment_output.to_safetensor(output_path)
     
     print("Done!")
