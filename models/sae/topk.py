@@ -24,7 +24,7 @@ class TopKSAE(nn.Module, SparseAutoencoder):
                 torch.empty(feature_size, embedding_size)))
         self.b_enc = nn.Parameter(torch.zeros(feature_size))
         self.b_dec = nn.Parameter(torch.zeros(embedding_size))
-        self.k = loss_coefficients.top_k[layer_idx] if loss_coefficients else feature_size
+        self.k = config.top_k[layer_idx]
 
         try:
             # NOTE: Subclass might define these properties.
@@ -62,7 +62,6 @@ class TopKSAE(nn.Module, SparseAutoencoder):
         feature_magnitudes = self.encode(x)
         x_reconstructed = self.decode(feature_magnitudes)
         output = EncoderOutput(x_reconstructed, feature_magnitudes)
-
         if self.k:
             sparsity_loss = 0 # no need for sparsity loss for top-k SAE
             output.loss = SAELossComponents(x, x_reconstructed, feature_magnitudes, sparsity_loss)

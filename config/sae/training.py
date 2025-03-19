@@ -10,11 +10,10 @@ from .models import SAEConfig, sae_options
 
 @dataclass
 class LossCoefficients:
-    sparsity: tuple[float, ...] = ()
+    sparsity: Optional[tuple[float, ...]] = None
     regularization: Optional[torch.Tensor] = None  # For regularization experiment
     downstream: Optional[float] = None  # For end-to-end experiment
     bandwidth: Optional[float] = None  # For JumpReLU
-    top_k: Optional[tuple[int, ...]] = None  # For top-k SAE
 
 
 @dataclass
@@ -72,25 +71,19 @@ options: dict[str, SAETrainingConfig] = map_options(
         name="topk.shakespeare_64x4",
         sae_config=sae_options["topk-x8.shakespeare_64x4"],
         **shakespeare_64x4_defaults,
-        loss_coefficients=LossCoefficients(
-            top_k=(10, 10, 10, 10, 10) # Directly set L0s of 10
-        ),
+        loss_coefficients=LossCoefficients()
     ),
     SAETrainingConfig(
         name="topk-staircase.shakespeare_64x4",
         sae_config=sae_options["topk-staircase-x8.shakespeare_64x4"],
         **shakespeare_64x4_defaults,
-        loss_coefficients=LossCoefficients(
-            top_k=(10, 10, 10, 10, 10) # Directly set L0s of 10
-        ),
+        loss_coefficients=LossCoefficients(),
     ),
     SAETrainingConfig(
         name="topk-x40.shakespeare_64x4",
         sae_config=sae_options["topk-x40.shakespeare_64x4"],
         **shakespeare_64x4_defaults,
-        loss_coefficients=LossCoefficients(
-            top_k=(10, 10, 10, 10, 10) # Directly set L0s of 10
-        ),
+        loss_coefficients=LossCoefficients(),
     ),
     SAETrainingConfig(
         name="regularized.shakespeare_64x4",

@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
-
+from typing import Optional
 from config import Config, map_options
 from config.gpt.models import GPTConfig, gpt_options
 
@@ -18,7 +18,8 @@ class SAEConfig(Config):
     gpt_config: GPTConfig = field(default_factory=GPTConfig)
     n_features: tuple = ()  # Number of features in each layer
     sae_variant: SAEVariant = SAEVariant.STANDARD
-
+    top_k: Optional[tuple[int, ...]] = None
+    
     @property
     def block_size(self) -> int:
         return self.gpt_config.block_size
@@ -28,7 +29,7 @@ class SAEConfig(Config):
         """
         Only export n_features and sae_variant.
         """
-        whitelisted_fields = ("n_features", "sae_variant")
+        whitelisted_fields = ("n_features", "sae_variant", "top_k")
         return {k: v for (k, v) in fields if k in whitelisted_fields}
 
 
@@ -51,18 +52,21 @@ sae_options: dict[str, SAEConfig] = map_options(
         gpt_config=gpt_options["ascii_64x4"],
         n_features=tuple(64 * n for n in (8, 8, 8, 8, 8)),
         sae_variant=SAEVariant.TOPK,
+        top_k=(10,10,10,10,10),
     ),
     SAEConfig(
         name="topk-staircase-x8.shakespeare_64x4",
         gpt_config=gpt_options["ascii_64x4"],
         n_features=tuple(64 * n for n in (8, 16, 24, 32, 40)),
         sae_variant=SAEVariant.TOPK,
+        top_k=(10,10,10,10,10),
     ),
     SAEConfig(
         name="topk-x40.shakespeare_64x4",
         gpt_config=gpt_options["ascii_64x4"],
         n_features=tuple(64 * n for n in (40, 40, 40, 40, 40)),
         sae_variant=SAEVariant.TOPK,
+        top_k=(10,10,10,10,10),
     ),
     SAEConfig(
         name="jumprelu-x8.shakespeare_64x4",
