@@ -19,6 +19,7 @@ class SAEConfig(Config):
     n_features: tuple = ()  # Number of features in each layer
     sae_variant: SAEVariant = SAEVariant.STANDARD
     top_k: Optional[tuple[int, ...]] = None
+    shared_layers : bool = False
     
     @property
     def block_size(self) -> int:
@@ -71,6 +72,20 @@ sae_options: dict[str, SAEConfig] = map_options(
         n_features=tuple(64 * n for n in (8, 8, 8, 8, 8)),
         sae_variant=SAEVariant.TOPK,
         top_k=(10,10,10,10,10),
+    ),
+    SAEConfig(
+        name="top5.shakespeare_64x4",
+        gpt_config=gpt_options["ascii_64x4"],
+        n_features=tuple(64 * n for n in (8, 8, 8, 8, 8)),
+        sae_variant=SAEVariant.TOPK,
+        top_k=(5,5,5,5,5),
+    ),
+     SAEConfig(
+        name="top20.shakespeare_64x4",
+        gpt_config=gpt_options["ascii_64x4"],
+        n_features=tuple(64 * n for n in (8, 8, 8, 8, 8)),
+        sae_variant=SAEVariant.TOPK,
+        top_k=(20,20,20,20,20),
     ),
     SAEConfig(
         name="topk-staircase-x8.shakespeare_64x4",

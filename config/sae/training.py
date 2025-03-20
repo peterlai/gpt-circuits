@@ -131,6 +131,18 @@ options: dict[str, SAETrainingConfig] = map_options(
         loss_coefficients=LossCoefficients(),
     ),
     SAETrainingConfig(
+        name="top5.shakespeare_64x4",
+        sae_config=sae_options["top5.shakespeare_64x4"],
+        **shakespeare_64x4_defaults,
+        loss_coefficients=LossCoefficients(),
+    ),
+    SAETrainingConfig(
+        name="top20.shakespeare_64x4",
+        sae_config=sae_options["top20.shakespeare_64x4"],
+        **shakespeare_64x4_defaults,
+        loss_coefficients=LossCoefficients(),
+    ),
+    SAETrainingConfig(
         name="regularized.shakespeare_64x4",
         sae_config=sae_options["standardx8.shakespeare_64x4"],
         **shakespeare_64x4_defaults,
