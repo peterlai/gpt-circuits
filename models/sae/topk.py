@@ -24,6 +24,7 @@ class TopKSAE(nn.Module, SparseAutoencoder):
                 torch.empty(feature_size, embedding_size)))
         self.b_enc = nn.Parameter(torch.zeros(feature_size))
         self.b_dec = nn.Parameter(torch.zeros(embedding_size))
+        assert config.top_k is not None, "Top-k must be provided. Verify checkpoints/<model_name>/sae.json contains a 'top_k' key."
         self.k = config.top_k[layer_idx]
 
         try:
