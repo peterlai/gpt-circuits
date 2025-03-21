@@ -31,7 +31,6 @@ def load_sae_config(gpt):
     sae_config_dir = sae_dir / "sae.json"
     with open(sae_config_dir, "r") as f:
         meta = json.load(f)
-        print(f"SAE config: {meta}")
     config = SAEConfig(**meta)
     config.gpt_config = gpt.config
     return config, sae_dir
@@ -65,6 +64,7 @@ def evaluate_model(model, val_loader):
     ce_losses = []
     ce_increases = []
     compound_ce_loss_increases = []
+    L0_norms = []
     for batch in tqdm(val_loader, desc="Evaluating model"):
         input_ids = batch[:, :-1].contiguous()
         targets = batch[:, 1:].contiguous()
@@ -74,17 +74,24 @@ def evaluate_model(model, val_loader):
         ce_losses.append(sparse_gpt_output.cross_entropy_loss.item())
         ce_increases.append(sparse_gpt_output.ce_loss_increases.cpu())
         compound_ce_loss_increases.append(sparse_gpt_output.compound_ce_loss_increase)
+        L0 = [(x>0).float().sum(dim=-1).mean() for x in sparse_gpt_output.feature_magnitudes.values()]
+        L0_norms.append(L0)
 
+    L0_norms = torch.tensor(L0_norms).mean(dim=0)
+    print(L0_norms.shape)
     ce_increases = torch.stack(ce_increases, dim=0).mean(dim=0)
     ce_losses = torch.tensor(ce_losses).mean()
     compound_ce_loss_increases = torch.stack(compound_ce_loss_increases, dim=0).mean()
-
+    
     print(f"Performance on Validation Set:")
     print(f"Loss: {ce_losses:.4f}")
     print(f"Loss Inc: {ce_increases}")
     print(f"Compound Loss Inc: {compound_ce_loss_increases:.4f}")
+    print(f"L0 Norms: {L0_norms}")
+    return sparse_gpt_output
 
-def main():
+
+if __name__ == "__main__":
     gpt, tokenizer = load_gpt_model()
     print("-----------------")
     print(generate(gpt, tokenizer, "Today I thought,", max_length=100))
@@ -92,8 +99,5 @@ def main():
     config, sae_dir = load_sae_config(gpt)
     model = create_sparsified_gpt_model(config, gpt, sae_dir, device)
     val_loader = load_and_prepare_data_loader(device)
-    evaluate_model(model, val_loader)
-# %%
-if __name__ == "__main__":
-    main()
+    output = evaluate_model(model, val_loader)
 # %%
