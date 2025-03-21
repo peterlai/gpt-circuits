@@ -24,7 +24,8 @@ class JumpReLUSAE(nn.Module, SparseAutoencoder):
         feature_size = config.n_features[layer_idx]  # SAE dictionary size.
         embedding_size = config.gpt_config.n_embd  # GPT embedding size.
         bandwidth = loss_coefficients.bandwidth if loss_coefficients else None
-        self.sparsity_coefficient = loss_coefficients.sparsity[layer_idx] if loss_coefficients else None
+        sparsity_coefficients = loss_coefficients.sparsity if loss_coefficients else None
+        self.sparsity_coefficient = sparsity_coefficients[layer_idx] if sparsity_coefficients else None
 
         self.b_dec = nn.Parameter(torch.zeros(embedding_size))
         self.b_enc = nn.Parameter(torch.zeros(feature_size))
