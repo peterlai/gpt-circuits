@@ -16,7 +16,7 @@ from david.utils import generate
 import json
 from pathlib import Path
 import numpy as np
-
+from tqdm import tqdm
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -31,6 +31,7 @@ def load_sae_config(gpt):
     sae_config_dir = sae_dir / "sae.json"
     with open(sae_config_dir, "r") as f:
         meta = json.load(f)
+        print(f"SAE config: {meta}")
     config = SAEConfig(**meta)
     config.gpt_config = gpt.config
     return config, sae_dir
