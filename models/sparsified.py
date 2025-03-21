@@ -18,6 +18,7 @@ from models.sae.jumprelu import JumpReLUSAE
 from models.sae.standard import StandardSAE, StandardSAE_V2
 from models.sae.topk import TopKSAE
 
+
 @dataclasses.dataclass
 class SparsifiedGPTOutput:
     """
