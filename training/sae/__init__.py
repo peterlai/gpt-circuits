@@ -2,6 +2,7 @@ from typing import Optional
 
 import torch
 from torch.optim import Optimizer
+from torch.nn.parallel import DistributedDataParallel
 
 from config.sae.training import SAETrainingConfig
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
@@ -99,6 +100,10 @@ class SAETrainer(Trainer):
             trainable_layers=None,  # Load all layers
             device=self.config.device,
         ).to(self.config.device)
+
+        # Wrap the model if using DDP
+        if self.ddp:
+            self.model = DistributedDataParallel(self.model, device_ids=[self.ddp_local_rank])
 
         # Gather final metrics. We don't bother compiling because we're just running eval once.
         final_metrics = self.val_step(0, should_log=False)  # step 0 so checkpoint isn't saved.
