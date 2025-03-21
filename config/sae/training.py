@@ -47,18 +47,21 @@ tiny_32x4_defaults = {
     "decay_lr": True,
     "min_lr": 1e-4,
 }
+tiny_384x6_defaults = {
+    "data_dir": "data/tiny_stories",
+    "eval_interval": 250,
+    "eval_steps": 100,
+    "batch_size": 256,
+    "gradient_accumulation_steps": 8,
+    "learning_rate": 1e-3,
+    "max_steps": 5000,
+    "decay_lr": True,
+    "min_lr": 1e-4,
+}
 
 
 # Training configuration options
 options: dict[str, SAETrainingConfig] = map_options(
-    SAETrainingConfig(
-        name="standard.tiny_32x4",
-        sae_config=sae_options["standardx16.tiny_32x4"],
-        **tiny_32x4_defaults,
-        loss_coefficients=LossCoefficients(
-            sparsity=(0.06, 0.06, 0.1, 0.1, 0.1),  # Targets L0s of ~10
-        ),
-    ),
     SAETrainingConfig(
         name="standard.shakespeare_64x4",
         sae_config=sae_options["standardx8.shakespeare_64x4"],
@@ -107,6 +110,16 @@ options: dict[str, SAETrainingConfig] = map_options(
         loss_coefficients=LossCoefficients(
             sparsity=(0.01, 0.00001, 0.005, 0.01, 0.005),
             downstream=1.0,
+            bandwidth=0.1,
+        ),
+    ),
+    SAETrainingConfig(
+        name="jumprelu.tiny_384x6",
+        sae_config=sae_options["jumprelux16.tiny_384x6"],
+        **tiny_384x6_defaults,
+        loss_coefficients=LossCoefficients(
+            # L0s ≈ (8...20)
+            sparsity=(0.1, 0.2, 0.4, 0.8, 1.6),
             bandwidth=0.1,
         ),
     ),

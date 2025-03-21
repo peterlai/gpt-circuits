@@ -110,4 +110,5 @@ if __name__ == "__main__":
     trainer.train()
 
     # Pring final result
-    print(f"Best validation loss: {round(trainer.best_val_loss.item(), 4)}")
+    if trainer.is_main_process:
+        print(f"Best validation loss: {round(trainer.best_val_loss.item(), 4)}")

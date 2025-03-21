@@ -60,11 +60,11 @@ gpt_options: dict[str, GPTConfig] = map_options(
         n_embd=32,
     ),
     GPTConfig(
-        name="tiktoken_64x2",
+        name="tiktoken_384x6",
         block_size=128,
         vocab_size=TikTokenTokenizer.vocab_size,
-        n_layer=2,
-        n_head=16,
-        n_embd=64,
+        n_layer=6,
+        n_head=6,
+        n_embd=384,
     ),
 )

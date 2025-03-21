@@ -35,12 +35,6 @@ class SAEConfig(Config):
 # SAE configuration options
 sae_options: dict[str, SAEConfig] = map_options(
     SAEConfig(
-        name="standardx16.tiny_32x4",
-        gpt_config=gpt_options["tiktoken_32x4"],
-        n_features=tuple(32 * n for n in (16, 16, 16, 16, 16)),
-        sae_variant=SAEVariant.STANDARD,
-    ),
-    SAEConfig(
         name="standardx8.shakespeare_64x4",
         gpt_config=gpt_options["ascii_64x4"],
         n_features=tuple(64 * n for n in (8, 8, 8, 8, 8)),
@@ -57,6 +51,18 @@ sae_options: dict[str, SAEConfig] = map_options(
         gpt_config=gpt_options["ascii_64x4"],
         # Only the penultimate layer needs the full x16 expansion factor
         n_features=tuple(64 * n for n in (4, 4, 4, 16, 4)),
+        sae_variant=SAEVariant.JUMP_RELU,
+    ),
+    SAEConfig(
+        name="standardx16.tiny_32x4",
+        gpt_config=gpt_options["tiktoken_32x4"],
+        n_features=tuple(32 * n for n in (16, 16, 16, 16, 16)),
+        sae_variant=SAEVariant.STANDARD,
+    ),
+    SAEConfig(
+        name="jumprelux16.tiny_384x6",
+        gpt_config=gpt_options["tiktoken_384x6"],
+        n_features=tuple(384 * n for n in (16, 16, 16, 16, 16)),
         sae_variant=SAEVariant.JUMP_RELU,
     ),
 )

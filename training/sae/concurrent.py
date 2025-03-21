@@ -47,6 +47,10 @@ class ConcurrentTrainer(SAETrainer):
 
         super().__init__(model, config)
 
+        if self.ddp:
+            # HACK: We're doing something that causes DDP to crash unless DDP optimization is disabled.
+            torch._dynamo.config.optimize_ddp = False
+
     def output_to_loss(self, output: SparsifiedGPTOutput) -> torch.Tensor:
         """
         Return an array of losses instead of a single combined loss.
