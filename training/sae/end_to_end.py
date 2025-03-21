@@ -2,6 +2,7 @@
 Train SAE weights using "End-to-End Sparse Dictionary Learning" for all layers concurrently.
 
 $ python -m training.sae.end_to_end --config=end-to-end.shakespeare_64x4 --load_from=shakespeare_64x4
+$ torchrun --standalone --nproc_per_node=8 -m training.sae.end_to_end --config=e2e.jumprelu.tiny_256x4 --load_from=tiny_256x4
 """
 
 import argparse
@@ -53,13 +54,13 @@ class EndToEndTrainer(ConcurrentTrainer):
         """
         target_logits = output.logits
         vocab_size = output.logits.size(-1)
-        n_blocks = len(self.model.gpt.transformer.h)
+        n_blocks = len(self.unwrapped_model.gpt.transformer.h)
         reconstructed_activations = output.reconstructed_activations[layer_idx]
 
         # Forward pass with reconstructed activations
         target_layers = list(range(layer_idx + 1, n_blocks))  # Never target the last layer
         with self.collect_activations(target_layers=target_layers) as predicted_activations:
-            predicted_logits = self.model.gpt.forward_with_patched_activations(reconstructed_activations, layer_idx)
+            predicted_logits = self.unwrapped_model.gpt.forward_with_patched_activations(reconstructed_activations, layer_idx)
 
         # Caculate downstream reconstruction loss
         downstream_losses = []
@@ -98,7 +99,7 @@ class EndToEndTrainer(ConcurrentTrainer):
         hooks = []
         for layer_idx in target_layers:
             assert layer_idx > 0, "Must target activations after the first transformer block"
-            target = self.model.gpt.transformer.h[layer_idx - 1]
+            target = self.unwrapped_model.gpt.transformer.h[layer_idx - 1]
             hook = self.create_hook(activations, layer_idx)
             hooks.append(target.register_forward_hook(hook))
 

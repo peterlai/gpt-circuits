@@ -3,7 +3,7 @@ Train GPT model:
 $ python -m training.gpt --config=shakespeare_64x4
 
 DDP launch for e.g. 8 GPUs:
-$ torchrun --standalone --nproc_per_node=8 -m training.gpt --config=shakespeare_64x4
+$ torchrun --standalone --nproc_per_node=8 -m training.gpt --config=tiny_256x4
 """
 
 import argparse

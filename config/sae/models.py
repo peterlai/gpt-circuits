@@ -54,15 +54,9 @@ sae_options: dict[str, SAEConfig] = map_options(
         sae_variant=SAEVariant.JUMP_RELU,
     ),
     SAEConfig(
-        name="standardx16.tiny_32x4",
-        gpt_config=gpt_options["tiktoken_32x4"],
-        n_features=tuple(32 * n for n in (16, 16, 16, 16, 16)),
-        sae_variant=SAEVariant.STANDARD,
-    ),
-    SAEConfig(
-        name="jumprelux16.tiny_384x6",
-        gpt_config=gpt_options["tiktoken_384x6"],
-        n_features=tuple(384 * n for n in (16, 16, 16, 16, 16)),
+        name="jumprelu-x32.tiny_256x4",
+        gpt_config=gpt_options["tiktoken_256x4"],
+        n_features=tuple(256 * n for n in (32, 32, 32, 32, 32)),
         sae_variant=SAEVariant.JUMP_RELU,
     ),
 )
