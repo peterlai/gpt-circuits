@@ -49,7 +49,7 @@ class ConcurrentTrainer(SAETrainer):
 
         if self.ddp:
             # HACK: We're doing something that causes DDP to crash unless DDP optimization is disabled.
-            torch._dynamo.config.optimize_ddp = False
+            torch._dynamo.config.optimize_ddp = False  # type: ignore
 
     def output_to_loss(self, output: SparsifiedGPTOutput) -> torch.Tensor:
         """
