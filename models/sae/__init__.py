@@ -63,9 +63,14 @@ class SparseAutoencoder(nn.Module, ABC):
     Abstract base class for a sparse autoencoder.
     """
 
-    def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients]):
+    def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients], model: nn.Module):
         """
         Initialize the sparse autoencoder.
+
+        :param layer_idx: SAE layer index.
+        :param config: SAE configuration.
+        :param loss_coefficients: Loss coefficients for the SAE.
+        :param model: The model to which the SAE is applied.
         """
         self.layer_idx = layer_idx
         super().__init__()

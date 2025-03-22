@@ -19,8 +19,8 @@ class JumpReLUSAE(SparseAutoencoder):
     https://github.com/bartbussmann/BatchTopK/blob/main/sae.py
     """
 
-    def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients]):
-        super().__init__(layer_idx, config, loss_coefficients)
+    def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients], model: nn.Module):
+        super().__init__(layer_idx, config, loss_coefficients, model)
         feature_size = config.n_features[layer_idx]  # SAE dictionary size.
         embedding_size = config.gpt_config.n_embd  # GPT embedding size.
         bandwidth = loss_coefficients.bandwidth if loss_coefficients else None

@@ -14,8 +14,8 @@ class StandardSAE(SparseAutoencoder):
     https://transformer-circuits.pub/2024/april-update/index.html#training-saes
     """
 
-    def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients]):
-        super().__init__(layer_idx, config, loss_coefficients)
+    def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients], model: nn.Module):
+        super().__init__(layer_idx, config, loss_coefficients, model)
         feature_size = config.n_features[layer_idx]  # SAE dictionary size.
         embedding_size = config.gpt_config.n_embd  # GPT embedding size.
         l1_coefficients = loss_coefficients.sparsity if loss_coefficients else None

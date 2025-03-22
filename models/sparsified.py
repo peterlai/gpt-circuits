@@ -63,7 +63,7 @@ class SparsifiedGPT(nn.Module):
         # Construct sae layers
         sae_class: Type[SparseAutoencoder] = self.get_sae_class(config)
         self.layer_idxs = trainable_layers if trainable_layers else list(range(len(config.n_features)))
-        self.saes = nn.ModuleDict(dict([(f"{i}", sae_class(i, config, loss_coefficients)) for i in self.layer_idxs]))
+        self.saes = nn.ModuleDict(dict([(f"{i}", sae_class(i, config, loss_coefficients, self)) for i in self.layer_idxs]))
 
     def forward(
         self, idx: torch.Tensor, targets: Optional[torch.Tensor] = None, is_eval: bool = False
