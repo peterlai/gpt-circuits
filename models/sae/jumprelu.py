@@ -10,7 +10,7 @@ from config.sae.training import LossCoefficients
 from models.sae import EncoderOutput, SAELossComponents, SparseAutoencoder
 
 
-class JumpReLUSAE(nn.Module, SparseAutoencoder):
+class JumpReLUSAE(SparseAutoencoder):
     """
     SAE technique as described in:
     https://arxiv.org/pdf/2407.14435
@@ -20,7 +20,7 @@ class JumpReLUSAE(nn.Module, SparseAutoencoder):
     """
 
     def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients]):
-        super().__init__()
+        super().__init__(layer_idx, config, loss_coefficients)
         feature_size = config.n_features[layer_idx]  # SAE dictionary size.
         embedding_size = config.gpt_config.n_embd  # GPT embedding size.
         bandwidth = loss_coefficients.bandwidth if loss_coefficients else None

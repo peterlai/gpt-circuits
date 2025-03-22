@@ -132,12 +132,14 @@ options: dict[str, SAETrainingConfig] = map_options(
     SAETrainingConfig(
         name="e2e.jumprelu.tiny_256x4",
         sae_config=sae_options["jumprelu-x32.tiny_256x4"],
-        **tiny_256x4_defaults | {
+        **tiny_256x4_defaults
+        | {
             "batch_size": 64,
             "gradient_accumulation_steps": 32,
         },
         loss_coefficients=LossCoefficients(
-            sparsity=(0.01, 0.01, 0.01, 0.02, 0.04),
+            # L0s ≈ (10...30), CE Loss Increase < 0.1
+            sparsity=(0.002, 0.10, 0.16, 0.005, 0.005),
             downstream=1.0,
             bandwidth=0.1,
         ),

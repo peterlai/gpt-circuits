@@ -9,7 +9,7 @@ from config.sae.training import LossCoefficients
 from models.sae import EncoderOutput, SAELossComponents, SparseAutoencoder
 
 
-class GatedSAE(nn.Module, SparseAutoencoder):
+class GatedSAE(SparseAutoencoder):
     """
     Gated sparse autoencoder with RI-L1 sparsity penalty
     https://arxiv.org/abs/2404.16014
@@ -17,7 +17,7 @@ class GatedSAE(nn.Module, SparseAutoencoder):
     """
 
     def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients]):
-        super().__init__()
+        super().__init__(layer_idx, config, loss_coefficients)
         feature_size = config.n_features[layer_idx]  # SAE dictionary size.
         embedding_size = config.gpt_config.n_embd  # GPT embedding size.
         l1_coefficients = loss_coefficients.sparsity if loss_coefficients else None

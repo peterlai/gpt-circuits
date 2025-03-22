@@ -8,14 +8,14 @@ from config.sae.training import LossCoefficients
 from models.sae import EncoderOutput, SAELossComponents, SparseAutoencoder
 
 
-class TopKSAE(nn.Module, SparseAutoencoder):
+class TopKSAE(SparseAutoencoder):
     """
     Top-k sparse autoencoder as described in:
     https://arxiv.org/pdf/2406.04093v1
     """
 
     def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients]):
-        super(TopKSAE, self).__init__()
+        super().__init__(layer_idx, config, loss_coefficients)
         feature_size = config.n_features[layer_idx]  # SAE dictionary size.
         embedding_size = config.gpt_config.n_embd  # GPT embedding size.
         self.W_dec = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(feature_size, embedding_size)))

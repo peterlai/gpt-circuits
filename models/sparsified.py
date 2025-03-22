@@ -2,17 +2,17 @@ import dataclasses
 import json
 import os
 from contextlib import contextmanager
-from typing import Iterable, Optional
+from pathlib import Path
+from typing import Iterable, Optional, Type
 
 import torch
 import torch.nn as nn
-from safetensors.torch import load_model, save_model
 from torch.nn import functional as F
 
 from config.sae.models import SAEConfig, SAEVariant
 from config.sae.training import LossCoefficients
 from models.gpt import GPT
-from models.sae import EncoderOutput, SAELossComponents
+from models.sae import EncoderOutput, SAELossComponents, SparseAutoencoder
 from models.sae.gated import GatedSAE, GatedSAE_V2
 from models.sae.jumprelu import JumpReLUSAE
 from models.sae.standard import StandardSAE, StandardSAE_V2
@@ -61,7 +61,7 @@ class SparsifiedGPT(nn.Module):
         self.gpt = GPT(config.gpt_config)
 
         # Construct sae layers
-        sae_class = self.get_sae_class(config)
+        sae_class: Type[SparseAutoencoder] = self.get_sae_class(config)
         self.layer_idxs = trainable_layers if trainable_layers else list(range(len(config.n_features)))
         self.saes = nn.ModuleDict(dict([(f"{i}", sae_class(i, config, loss_coefficients)) for i in self.layer_idxs]))
 
@@ -231,9 +231,9 @@ class SparsifiedGPT(nn.Module):
         model.gpt = gpt
 
         # Load SAE weights
-        for layer_name, module in model.saes.items():
-            weights_path = os.path.join(dir, f"sae.{layer_name}.safetensors")
-            load_model(module, weights_path, device=device.type)
+        for module in model.saes.values():
+            assert isinstance(module, SparseAutoencoder)
+            module.load(Path(dir), device=device)
 
         return model
 
@@ -266,10 +266,10 @@ class SparsifiedGPT(nn.Module):
         # Save SAE modules
         for layer_name, module in self.saes.items():
             if layer_name in layers_to_save:
-                weights_path = os.path.join(dir, f"sae.{layer_name}.safetensors")
-                save_model(module, weights_path)
+                assert isinstance(module, SparseAutoencoder)
+                module.save(Path(dir))
 
-    def get_sae_class(self, config: SAEConfig) -> type:
+    def get_sae_class(self, config: SAEConfig) -> Type[SparseAutoencoder]:
         """
         Maps the SAE variant to the actual class.
         """
