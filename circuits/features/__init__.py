@@ -29,6 +29,7 @@ def compute_metrics(checkpoint_dir: Path, shard: DatasetShard, batch_size: int =
     # Compile if enabled
     if defaults.compile:
         model = torch.compile(model)  # type: ignore
+        torch.set_float32_matmul_precision('high')
 
     model_cache = ModelCache()
     model_cache.compute(model, shard, batch_size)
