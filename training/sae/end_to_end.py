@@ -2,7 +2,7 @@
 Train SAE weights using "End-to-End Sparse Dictionary Learning" for all layers concurrently.
 
 $ python -m training.sae.end_to_end --config=end-to-end.shakespeare_64x4 --load_from=shakespeare_64x4
-$ torchrun --standalone --nproc_per_node=8 -m training.sae.end_to_end --config=e2e.jumprelu.tiny_256x4 --load_from=tiny_256x4
+$ torchrun --standalone --nproc_per_node=8 -m training.sae.end_to_end --config=e2e.jumprelu.stories_256x4 --load_from=stories_256x4
 """
 
 import argparse

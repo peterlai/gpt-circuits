@@ -41,7 +41,7 @@ options: dict[str, GPTTrainingConfig] = map_options(
         min_lr=1e-4,
     ),
     GPTTrainingConfig(
-        name="tiny_32x4",
+        name="stories_32x4",
         gpt_config=gpt_options["tiktoken_32x4"],
         data_dir="data/tiny_stories_10m",
         eval_interval=250,
@@ -52,7 +52,7 @@ options: dict[str, GPTTrainingConfig] = map_options(
         max_steps=5000,
     ),
     GPTTrainingConfig(
-        name="tiny_256x4",
+        name="stories_256x4",
         gpt_config=gpt_options["tiktoken_256x4"],
         data_dir="data/tiny_stories",
         eval_interval=250,

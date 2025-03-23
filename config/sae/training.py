@@ -36,7 +36,7 @@ shakespeare_64x4_defaults = {
     "decay_lr": True,
     "min_lr": 1e-4,
 }
-tiny_32x4_defaults = {
+stories_32x4_defaults = {
     "data_dir": "data/tiny_stories_10m",
     "eval_interval": 250,
     "eval_steps": 100,
@@ -47,7 +47,7 @@ tiny_32x4_defaults = {
     "decay_lr": True,
     "min_lr": 1e-4,
 }
-tiny_256x4_defaults = {
+stories_256x4_defaults = {
     "data_dir": "data/tiny_stories",
     "eval_interval": 250,
     "eval_steps": 100,
@@ -120,9 +120,9 @@ options: dict[str, SAETrainingConfig] = map_options(
         ),
     ),
     SAETrainingConfig(
-        name="jumprelu.tiny_256x4",
-        sae_config=sae_options["jumprelu-x32.tiny_256x4"],
-        **tiny_256x4_defaults,
+        name="jumprelu.stories_256x4",
+        sae_config=sae_options["jumprelu-x32.stories_256x4"],
+        **stories_256x4_defaults,
         loss_coefficients=LossCoefficients(
             # L0s ≈ (6...20)
             sparsity=(0.05, 0.1, 0.2, 0.4, 2.0),
@@ -130,9 +130,9 @@ options: dict[str, SAETrainingConfig] = map_options(
         ),
     ),
     SAETrainingConfig(
-        name="e2e.jumprelu.tiny_256x4",
-        sae_config=sae_options["jumprelu-x32.tiny_256x4"],
-        **tiny_256x4_defaults
+        name="e2e.jumprelu.stories_256x4",
+        sae_config=sae_options["jumprelu-x32.stories_256x4"],
+        **stories_256x4_defaults
         | {
             "batch_size": 64,
             "gradient_accumulation_steps": 32,

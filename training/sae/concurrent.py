@@ -2,7 +2,7 @@
 Train SAE weights for all layers concurrently.
 
 $ python -m training.sae.concurrent --config=standard.shakespeare_64x4 --load_from=shakespeare_64x4
-$ torchrun --standalone --nproc_per_node=8 -m training.sae.concurrent --config=jumprelu.tiny_256x4 --load_from=tiny_256x4
+$ torchrun --standalone --nproc_per_node=8 -m training.sae.concurrent --config=jumprelu.stories_256x4 --load_from=stories_256x4
 """
 
 import argparse
