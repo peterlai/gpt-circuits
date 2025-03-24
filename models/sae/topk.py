@@ -3,6 +3,8 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+from safetensors.torch import load_model, save_model
 
 from config.sae.models import SAEConfig
 from config.sae.training import LossCoefficients
@@ -25,6 +27,13 @@ class TopKSAE(SparseAutoencoder):
         self.W_enc = nn.Parameter(torch.empty(embedding_size, feature_size))
         self.W_enc.data = self.W_dec.data.T.detach().clone()  # initialize W_enc from W_dec
 
+        # Finish initialization.
+        self.__post_init__(config, layer_idx, loss_coefficients)
+
+    def __post_init__(self, config, layer_idx, loss_coefficients):
+        """
+        Called after initializing weights.
+        """
         assert config.top_k is not None, "checkpoints/<model_name>/sae.json must contain a 'top_k' key."
         self.k = config.top_k[layer_idx]
 
@@ -36,7 +45,7 @@ class TopKSAE(SparseAutoencoder):
         """
         x: GPT model activations (B, T, embedding size)
         """
-        latent = (x - self.b_dec) @ self.W_enc + self.b_enc
+        latent = F.relu((x - self.b_dec) @ self.W_enc + self.b_enc)
 
         # Zero out all but the top-k activations
         top_k_values, _ = torch.topk(latent, self.k, dim=-1)
@@ -68,14 +77,75 @@ class TopKSAE(SparseAutoencoder):
         return output
 
 
+
+class StaircaseTopKSharedContext(nn.Module):
+    """
+    Contains shared parameters for the staircase top-k SAE.
+    """
+    def __init__(self, config: SAEConfig):
+        super().__init__()
+        embedding_size = config.gpt_config.n_embd  # GPT embedding size.
+        feature_size = config.n_features[-1] # Last layer should be the largest and contain a superset of all features.
+        assert feature_size == max(config.n_features)
+
+        device = config.device
+        self.W_dec = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(feature_size, embedding_size, device=device)))
+        self.b_enc = nn.Parameter(torch.zeros(feature_size, device=device))
+        self.b_dec = nn.Parameter(torch.zeros(embedding_size, device=device))
+        self.W_enc = nn.Parameter(torch.empty(embedding_size, feature_size, device=device))
+        self.W_enc.data = self.W_dec.data.T.detach().clone()  # initialize W_enc from W_dec
+
 class StaircaseTopKSAE(TopKSAE):
     """
+    TopKSAEs that share weights between layers, and each child uses slices into weights inside shared context.
     """
+
     def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients], model: nn.Module):
-        super().__init__(layer_idx, config, loss_coefficients, model)
+        # We don't want to call init for TopKSAE because we need custom logic for instantiating weight parameters.
+        SparseAutoencoder.__init__(self, layer_idx, config, loss_coefficients, model)
+
+        # Shared context from which we can get weight parameters.
+        self.is_first = False
+        self.shared_context: StaircaseTopKSharedContext
+        if not hasattr(model, "shared_context"):
+            # Initialize the shared context once.
+            self.is_first = True
+            model.shared_context = StaircaseTopKSharedContext(config)
+        self.shared_context = model.shared_context  # type: ignore
+        print(f"{config.n_features=}")
+        feature_size = config.n_features[layer_idx]
+        embedding_size = config.gpt_config.n_embd
+
+
+        # All weight parameters are just views from the shared context.
+        prev_feature_size = config.n_features[layer_idx - 1] if layer_idx > 0 else 0
+        print(f"prev_feature_size: {prev_feature_size}, feature_size: {feature_size}")
+
+        self.W_dec = self.shared_context.W_dec[:feature_size, :]
+        self.W_enc = self.shared_context.W_enc[:, :feature_size]
+        # self.W_dec = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(feature_size - prev_feature_size, embedding_size)))
+        # self.W_enc = nn.Parameter(torch.empty(embedding_size, feature_size - prev_feature_size))
+        # self.W_enc.data = self.W_dec.data.T.detach().clone()  # initialize W_enc from W_dec
+        #should the biases be shared, or should each layer have it's own bias?
+        #self.b_enc = shared_context.b_enc[:feature_size]
+        # self.b_dec = shared_context.b_dec
+        self.b_enc = nn.Parameter(torch.zeros(feature_size))
+        self.b_dec = nn.Parameter(torch.zeros(embedding_size))
+
+        # Finish initialization.
+        self.__post_init__(config, layer_idx, loss_coefficients)
 
     def save(self, dirpath: Path):
         super().save(dirpath)
 
+        # TODO: Fix this logic.
+        weights_path = dirpath / "sae.shared.safetensors"
+        save_model(self.shared_context, str(weights_path))
+
     def load(self, dirpath: Path, device: torch.device):
         super().load(dirpath, device)
+
+        # TODO: Fix this logic.
+        if self.is_first:
+            weights_path = dirpath / "sae.shared.safetensors"
+            load_model(self.shared_context, weights_path, device=device.type)

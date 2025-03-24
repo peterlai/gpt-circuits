@@ -126,7 +126,7 @@ class SAETrainer(Trainer):
         gpt_param_groups = GPTTrainer.get_param_groups(model.gpt, self.config)
 
         # Add SAE parameters to the optimizer.
-        sae_params = [p for p in model.saes.parameters() if p.requires_grad]
+        sae_params = [param for (key, param) in model.named_parameters() if param.requires_grad and key.split(".")[0] != "gpt"]
         num_gpt_params = sum(p.numel() for g in gpt_param_groups for p in g["params"])
         num_sae_params = sum(p.numel() for p in sae_params)
 
