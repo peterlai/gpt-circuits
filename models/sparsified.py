@@ -16,7 +16,7 @@ from models.sae import EncoderOutput, SAELossComponents, SparseAutoencoder
 from models.sae.gated import GatedSAE, GatedSAE_V2
 from models.sae.jumprelu import JumpReLUSAE
 from models.sae.standard import StandardSAE, StandardSAE_V2
-from models.sae.topk import TopKSAE
+from models.sae.topk import StaircaseTopKSAE, TopKSAE
 
 
 @dataclasses.dataclass
@@ -286,5 +286,7 @@ class SparsifiedGPT(nn.Module):
                 return JumpReLUSAE
             case SAEVariant.TOPK:
                 return TopKSAE
+            case SAEVariant.TOPK_STAIRCASE:
+                return StaircaseTopKSAE
             case _:
                 raise ValueError(f"Unrecognized SAE variant: {self.sae_variant}")

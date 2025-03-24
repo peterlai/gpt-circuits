@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Optional
 
 import torch
@@ -65,3 +66,16 @@ class TopKSAE(SparseAutoencoder):
             output.loss = SAELossComponents(x, x_reconstructed, feature_magnitudes, sparsity_loss)
 
         return output
+
+
+class StaircaseTopKSAE(TopKSAE):
+    """
+    """
+    def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients], model: nn.Module):
+        super().__init__(layer_idx, config, loss_coefficients, model)
+
+    def save(self, dirpath: Path):
+        super().save(dirpath)
+
+    def load(self, dirpath: Path, device: torch.device):
+        super().load(dirpath, device)
