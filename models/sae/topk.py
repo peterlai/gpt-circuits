@@ -21,15 +21,11 @@ class TopKSAE(SparseAutoencoder):
         self.W_dec = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(feature_size, embedding_size)))
         self.b_enc = nn.Parameter(torch.zeros(feature_size))
         self.b_dec = nn.Parameter(torch.zeros(embedding_size))
+        self.W_enc = nn.Parameter(torch.empty(embedding_size, feature_size))
+        self.W_enc.data = self.W_dec.data.T.detach().clone()  # initialize W_enc from W_dec
+
         assert config.top_k is not None, "checkpoints/<model_name>/sae.json must contain a 'top_k' key."
         self.k = config.top_k[layer_idx]
-
-        try:
-            # NOTE: Subclass might define these properties.
-            self.W_enc = nn.Parameter(torch.empty(embedding_size, feature_size))
-            self.W_enc.data = self.W_dec.data.T.detach().clone()  # initialize W_enc from W_dec
-        except KeyError:
-            pass
 
         # Top-k SAE losses do not depend upon any loss coefficients; however, if an empty class is provided,
         # we know that we should compute losses and omit doing so otherwise.
