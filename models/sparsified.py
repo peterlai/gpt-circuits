@@ -14,7 +14,7 @@ from config.sae.training import LossCoefficients
 from models.gpt import GPT
 from models.sae import EncoderOutput, SAELossComponents, SparseAutoencoder
 from models.sae.gated import GatedSAE, GatedSAE_V2
-from models.sae.jumprelu import JumpReLUSAE
+from models.sae.jumprelu import JumpReLUSAE, StaircaseJumpReLU
 from models.sae.standard import StandardSAE, StandardSAE_V2
 from models.sae.topk import StaircaseTopKSAE, TopKSAE
 
@@ -284,6 +284,8 @@ class SparsifiedGPT(nn.Module):
                 return GatedSAE_V2
             case SAEVariant.JUMP_RELU:
                 return JumpReLUSAE
+            case SAEVariant.JUMP_RELU_STAIRCASE:
+                return StaircaseJumpReLU
             case SAEVariant.TOPK:
                 return TopKSAE
             case SAEVariant.TOPK_STAIRCASE:

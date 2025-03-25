@@ -110,6 +110,15 @@ options: dict[str, SAETrainingConfig] = map_options(
         ),
     ),
     SAETrainingConfig(
+        name="jumprelu-staircase.shakespeare_64x4",
+        sae_config=sae_options["jumprelu-staircase-x8.shakespeare_64x4"],
+        **shakespeare_64x4_defaults,
+        loss_coefficients=LossCoefficients(
+            sparsity=(0.01, 0.01, 0.01, 0.03, 0.08),
+            bandwidth=0.1,
+        ),
+    ),
+    SAETrainingConfig(
         name="e2e.jumprelu.shakespeare_64x4",
         sae_config=sae_options["jumprelu-x16.shakespeare_64x4"],
         **(
