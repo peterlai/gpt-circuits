@@ -4,6 +4,7 @@ threshold.
 
 $ python -m experiments.circuits.circuit --text="Are you now going to discredit him?" --token_idx=28
 $ python -m experiments.circuits.circuit --split=val --sequence_idx=5120 --token_idx=15
+$ python -m experiments.circuits.circuit --model=e2e.jumprelu-staircase.shakespeare_64x4 --split=val --sequence_idx=69248 --token_idx=76
 """
 
 import argparse

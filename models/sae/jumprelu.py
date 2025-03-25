@@ -93,11 +93,11 @@ class StaircaseJumpReLUSharedContext(nn.Module):
         self.b_dec = nn.Parameter(torch.zeros(embedding_size, device=device))
         self.W_enc = nn.Parameter(torch.empty(embedding_size, feature_size, device=device))
         self.W_enc.data = self.W_dec.data.T.detach().clone()  # initialize W_enc from W_dec
-        
+
         self.log_threshold = nn.Parameter(torch.full((feature_size,), math.log(0.1), device=device))
-        self.bandwidth = loss_coefficients.bandwidth
-        
-        
+        self.bandwidth = loss_coefficients.bandwidth if loss_coefficients else 0.0
+
+
 
 class StaircaseJumpReLU(JumpReLUSAE):
     """
@@ -114,10 +114,10 @@ class StaircaseJumpReLU(JumpReLUSAE):
             self.is_first = True
             model.shared_context = StaircaseJumpReLUSharedContext(config, loss_coefficients)
         self.shared_context = model.shared_context  # type: ignore
-        print(f"{config.n_features=}")
         feature_size = config.n_features[layer_idx]
         embedding_size = config.gpt_config.n_embd
-        self.sparsity_coefficient = loss_coefficients.sparsity[layer_idx] if loss_coefficients else None
+        sparsity_coefficients = loss_coefficients.sparsity if loss_coefficients else None
+        self.sparsity_coefficient = sparsity_coefficients[layer_idx] if sparsity_coefficients else None
 
         self.W_dec = self.shared_context.W_dec[:feature_size, :]
         self.W_enc = self.shared_context.W_enc[:, :feature_size]
@@ -130,11 +130,11 @@ class StaircaseJumpReLU(JumpReLUSAE):
         self.b_enc = nn.Parameter(torch.zeros(feature_size))
         self.b_dec = nn.Parameter(torch.zeros(embedding_size))
 
-        self.jumprelu = JumpReLU(feature_size=feature_size, 
+        self.jumprelu = JumpReLU(feature_size=feature_size,
                                  bandwidth=self.shared_context.bandwidth or 0.0,
                                  log_threshold=self.shared_context.log_threshold[:feature_size])
         # overwrite log_threshold parameters with a slice from the shared context
-        
+
         self.should_return_losses = loss_coefficients is not None
 
 
