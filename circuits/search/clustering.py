@@ -48,7 +48,7 @@ class Cluster:
         self.idxs = idxs
         self.mses = mses
 
-    def sample_magnitudes(self, num_samples: int) -> sparse.csr_matrix:
+    def sample_magnitudes(self, num_samples: int) -> np.ndarray:
         """
         Sample feature magnitudes from the cluster.
 

@@ -483,16 +483,19 @@ class EdgeSearch:
             upstream_layer_idx,
             target_token_idx,
             circuit_variants,
-            upstream_magnitudes,
+            upstream_magnitudes.cpu().numpy(),
             num_samples=num_samples,
         )
 
         # Compute downstream feature magnitudes for each set of dependencies
-        sampled_downstream_magnitudes = compute_downstream_magnitudes(  # Shape: (num_samples, T, F)
-            self.model,
-            upstream_layer_idx,
-            patched_upstream_magnitudes,
-        )
+        sampled_downstream_magnitudes = {}
+        for circuit_variant, patched_magnitudes in patched_upstream_magnitudes.items():
+            downstream_magnitudes = compute_downstream_magnitudes(  # Shape: (num_samples, T, F)
+                self.model,
+                upstream_layer_idx,
+                torch.tensor(patched_magnitudes, device=upstream_magnitudes.device),
+            )
+            sampled_downstream_magnitudes[circuit_variant] = downstream_magnitudes
 
         # Map each downstream node to a set of sampled feature magnitudes
         sampled_magnitudes: dict[Node, torch.Tensor] = {}

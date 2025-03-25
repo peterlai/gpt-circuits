@@ -1,5 +1,4 @@
 import numpy as np
-import torch
 
 from circuits.features.cache import ModelCache
 from circuits.features.profiles import ModelProfile
@@ -36,10 +35,10 @@ class ResampleAblator:
         self,
         layer_idx: int,
         target_token_idx: int,
-        feature_magnitudes: torch.Tensor,  # Shape: (T, F)
-        feature_mask: torch.Tensor,  # Shape: (T, F)
+        feature_magnitudes: np.ndarray,  # Shape: (T, F)
+        feature_mask: np.ndarray,  # Shape: (T, F)
         num_samples: int,
-    ) -> torch.Tensor:  # Shape: (B, T, F)
+    ) -> np.ndarray:  # Shape: (B, T, F)
         """
         Resample feature magnitudes using cached values, returning `num_samples` samples.
         Samples are drawn from `k_nearest` most similar rows in the cache.
@@ -54,15 +53,15 @@ class ResampleAblator:
         """
         # Construct empty samples
         samples_shape = (num_samples,) + feature_magnitudes.shape
-        samples = torch.zeros(samples_shape, device=feature_magnitudes.device)
+        samples = np.zeros(samples_shape, dtype=np.float32)
 
         # Ignore tokens after the target token because they'll be ignored.
         for token_idx in range(target_token_idx + 1):
             token_idx, token_samples = self.patch_token_magnitudes(
                 layer_idx,
                 token_idx,
-                feature_magnitudes[token_idx].cpu().numpy(),  # Shape: (F)
-                feature_mask[token_idx].cpu().numpy(),  # Shape: (F)
+                feature_magnitudes[token_idx],  # Shape: (F)
+                feature_mask[token_idx],  # Shape: (F)
                 num_samples,
             )
             samples[:, token_idx, :] = token_samples
@@ -76,7 +75,7 @@ class ResampleAblator:
         token_feature_magnitudes: np.ndarray,
         token_feature_mask: np.ndarray,
         num_samples: int,
-    ) -> tuple[int, torch.Tensor]:
+    ) -> tuple[int, np.ndarray]:
         """
         Patch feature magnitudes for a single token.
 
@@ -88,9 +87,12 @@ class ResampleAblator:
 
         :return: Patched feature magnitudes. Shape: (B, F)
         """
-        circuit_feature_idxs = np.where(token_feature_mask)[0].astype(np.int32)
+        # If mask is all ones, return original magnitudes (repeated `num_samples` times)
+        if np.all(token_feature_mask):
+            return token_idx, np.tile(token_feature_magnitudes, (num_samples, 1))
 
         # Set the importance of each feature
+        circuit_feature_idxs = np.where(token_feature_mask)[0].astype(np.int32)
         feature_coefficients = np.ones_like(circuit_feature_idxs)
 
         match self.k_nearest:
@@ -134,4 +136,4 @@ class ResampleAblator:
         token_samples[:, circuit_feature_idxs] = token_feature_magnitudes[circuit_feature_idxs]
 
         # Return token index and patched feature magnitudes
-        return token_idx, torch.tensor(token_samples)
+        return token_idx, token_samples

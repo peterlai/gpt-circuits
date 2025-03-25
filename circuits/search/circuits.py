@@ -6,7 +6,7 @@ from circuits import Circuit, Edge, EdgeGroup, Node, SearchConfiguration
 from circuits.features.cache import ModelCache
 from circuits.features.profiles import ModelProfile
 from circuits.search.ablation import ResampleAblator
-from circuits.search.divergence import analyze_divergence
+from circuits.search.divergence import analyze_circuit_divergence
 from circuits.search.edges import EdgeSearch
 from circuits.search.nodes import NodeSearch
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
@@ -139,7 +139,7 @@ class CircuitSearch:
         predictions: dict[int, dict] = {}
         target_logits = model_output.logits.squeeze(0)[target_token_idx]
         for layer_idx in range(self.num_layers):
-            circuit_results = analyze_divergence(
+            circuit_results = analyze_circuit_divergence(
                 self.model,
                 self.create_ablator(layer_idx),
                 layer_idx,

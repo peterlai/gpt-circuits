@@ -5,7 +5,10 @@ import torch
 
 from circuits import Circuit, Node, SearchConfiguration
 from circuits.search.ablation import ResampleAblator
-from circuits.search.divergence import analyze_divergence
+from circuits.search.divergence import (
+    analyze_circuit_divergence,
+    analyze_token_mask_divergence,
+)
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
 
 
@@ -79,7 +82,7 @@ class NodeSearch:
 
         # Get KLD baseline
         baseline_circuit = Circuit(layer_nodes)
-        basline_results = analyze_divergence(
+        basline_results = analyze_circuit_divergence(
             self.model,
             self.ablator,
             layer_idx,
@@ -154,7 +157,7 @@ class NodeSearch:
         while layer_nodes:
             # Compute KL divergence
             circuit = Circuit(nodes=layer_nodes)
-            circuit_analysis = analyze_divergence(
+            circuit_analysis = analyze_circuit_divergence(
                 self.model,
                 self.ablator,
                 layer_idx,
@@ -211,7 +214,7 @@ class NodeSearch:
             circuit_variants[node] = Circuit(nodes=frozenset([n for n in layer_nodes if n != node]))
 
         # Calculate KL divergence for each variant
-        kld_results = analyze_divergence(
+        kld_results = analyze_circuit_divergence(
             self.model,
             self.ablator,
             layer_idx,
@@ -263,30 +266,33 @@ class NodeSearch:
                 selected_nodes = frozenset(selected_nodes | new_nodes)
                 selected_token_idxs = {node.token_idx for node in selected_nodes}
 
+                # Create a token mask from selected token idxs
+                token_mask = torch.zeros(size=(feature_magnitudes.shape[0],), dtype=torch.bool)
+                token_mask[list(selected_token_idxs)] = True
+
                 # Compute KL divergence
-                circuit = Circuit(nodes=selected_nodes)
-                circuit_analysis = analyze_divergence(
+                analysis = analyze_token_mask_divergence(
                     self.model,
                     self.ablator,
                     layer_idx,
                     target_token_idx,
                     target_logits,
-                    [circuit],
+                    token_mask,
                     feature_magnitudes,
                     num_samples=self.config.num_node_samples,
-                )[circuit]
+                )
 
                 # Print results
                 print(
-                    f"Tokens: {len(set(f.token_idx for f in circuit.nodes))}/{target_token_idx + 1} - "
-                    f"KL Div: {circuit_analysis.kl_divergence:.4f} - "
+                    f"Tokens: {len(selected_token_idxs)}/{target_token_idx + 1} - "
+                    f"KL Div: {analysis.kl_divergence:.4f} - "
                     f"Added: {set([n.token_idx for n in new_nodes]) or 'None'} - "
-                    f"Predictions: {circuit_analysis.predictions}"
+                    f"Predictions: {analysis.predictions}"
                 )
 
                 # If below threshold, stop search
                 # NOTE: Using lower threshold for coarse token search
-                if circuit_analysis.kl_divergence < self.config.threshold / 2:
+                if analysis.kl_divergence < self.config.threshold / 2:
                     print("Reached target KL divergence.")
                     break
 
@@ -329,28 +335,28 @@ class NodeSearch:
         Find next token to add to the circuit.
         """
         # Generate all variations with one token added
-        circuit_variants: dict[int, Circuit] = {}
+        token_mask_variants: dict[int, torch.Tensor] = {}
         unique_token_indices = {node.token_idx for node in remaining_nodes}
         for token_idx in unique_token_indices:
-            new_nodes = frozenset([node for node in remaining_nodes if node.token_idx == token_idx])
-            circuit_variant = Circuit(nodes=frozenset(circuit_nodes | new_nodes))
-            circuit_variants[token_idx] = circuit_variant
-
-        # Calculate KL divergence for each variant
-        kld_results = analyze_divergence(
-            self.model,
-            self.ablator,
-            layer_idx,
-            target_token_idx,
-            target_logits,
-            [variant for variant in circuit_variants.values()],
-            feature_magnitudes,
-            # Increase number of samples for token selection
-            min(self.config.num_node_samples * 4, self.config.k_nearest or int(1e10)),
-        )
+            token_mask = torch.zeros(size=(feature_magnitudes.shape[0],), dtype=torch.bool)
+            token_mask[list({node.token_idx for node in circuit_nodes} | {token_idx})] = True
+            token_mask_variants[token_idx] = token_mask
 
         # Map token indices to KL divergence
-        results = {token_idx: kld_results[variant].kl_divergence for token_idx, variant in circuit_variants.items()}
+        results = {}
+        for token_idx, token_mask in token_mask_variants.items():
+            kld_results = analyze_token_mask_divergence(
+                self.model,
+                self.ablator,
+                layer_idx,
+                target_token_idx,
+                target_logits,
+                token_mask,
+                feature_magnitudes,
+                # Increase number of samples for token selection
+                min(self.config.num_node_samples * 4, self.config.k_nearest or int(1e10)),
+            )
+            results[token_idx] = kld_results.kl_divergence
 
         # The most important token is the one that results in the lowest KL divergence
         sorted_tokens = sorted(results.items(), key=lambda x: x[1])
