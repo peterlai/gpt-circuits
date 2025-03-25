@@ -25,21 +25,6 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-class StaircaseEndToEndTrainer(EndToEndTrainer):
-    def gather_metrics(self, loss: torch.Tensor, output: SparsifiedGPTOutput) -> dict[str, torch.Tensor]:
-
-        metrics = super().gather_metrics(loss, output)
-
-        l0_per_chunk = {}
-        for layer_idx, feature_magnitudes in output.feature_magnitudes.items():
-            num_chunks = layer_idx + 1
-            grouped_feature_magnitudes = torch.chunk(feature_magnitudes, num_chunks, dim=-1) # tuple[(batch, seq, feature_size_each_chunk)]
-            grouped_feature_magnitudes = torch.stack(grouped_feature_magnitudes, dim=-2) # (batch, seq, n_chunks, feature_size_each_chunk)
-            grouped_l0 = (grouped_feature_magnitudes != 0).float().sum(dim=-1) # (batch, seq, n_chunks)
-            l0_per_chunk[layer_idx] = grouped_l0.mean(dim=(0,1)) # (n_chunks)
-            metrics[f"l0_{layer_idx}"] = l0_per_chunk[layer_idx]
-        return metrics
-
 def main():
     # Parse command line arguments
     args = parse_args()
@@ -66,7 +51,7 @@ def main():
     )
 
     # Initialize trainer
-    trainer = StaircaseEndToEndTrainer(config, load_from=TrainingConfig.checkpoints_dir / args.load_from)
+    trainer = EndToEndTrainer(config, load_from=TrainingConfig.checkpoints_dir / args.load_from)
     trainer.train()
 
 
