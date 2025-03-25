@@ -2,6 +2,7 @@
 Export circuit for visualization using Node app.
 
 $ python -m experiments.circuits.export --circuit=val.0.5120.15 --dirname=toy-local
+$ python -m experiments.circuits.export --model=e2e.jumprelu-staircase.shakespeare_64x4 --circuit=val.0.69248.76 --dirname=toy-staircase
 """
 
 import argparse

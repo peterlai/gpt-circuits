@@ -112,15 +112,11 @@ class StaircaseTopKSAE(TopKSAE):
             self.is_first = True
             model.shared_context = StaircaseTopKSharedContext(config)
         self.shared_context = model.shared_context  # type: ignore
-        print(f"{config.n_features=}")
         feature_size = config.n_features[layer_idx]
         embedding_size = config.gpt_config.n_embd
 
 
         # All weight parameters are just views from the shared context.
-        prev_feature_size = config.n_features[layer_idx - 1] if layer_idx > 0 else 0
-        print(f"prev_feature_size: {prev_feature_size}, feature_size: {feature_size}")
-
         self.W_dec = self.shared_context.W_dec[:feature_size, :]
         self.W_enc = self.shared_context.W_enc[:, :feature_size]
         # self.W_dec = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(feature_size - prev_feature_size, embedding_size)))

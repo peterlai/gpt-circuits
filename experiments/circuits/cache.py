@@ -2,6 +2,7 @@
 Cache feature metrics.
 
 $ python -m experiments.circuits.cache
+$ python -m experiments.circuits.cache --model=e2e.jumprelu-staircase.shakespeare_64x4
 """
 
 import argparse
