@@ -131,17 +131,26 @@ class StaircaseTopKSAE(TopKSAE):
         # Finish initialization.
         self.__post_init__(config, layer_idx, loss_coefficients)
 
-    def save(self, dirpath: Path):
-        super().save(dirpath)
+    def save(self, dirpath: Path) -> None:
+        # Save non-shared parameters
+        child_path = dirpath / f"sae.{self.layer_idx}.safetensors"
+        non_shared_params = {name: param for name, param in self.named_parameters() if not name.startswith('shared_context')}
+        tmp_module = nn.ParameterDict(non_shared_params)
+        save_model(tmp_module, str(child_path))
 
-        # TODO: Fix this logic.
-        weights_path = dirpath / "sae.shared.safetensors"
-        save_model(self.shared_context, str(weights_path))
+        # Save shared parameters
+        if self.is_first:
+            shared_path = dirpath / "sae.shared.safetensors"
+            save_model(self.shared_context, str(shared_path))
 
     def load(self, dirpath: Path, device: torch.device):
-        super().load(dirpath, device)
+        # Load non-shared parameters
+        child_path = dirpath / f"sae.{self.layer_idx}.safetensors"
+        non_shared_params = {name: torch.empty_like(param) for name, param in self.named_parameters() if not name.startswith('shared_context')}
+        tmp_module = nn.ParameterDict(non_shared_params)
+        load_model(tmp_module, child_path, device=device.type)
 
-        # TODO: Fix this logic.
+        # Load shared parameters
         if self.is_first:
-            weights_path = dirpath / "sae.shared.safetensors"
-            load_model(self.shared_context, weights_path, device=device.type)
+            shared_path = dirpath / "sae.shared.safetensors"
+            load_model(self.shared_context, shared_path, device=device.type)

@@ -77,8 +77,14 @@ options: dict[str, SAETrainingConfig] = map_options(
         loss_coefficients=LossCoefficients(),
     ),
     SAETrainingConfig(
-        name="topk-staircase.shakespeare_64x4",
-        sae_config=sae_options["topk-staircase-10-x8.shakespeare_64x4"],
+        name="topk-staircase-noshare.shakespeare_64x4",
+        sae_config=sae_options["topk-staircase-10-x8-noshare.shakespeare_64x4"],
+        **shakespeare_64x4_defaults,
+        loss_coefficients=LossCoefficients(),
+    ),
+    SAETrainingConfig(
+        name="topk-staircase-share.shakespeare_64x4",
+        sae_config=sae_options["topk-staircase-10-x8-share.shakespeare_64x4"],
         **shakespeare_64x4_defaults,
         loss_coefficients=LossCoefficients(),
     ),
