@@ -54,7 +54,7 @@ options: dict[str, GPTTrainingConfig] = map_options(
     GPTTrainingConfig(
         name="stories_256x4",
         gpt_config=gpt_options["tiktoken_256x4"],
-        data_dir="data/simple_stories_10m",
+        data_dir="data/simple_stories",
         eval_interval=250,
         eval_steps=100,
         batch_size=512,
