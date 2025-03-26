@@ -6,6 +6,7 @@ import torch
 from circuits import Circuit, Node, SearchConfiguration
 from circuits.search.ablation import ResampleAblator
 from circuits.search.divergence import (
+    Divergence,
     analyze_circuit_divergence,
     analyze_token_mask_divergence,
 )
@@ -222,20 +223,30 @@ class NodeSearch:
         for node in layer_nodes:
             circuit_variants[node] = Circuit(nodes=frozenset([n for n in layer_nodes if n != node]))
 
-        # Calculate KL divergence for each variant
-        kld_results = analyze_circuit_divergence(
-            self.model,
-            self.ablator,
-            layer_idx,
-            target_token_idx,
-            target_logits,
-            [variant for variant in circuit_variants.values()],
-            feature_magnitudes,
-            self.config.num_node_samples,
-        )
+        # Calculate KL divergence for each variant in batches
+        node_to_kld: dict[Node, float] = {}
+        circuit_variant_list = list(circuit_variants.items())
+        batch_size = 64
 
-        # Map nodes to KL divergence
-        node_to_kld = {node: kld_results[variant].kl_divergence for node, variant in circuit_variants.items()}
+        for i in range(0, len(circuit_variant_list), batch_size):
+            batch = circuit_variant_list[i : i + batch_size]
+            batch_nodes, batch_circuits = zip(*batch)
+
+            # Analyze the batch
+            batch_kld_results = analyze_circuit_divergence(
+                self.model,
+                self.ablator,
+                layer_idx,
+                target_token_idx,
+                target_logits,
+                batch_circuits,
+                feature_magnitudes,
+                self.config.num_node_samples,
+            )
+
+            # Update node_to_kld with the batch results
+            for node, circuit in zip(batch_nodes, batch_circuits):
+                node_to_kld[node] = batch_kld_results[circuit].kl_divergence
 
         # Find least important nodes
         sorted_nodes = sorted(node_to_kld.items(), key=lambda x: x[1])  # Sort by KL divergence (ascending)
