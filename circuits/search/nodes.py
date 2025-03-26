@@ -6,7 +6,6 @@ import torch
 from circuits import Circuit, Node, SearchConfiguration
 from circuits.search.ablation import ResampleAblator
 from circuits.search.divergence import (
-    Divergence,
     analyze_circuit_divergence,
     analyze_token_mask_divergence,
 )
