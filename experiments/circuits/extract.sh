@@ -38,6 +38,15 @@ python -m experiments.circuits.circuit \
     --token_idx=$TOKEN_IDX \
     --config_name=$DIRNAME \
     --threshold=$THRESHOLD
+# python -m experiments.circuits.circuit \
+#     --model=e2e.jumprelu.stories_256x4 \
+#     --data_dir=data/simple_stories \
+#     --split=$SPLIT \
+#     --sequence_idx=$SEQUENCE_IDX \
+#     --token_idx=$TOKEN_IDX \
+#     --config_name=$DIRNAME \
+#     --threshold=$THRESHOLD
 
 # Export circuit to visualizer
 python -m experiments.circuits.export --dirname=$DIRNAME --circuit=$CIRCUIT_NAME
+# python -m experiments.circuits.export --model=e2e.jumprelu.stories_256x4 --dirname=$DIRNAME --circuit=$CIRCUIT_NAME

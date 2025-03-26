@@ -37,7 +37,7 @@ shakespeare_64x4_defaults = {
     "min_lr": 1e-4,
 }
 stories_32x4_defaults = {
-    "data_dir": "data/tiny_stories_10m",
+    "data_dir": "data/simple_stories_10m",
     "eval_interval": 250,
     "eval_steps": 100,
     "batch_size": 128,
@@ -48,7 +48,7 @@ stories_32x4_defaults = {
     "min_lr": 1e-4,
 }
 stories_256x4_defaults = {
-    "data_dir": "data/tiny_stories",
+    "data_dir": "data/simple_stories",
     "eval_interval": 250,
     "eval_steps": 100,
     "batch_size": 256,
