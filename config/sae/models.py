@@ -53,7 +53,14 @@ sae_options: dict[str, SAEConfig] = map_options(
         top_k=(10, 10, 10, 10, 10),
     ),
     SAEConfig(
-        name="topk-staircase-10-x8.shakespeare_64x4",
+        name="topk-staircase-10-x8-noshare.shakespeare_64x4",
+        gpt_config=gpt_options["ascii_64x4"],
+        n_features=tuple(64 * n for n in (8, 16, 24, 32, 40)),
+        sae_variant=SAEVariant.TOPK,
+        top_k=(10, 10, 10, 10, 10),
+    ),
+    SAEConfig(
+        name="topk-staircase-10-x8-share.shakespeare_64x4",
         gpt_config=gpt_options["ascii_64x4"],
         n_features=tuple(64 * n for n in (8, 16, 24, 32, 40)),
         sae_variant=SAEVariant.TOPK_STAIRCASE,
