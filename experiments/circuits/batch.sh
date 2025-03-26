@@ -33,9 +33,9 @@ VAL_TOKEN_IDS=()
 # VAL_TOKEN_IDS=(1282 7554 8834 9218) # 3 char sequences
 # VAL_TOKEN_IDS=(6159) # 16 char sequence
 
-# DIRNAME="toy-local"
-# TRAIN_TOKEN_IDS=()
-# VAL_TOKEN_IDS=(15 1039 2063 3087 4111 5135 6159 7183)
+DIRNAME="toy-local"
+TRAIN_TOKEN_IDS=()
+VAL_TOKEN_IDS=(15 1039 2063 3087 4111 5135 6159 7183)
 
 # Process training data
 process_token_ids "${DIRNAME}" "train" 0.15 "${TRAIN_TOKEN_IDS[@]}"

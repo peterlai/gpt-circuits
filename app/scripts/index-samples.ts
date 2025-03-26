@@ -17,8 +17,8 @@ if (buildMode) {
     hiddenModelPrefixes = ["comparisons"];
 } else {
     modelsDir = 'public/samples';
-    indexedModelPrefixes = ["toy", "comparisons"];
-    hiddenModelPrefixes = [];
+    indexedModelPrefixes = ["toy"];
+    hiddenModelPrefixes = ["toy-v0"];
 }
 
 // If building for deploying, clean up build directory
@@ -48,6 +48,9 @@ const index: {[key: string]: SampleEntry[]} = {};
 for (const modelName of fs.readdirSync(modelsDir)) {
     // Use allowlist.
     if (!indexedModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
+
+    // Use blocklist.
+    if (hiddenModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
 
     // e.g. toy/
     const modelPath = join(modelsDir, modelName);

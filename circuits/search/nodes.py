@@ -116,24 +116,10 @@ class NodeSearch:
             circuit_candidates,
         )
 
-        # Walk backwards through ranked nodes and stop when KL divergence is below search threshold.
-        # NOTE: KL divergence does not monotonically decrease, which is why we need to walk backwards.
-        selected_nodes: set[RankedNode] = set()
-        previous_klds = []
-        for ranked_node in reversed(ranked_nodes):
-            # Stop if KLD is greater than average of previous few values
-            w = self.config.stoppage_window
-            if len(previous_klds) >= w and ranked_node.kld > sum(previous_klds[-w:]) / w:
-                break
-            # Add node to layer
-            selected_nodes.add(ranked_node)
-            # Stop if KLD is below search threshold
-            if ranked_node.kld < self.config.threshold:
-                break
-            previous_klds.append(ranked_node.kld)
-
+        # Filter ranked nodes
+        selected_nodes = self.filter_ranked_nodes(ranked_nodes, self.config.stoppage_window, self.config.threshold)
         print(f"Added the following nodes to layer {layer_idx}: {[rn.node for rn in selected_nodes]}")
-        return frozenset(selected_nodes)
+        return selected_nodes
 
     def rank_nodes(
         self,
@@ -175,8 +161,8 @@ class NodeSearch:
                 target_logits,
                 feature_magnitudes,
                 layer_nodes=layer_nodes,
-                # Remove 4% of nodes on each iteration
-                max_count=int(math.ceil(len(layer_nodes) * 0.04)),
+                # Remove 8% of nodes on each iteration
+                max_count=int(math.ceil(len(layer_nodes) * 0.08)),
             )
 
             # Map discard candidates to current KL divergence
@@ -195,6 +181,29 @@ class NodeSearch:
             layer_nodes = frozenset(layer_nodes - discard_candidates)
 
         return ranked_nodes
+
+    def filter_ranked_nodes(
+        self, ranked_nodes: list[RankedNode], stoppage_window: int | None, threshold: float
+    ) -> frozenset[RankedNode]:
+        """
+        Walk backwards through ranked nodes and stop when KL divergence is below search threshold.
+        NOTE: KL divergence does not monotonically decrease, which is why we need to walk backwards.
+        """
+        selected_nodes: set[RankedNode] = set()
+        previous_klds = []
+        for ranked_node in reversed(ranked_nodes):
+            # Stop if KLD is greater than average of previous few values
+            if w := stoppage_window:
+                if len(previous_klds) >= w and ranked_node.kld > sum(previous_klds[-w:]) / w:
+                    break
+            # Add node to layer
+            selected_nodes.add(ranked_node)
+            # Stop if KLD is below search threshold
+            if ranked_node.kld < threshold:
+                break
+            previous_klds.append(ranked_node.kld)
+
+        return frozenset(selected_nodes)
 
     def find_least_important_nodes(
         self,
@@ -292,7 +301,7 @@ class NodeSearch:
 
                 # If below threshold, stop search
                 # NOTE: Using lower threshold for coarse token search
-                if analysis.kl_divergence < self.config.threshold / 2:
+                if analysis.kl_divergence < self.config.threshold * 0.75:
                     print("Reached target KL divergence.")
                     break
 
