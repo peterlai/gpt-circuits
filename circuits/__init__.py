@@ -14,7 +14,7 @@ class SearchConfiguration:
     num_edge_samples: int = 64  # Number of resampling values to use for selecting edges
     num_node_samples: int = 64  # Number of resampling values to use for selecting nodes
     max_positional_coefficient: float = 2.0  # How important is the position of a feature
-    max_token_positions: int = 20  # Maximum number of token positions to consider
+    max_token_positions: int = 24  # Maximum number of token positions to consider
     stoppage_window: int = 10  # Number of previous KLD values to consider for stopping search early
 
 
