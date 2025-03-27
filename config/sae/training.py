@@ -138,8 +138,8 @@ options: dict[str, SAETrainingConfig] = map_options(
             "gradient_accumulation_steps": 32,
         },
         loss_coefficients=LossCoefficients(
-            # L0s ≈ (10...30), CE Loss Increase < 0.1
-            sparsity=(0.002, 0.10, 0.16, 0.005, 0.005),
+            # L0s ≈ (15...40), CE Loss Increase ≈ 0.1
+            sparsity=(0.002, 0.05, 0.08, 0.005, 0.005),
             downstream=1.0,
             bandwidth=0.1,
         ),

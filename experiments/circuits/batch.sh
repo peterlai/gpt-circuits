@@ -15,7 +15,7 @@ process_token_ids() {
 
   for token_id in "${token_ids[@]}"; do
     echo "Processing ${split}:${token_id}"
-    $TIMEOUT 60m ./experiments/circuits/extract.sh $model $split $token_id $threshold
+    $TIMEOUT 180m ./experiments/circuits/extract.sh $model $split $token_id $threshold
   done
 }
 
@@ -36,7 +36,7 @@ VAL_TOKEN_IDS=()
 DIRNAME="toy-local"
 TRAIN_TOKEN_IDS=()
 # VAL_TOKEN_IDS=(15 1039 2063 3087 4111 5135 6159 7183)
-# VAL_TOKEN_IDS=(10271 11295 12319 13343 14367 15391 16415 17439 18463 19487 20511 21535 22559 23583)
+# VAL_TOKEN_IDS=(102431 103455 104479 105503 106527 107551 108575 109599 110623 111647 112671 113695)
 
 # Process training data
 process_token_ids "${DIRNAME}" "train" 0.15 "${TRAIN_TOKEN_IDS[@]}"

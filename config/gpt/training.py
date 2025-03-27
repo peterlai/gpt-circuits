@@ -60,6 +60,8 @@ options: dict[str, GPTTrainingConfig] = map_options(
         batch_size=512,
         gradient_accumulation_steps=8,
         learning_rate=1e-3,
-        max_steps=5000,
+        max_steps=10000,
+        decay_lr=True,
+        min_lr=1e-4,
     ),
 )
