@@ -148,7 +148,11 @@ class StaircaseTopKSAE(TopKSAE):
         child_path = dirpath / f"sae.{self.layer_idx}.safetensors"
         non_shared_params = {name: torch.empty_like(param) for name, param in self.named_parameters() if not name.startswith('shared_context')}
         tmp_module = nn.ParameterDict(non_shared_params)
-        load_model(tmp_module, child_path, device=device.type)
+        load_model(tmp_module, str(child_path), device=device.type)
+
+        for name, param in self.named_parameters():
+            if not name.startswith('shared_context'):
+                param.data = tmp_module[name]
 
         # Load shared parameters
         if self.is_first:
