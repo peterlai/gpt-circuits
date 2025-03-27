@@ -54,5 +54,5 @@ if __name__ == "__main__":
         config.name = args.name
 
     # Initialize trainer
-    trainer = ConcurrentTrainer(config, load_from=TrainingConfig.checkpoints_dir / args.load_from)
+    trainer = StaircaseConcurrentTrainer(config, load_from=TrainingConfig.checkpoints_dir / args.load_from)
     trainer.train()
