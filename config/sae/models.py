@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
-
 from config import Config, map_options
 from config.gpt.models import GPTConfig, gpt_options
 
@@ -40,6 +39,18 @@ class SAEConfig(Config):
 # SAE configuration options
 sae_options: dict[str, SAEConfig] = map_options(
     SAEConfig(
+        name="standardx16.tiny_32x4",
+        gpt_config=gpt_options["tiktoken_32x4"],
+        n_features=tuple(32 * n for n in (16, 16, 16, 16, 16)),
+        sae_variant=SAEVariant.STANDARD,
+    ),
+    SAEConfig(
+        name="standardx8.tiny_64x2",
+        gpt_config=gpt_options["tiktoken_64x2"],
+        n_features=tuple(64 * n for n in (8, 8, 8, 8, 8)),
+        sae_variant=SAEVariant.STANDARD,
+    ),
+    SAEConfig(
         name="standardx8.shakespeare_64x4",
         gpt_config=gpt_options["ascii_64x4"],
         n_features=tuple(64 * n for n in (8, 8, 8, 8, 8)),
@@ -65,6 +76,46 @@ sae_options: dict[str, SAEConfig] = map_options(
         n_features=tuple(64 * n for n in (8, 16, 24, 32, 40)),
         sae_variant=SAEVariant.TOPK_STAIRCASE,
         top_k=(10, 10, 10, 10, 10),
+    ),
+    SAEConfig(
+        name="standardx40.shakespeare_64x4",
+        gpt_config=gpt_options["ascii_64x4"],
+        n_features=tuple(64 * n for n in (40, 40, 40, 40, 40)),
+        sae_variant=SAEVariant.STANDARD,
+    ),
+    SAEConfig(
+        name="staircasex8.shakespeare_64x4",
+        gpt_config=gpt_options["ascii_64x4"],
+        n_features=tuple(64 * n for n in (8, 16, 24, 32, 40)),
+        sae_variant=SAEVariant.STANDARD,
+    ),
+    SAEConfig(
+        name="topk-x8.shakespeare_64x4",
+        gpt_config=gpt_options["ascii_64x4"],
+        n_features=tuple(64 * n for n in (8, 8, 8, 8, 8)),
+        sae_variant=SAEVariant.TOPK,
+        top_k=(10,10,10,10,10),
+    ),
+    SAEConfig(
+        name="top5.shakespeare_64x4",
+        gpt_config=gpt_options["ascii_64x4"],
+        n_features=tuple(64 * n for n in (8, 8, 8, 8, 8)),
+        sae_variant=SAEVariant.TOPK,
+        top_k=(5,5,5,5,5),
+    ),
+     SAEConfig(
+        name="top20.shakespeare_64x4",
+        gpt_config=gpt_options["ascii_64x4"],
+        n_features=tuple(64 * n for n in (8, 8, 8, 8, 8)),
+        sae_variant=SAEVariant.TOPK,
+        top_k=(20,20,20,20,20),
+    ),
+    SAEConfig(
+        name="topk-x40.shakespeare_64x4",
+        gpt_config=gpt_options["ascii_64x4"],
+        n_features=tuple(64 * n for n in (40, 40, 40, 40, 40)),
+        sae_variant=SAEVariant.TOPK,
+        top_k=(10,10,10,10,10),
     ),
     SAEConfig(
         name="jumprelu-x8.shakespeare_64x4",

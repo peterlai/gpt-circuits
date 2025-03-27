@@ -202,3 +202,77 @@ def get_predictions(
     for i, p in zip(topk.indices, topk.values):
         results[tokenizer.decode_token(int(i.item()))] = round(p.item() * 100, 2)
     return results
+
+#########################################################################
+
+@torch.no_grad()
+def get_predicted_logits_from_full_circuit(
+    model: SparsifiedGPT,
+    layer_idx: int,
+    feature_magnitudes: torch.Tensor,  # Shape: (num_samples, T, F)
+    target_token_idx
+) -> dict[Circuit, torch.Tensor]:  # Shape: (num_samples, V)
+    """
+    Get predicted logits for the full circuit when using patched feature magnitudes.
+
+    :param model: Model to use for prediction
+    :param layer_idx: Layer index of feature_magnitudes
+    :param feature_magnitudes: Patched feature magnitudes tensor
+    :param target_token_idx: Target token index
+    :return: Predicted logits for the full circuit
+    """
+    
+    # Create a dummy circuit for the full model
+    full_circuit = Circuit(nodes=frozenset())
+
+    # Package the magnitudes in the format expected by get_predicted_logits
+    packaged_magnitudes = {full_circuit: feature_magnitudes}
+
+    # Get the predicted logits by running these features through the rest of the model
+    predicted_logits = get_predicted_logits(
+        model,
+        layer_idx, 
+        patched_feature_magnitudes=packaged_magnitudes,
+        target_token_idx=target_token_idx
+    )
+
+    # Extract the logits from the result dictionary
+    logits = predicted_logits[full_circuit]
+    
+    return logits
+
+@torch.no_grad()
+def get_batched_predicted_logits_from_full_circuit(
+    model: SparsifiedGPT,
+    layer_idx: int,
+    feature_magnitudes: torch.Tensor,  # Shape: (num_batches, num_samples, T, F)
+    target_token_idx: int
+) -> dict[Circuit, torch.Tensor]:  # Shape: (num_batches, num_samples, V)
+    """
+    Get predicted logits for the full circuit when using batched patched feature magnitudes.
+
+    :param model: Model to use for prediction
+    :param layer_idx: Layer index of feature_magnitudes
+    :param feature_magnitudes: Batched patched feature magnitudes tensor
+    :param target_token_idx: Target token index
+    :return: Predicted logits for each batch, shape: (num_batches, V)
+    """
+    num_batches = feature_magnitudes.shape[0]
+    batch_logits = []
+    
+    for batch_idx in range(num_batches):
+        # Process each batch individually
+        batch_magnitudes = feature_magnitudes[batch_idx]  # Shape: (num_samples, T, F)
+        
+        # Get logits for this batch
+        logits = get_predicted_logits_from_full_circuit(
+            model, 
+            layer_idx, 
+            batch_magnitudes, 
+            target_token_idx
+        )
+        
+        batch_logits.append(logits)
+    
+    # Stack the results
+    return torch.stack(batch_logits)

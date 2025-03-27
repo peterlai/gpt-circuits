@@ -105,3 +105,50 @@ def json_prettyprint(obj) -> str:
     pattern = re.compile(r"\[\s*([^{}[\]]{1,10000})\s*\]", re.DOTALL)
     serialized_data = pattern.sub(lambda m: "[" + " ".join(m.group(1).split()) + "]", serialized_data)
     return serialized_data
+
+#########################################################################
+
+@dataclass(frozen=True)
+class TokenlessNode:
+    """
+    Represents a feature at a specific location without token information.
+    """
+    layer_idx: int
+    feature_idx: int
+
+    def as_tuple(self) -> tuple[int, int]:
+        return self.layer_idx, self.feature_idx
+
+    def __repr__(self) -> str:
+        return f"({self.layer_idx},{self.feature_idx})"
+
+    def __lt__(self, other: "TokenlessNode") -> bool:
+        return self.as_tuple() < other.as_tuple()
+
+@dataclass(frozen=True)
+class TokenlessEdge:
+    """
+    Represents a connection between two features without token information.
+    """
+    upstream: TokenlessNode
+    downstream: TokenlessNode
+
+    def __repr__(self) -> str:
+        return f"{self.upstream} -> {self.downstream}"
+
+    def as_tuple(self) -> tuple[int, ...]:
+        return self.upstream.as_tuple() + self.downstream.as_tuple()
+
+    def __lt__(self, other: "TokenlessEdge") -> bool:
+        return self.as_tuple() < other.as_tuple()
+    
+@dataclass(frozen=True)
+class TokenlessCircuit:
+    """
+    Represents a set of nodes and edges without token information.
+    """
+    nodes: frozenset[TokenlessNode]
+    edges: frozenset[TokenlessEdge] = frozenset()
+
+    def __repr__(self) -> str:
+        return f"Nodes: {sorted(self.nodes)}, Edges: {sorted(self.edges)}"
