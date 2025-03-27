@@ -90,8 +90,8 @@ class StaircaseTopKSharedContext(nn.Module):
 
         device = config.device
         self.W_dec = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(feature_size, embedding_size, device=device)))
-        self.b_enc = nn.Parameter(torch.zeros(feature_size, device=device))
-        self.b_dec = nn.Parameter(torch.zeros(embedding_size, device=device))
+        #self.b_enc = nn.Parameter(torch.zeros(feature_size, device=device))
+        #self.b_dec = nn.Parameter(torch.zeros(embedding_size, device=device))
         self.W_enc = nn.Parameter(torch.empty(embedding_size, feature_size, device=device))
         self.W_enc.data = self.W_dec.data.T.detach().clone()  # initialize W_enc from W_dec
 

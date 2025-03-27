@@ -81,7 +81,7 @@ if __name__ == "__main__":
     # Load configuration
     config_name = args.config
     config = options[config_name]
-
+    assert "staircase" not in config.sae_config.sae_variant, "Staircase SAE variant is not supported for concurrent training."
     # Update outdir
     if args.name:
         config.name = args.name

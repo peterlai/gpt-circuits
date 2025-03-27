@@ -44,12 +44,13 @@ sae_options: dict[str, SAEConfig] = map_options(
         n_features=tuple(32 * n for n in (16, 16, 16, 16, 16)),
         sae_variant=SAEVariant.STANDARD,
     ),
-    SAEConfig(
-        name="standardx8.tiny_64x2",
-        gpt_config=gpt_options["tiktoken_64x2"],
-        n_features=tuple(64 * n for n in (8, 8, 8, 8, 8)),
-        sae_variant=SAEVariant.STANDARD,
-    ),
+    # No such thing as tiny_64x2?
+    # SAEConfig(
+    #     name="standardx8.tiny_64x2",
+    #     gpt_config=gpt_options["tiktoken_64x2"],
+    #     n_features=tuple(64 * n for n in (8, 8, 8, 8, 8)),
+    #     sae_variant=SAEVariant.STANDARD,
+    # ),
     SAEConfig(
         name="standardx8.shakespeare_64x4",
         gpt_config=gpt_options["ascii_64x4"],

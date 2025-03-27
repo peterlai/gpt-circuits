@@ -75,14 +75,15 @@ tiny_defaults = {
 
 # Training configuration options
 options: dict[str, SAETrainingConfig] = map_options(
-    SAETrainingConfig(
-        name="standard.tiny_64x2",
-        sae_config=sae_options["standardx8.tiny_64x2"],
-        **tiny_defaults,
-        loss_coefficients=LossCoefficients(
-        sparsity=(0.02, 0.06, 0.2, 0.2, 0.5),  # Targets L0s of ~10
-        ),
-    ),
+    # No such thing as tiny_64x2?
+    # SAETrainingConfig(
+    #     name="standard.tiny_64x2",
+    #     sae_config=sae_options["standardx8.tiny_64x2"],
+    #     **tiny_defaults,
+    #     loss_coefficients=LossCoefficients(
+    #     sparsity=(0.02, 0.06, 0.2, 0.2, 0.5),  # Targets L0s of ~10
+    #     ),
+    # ),
      SAETrainingConfig(
         name="standard.tiny_32x4",
         sae_config=sae_options["standardx16.tiny_32x4"],
@@ -128,12 +129,6 @@ options: dict[str, SAETrainingConfig] = map_options(
         loss_coefficients=LossCoefficients(
             sparsity=(0.06, 0.24, 0.8, 1.0, 2.5) # Targets L0s of ~10
         ),
-    ),
-    SAETrainingConfig(
-        name="topk-staircase.shakespeare_64x4",
-        sae_config=sae_options["topk-staircase-x8.shakespeare_64x4"],
-        **shakespeare_64x4_defaults,
-        loss_coefficients=LossCoefficients(),
     ),
     SAETrainingConfig(
         name="topk-staircase-noshare.shakespeare_64x4",

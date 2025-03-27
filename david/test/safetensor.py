@@ -1,12 +1,19 @@
 # %%
-import os
-# Add root directory to sys.path dynamically
-# sys.path hack to run in VSCode interactive session
-while not os.getcwd().endswith("gpt-circuits"):
-    os.chdir("..")
+"""
+python -m david.test.safetensor checkpoints/topk-staircase-noshare.shakespeare_64x4
+"""
 
 import os
+import argparse
 from safetensors import safe_open
+
+def parse_args():
+    """
+    Parse command line arguments.
+    """
+    parser = argparse.ArgumentParser(description="Inspect .safetensors files in a specified folder.")
+    parser.add_argument("folder_path", type=str, help="Path to the folder containing .safetensors files.")
+    return parser.parse_args()
 
 def inspect_safetensors_in_folder(folder_path: str):
     """
@@ -33,7 +40,7 @@ def inspect_safetensors_in_folder(folder_path: str):
             for key in f.keys():
                 print(f"  {key}: {f.get_tensor(key).shape}")
 
-# Example usage:
-inspect_safetensors_in_folder("checkpoints/topk-staircase-share.shakespeare_64x4")
-inspect_safetensors_in_folder("checkpoints/topk-staircase-noshare.shakespeare_64x4")
+if __name__ == "__main__":
+    args = parse_args()
+    inspect_safetensors_in_folder(args.folder_path)
 # %%

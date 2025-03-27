@@ -30,6 +30,7 @@ class GPTConfig(Config):
         """
         Only export integer fields (exclude name and device)
         """
+        # TODO: Is dangerous, should explicitly whitelist fields
         return {k: v for (k, v) in fields if type(v) is int}
 
 

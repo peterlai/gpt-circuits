@@ -6,13 +6,19 @@ $ torchrun --standalone --nproc_per_node=8 -m training.sae.staircase_concurrent 
 """
 
 import argparse
+import dataclasses
+import json
+import os
 from pathlib import Path
 
 import torch
 
 from config import TrainingConfig
+from config.sae.models import SAEConfig
 from config.sae.training import SAETrainingConfig, options
+from models.sae import SparseAutoencoder
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
+from models.sae.topk import StaircaseTopKSharedContext, StaircaseTopKSAE
 from training.sae.concurrent import ConcurrentTrainer
 
 
@@ -37,8 +43,21 @@ class StaircaseConcurrentTrainer(ConcurrentTrainer):
         Save SAE weights for layers that have achieved a better validation loss.
         """
         # As weights are shared, only save if each layer is better than the previous best.
+        dir = self.config.out_dir
+        
+        self.model.gpt.save(dir)
+
+        # Save SAE config
+        meta_path = os.path.join(dir, "sae.json")
+        meta = dataclasses.asdict(self.config.sae_config, dict_factory=SAEConfig.dict_factory)
+        with open(meta_path, "w") as f:
+            json.dump(meta, f)
+        
         if torch.all(is_best):
-            model.save(self.config.out_dir)
+            # Save SAE modules
+            for module in self.model.saes.values():
+                assert isinstance(module, StaircaseTopKSAE)
+                module.save(Path(dir))
 
 
 if __name__ == "__main__":
