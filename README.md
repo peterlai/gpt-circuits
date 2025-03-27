@@ -52,5 +52,5 @@ To run the staircase SAE, use:
 
 ```
 python -m training.sae.staircase_concurrent --config=topk-staircase-share.shakespeare_64x4 --load_from=shakespeare_64x4
-python -m training.sae.staircase_concurrent --config=topk-staircase-noshare.shakespeare_64x4 --load_from=shakespeare_64x4
+python -m training.sae.concurrent --config=topk-staircase-noshare.shakespeare_64x4 --load_from=shakespeare_64x4
 ```
