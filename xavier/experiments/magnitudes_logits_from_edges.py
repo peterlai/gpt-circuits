@@ -22,7 +22,9 @@ from config.sae.models import SAEConfig
 from models.sparsified import SparsifiedGPT
 from models.gpt import GPT
 from circuits import Circuit, Edge, Node, TokenlessNode, TokenlessEdge
-from circuits.search.ablation import ZeroAblator
+from circuits.features.cache import ModelCache
+from circuits.features.profiles import ModelProfile
+from circuits.search.ablation import ResampleAblator
 from circuits.search.edges import compute_batched_downstream_magnitudes_from_edges
 from xavier.experiments import ExperimentParams, ExperimentResults, ExperimentOutput
 from xavier.utils import create_tokenless_edges_from_array, get_attribution_rankings
@@ -90,8 +92,18 @@ def main():
         weights_path = os.path.join(sae_dir, f"sae.{layer_name}.safetensors")
         load_model(module, weights_path, device=device.type)
     
-    # Setup ablator
-    ablator = ZeroAblator()
+    # Create a model profile (will only work for zero ablation)
+    model_profile = ModelProfile()
+
+    # Create an empty cache (since we won't use it for zero ablation)
+    model_cache = ModelCache()
+
+    # Create the ResampleAblator with k_nearest=0 for zero ablation
+    ablator = ResampleAblator(
+        model_profile=model_profile,
+        model_cache=model_cache,
+        k_nearest=0  # This setting enables zero ablation
+    )
 
     # Load validation data
     val_data_dir = data_dir / 'shakespeare/val_000000.npy'
@@ -109,10 +121,11 @@ def main():
     input_ids = reshaped_val_tensor[:num_prompts, :].to(device)  # Also move to the correct device
     
     print(f"Computing upstream & downstream magnitudes (full circuit)...")
-    with model.use_saes(layers_to_patch=[upstream_layer_num, upstream_layer_num + 1]) as encoder_outputs:
-        _ = model(input_ids)
-        upstream_magnitudes = encoder_outputs[upstream_layer_num].feature_magnitudes
-        downstream_magnitudes = encoder_outputs[upstream_layer_num + 1].feature_magnitudes
+    with torch.no_grad():    
+        with model.use_saes(layers_to_patch=[upstream_layer_num, upstream_layer_num + 1]) as encoder_outputs:
+            _ = model(input_ids)
+            upstream_magnitudes = encoder_outputs[upstream_layer_num].feature_magnitudes
+            downstream_magnitudes = encoder_outputs[upstream_layer_num + 1].feature_magnitudes
     
     # Create edges
     num_upstream_features = model.config.n_features[upstream_layer_num]
@@ -192,7 +205,7 @@ def main():
  
     # Save results
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    output_path = project_root / f"xavier/experiments/data/run_4/{experiment_output.experiment_id}_{timestamp}.safetensors"
+    output_path = project_root / f"xavier/experiments/data/{experiment_output.experiment_id}_{timestamp}.safetensors"
     experiment_output.to_safetensor(output_path)
     
     print("Done!")
