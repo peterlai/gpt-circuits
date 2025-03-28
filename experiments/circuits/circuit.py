@@ -5,7 +5,7 @@ threshold.
 $ python -m experiments.circuits.circuit --text="Are you now going to discredit him?" --token_idx=28
 $ python -m experiments.circuits.circuit --split=val --sequence_idx=5120 --token_idx=15
 $ python -m experiments.circuits.circuit --model=e2e.jumprelu.stories_256x4 --text="A fluffy blue creature roamed the verdant forest." --token_idx=3 --threshold=0.25
-$ python -m experiments.circuits.circuit --model=e2e.jumprelu.stories_256x4 --data_dir=data/simple_stories --split=val --sequence_idx=0 --token_idx=15 --threshold=0.25
+$ python -m experiments.circuits.circuit --model=e2e.jumprelu.stories_256x4 --data_dir=data/tiny_stories --split=val --sequence_idx=0 --token_idx=15 --threshold=0.25
 """
 
 import argparse

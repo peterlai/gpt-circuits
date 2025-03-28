@@ -37,7 +37,7 @@ shakespeare_64x4_defaults = {
     "min_lr": 1e-4,
 }
 stories_32x4_defaults = {
-    "data_dir": "data/simple_stories_10m",
+    "data_dir": "data/tiny_stories_10m",
     "eval_interval": 250,
     "eval_steps": 100,
     "batch_size": 128,
@@ -48,7 +48,7 @@ stories_32x4_defaults = {
     "min_lr": 1e-4,
 }
 stories_256x4_defaults = {
-    "data_dir": "data/simple_stories",
+    "data_dir": "data/tiny_stories",
     "eval_interval": 250,
     "eval_steps": 100,
     "batch_size": 256,
@@ -138,8 +138,8 @@ options: dict[str, SAETrainingConfig] = map_options(
             "gradient_accumulation_steps": 32,
         },
         loss_coefficients=LossCoefficients(
-            # L0s ≈ (15...40), CE Loss Increase ≈ 0.1
-            sparsity=(0.002, 0.05, 0.08, 0.005, 0.005),
+            # L0s ≈ (10...30), CE Loss Increase < 0.1
+            sparsity=(0.002, 0.10, 0.16, 0.005, 0.005),
             downstream=1.0,
             bandwidth=0.1,
         ),
