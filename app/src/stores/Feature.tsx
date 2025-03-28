@@ -32,10 +32,10 @@ class FeatureModifier {
     this.isHovered = feature.key === selectionState.hoveredFeature?.key;
     this.isSelected = feature.key === selectionState.selectedFeature?.key;
 
-    // Set text weight using normalized activation
-    if (feature.normalizedActivation < 0.5) {
+    // Set text weight using feature importance
+    if (feature.importance < 0.5) {
       this.textWeight = 1;
-    } else if (feature.normalizedActivation < 0.65) {
+    } else if (feature.importance < 0.9) {
       this.textWeight = 2;
     } else {
       this.textWeight = 3;
@@ -66,7 +66,7 @@ class FeatureModifier {
       }
 
       // Check if focused feature is upstream or downstream
-      let ablationWeight: number = 0;
+      let ablationWeight: number | null = null;
       if (focusedFeature) {
         // If focused feature is upstream, activate feature
         if (Object.keys(feature.ablatedBy).includes(focusedFeature.key)) {
@@ -98,10 +98,10 @@ class FeatureModifier {
       }
 
       // If ablation weight exists, set weight
-      if (ablationWeight !== 0) {
+      if (ablationWeight !== null) {
         if (ablationWeight < 0.1) {
           this.fillWeight = 1;
-        } else if (ablationWeight < 5.0) {
+        } else if (ablationWeight < 0.9) {
           this.fillWeight = 2;
         } else {
           this.fillWeight = 3;

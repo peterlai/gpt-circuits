@@ -1,6 +1,7 @@
 from typing import Optional
 
 import torch
+from torch.nn.parallel import DistributedDataParallel
 from torch.optim import Optimizer
 
 from config.sae.training import SAETrainingConfig
@@ -78,6 +79,16 @@ class SAETrainer(Trainer):
                 )
             }
         )
+        
+        if "staircase" in self.config.sae_config.sae_variant:
+            l0_per_chunk = {}
+            for layer_idx, feature_magnitudes in output.feature_magnitudes.items():
+                num_chunks = layer_idx + 1
+                grouped_feature_magnitudes = torch.chunk(feature_magnitudes, num_chunks, dim=-1) # tuple[(batch, seq, feature_size_each_chunk)]
+                grouped_feature_magnitudes = torch.stack(grouped_feature_magnitudes, dim=-2) # (batch, seq, n_chunks, feature_size_each_chunk)
+                grouped_l0 = (grouped_feature_magnitudes != 0).float().sum(dim=-1) # (batch, seq, n_chunks)
+                l0_per_chunk[layer_idx] = grouped_l0.mean(dim=(0,1)) # (n_chunks)
+                metrics[f"l0_{layer_idx}"] = l0_per_chunk[layer_idx]
 
         return metrics
 
@@ -100,6 +111,10 @@ class SAETrainer(Trainer):
             device=self.config.device,
         ).to(self.config.device)
 
+        # Wrap the model if using DDP
+        if self.ddp:
+            self.model = DistributedDataParallel(self.model, device_ids=[self.ddp_local_rank])  # type: ignore
+
         # Gather final metrics. We don't bother compiling because we're just running eval once.
         final_metrics = self.val_step(0, should_log=False)  # step 0 so checkpoint isn't saved.
         self.checkpoint_l0s = final_metrics["l0s"]
@@ -121,7 +136,7 @@ class SAETrainer(Trainer):
         gpt_param_groups = GPTTrainer.get_param_groups(model.gpt, self.config)
 
         # Add SAE parameters to the optimizer.
-        sae_params = [p for p in model.saes.parameters() if p.requires_grad]
+        sae_params = [param for (key, param) in model.named_parameters() if param.requires_grad and key.split(".")[0] != "gpt"]
         num_gpt_params = sum(p.numel() for g in gpt_param_groups for p in g["params"])
         num_sae_params = sum(p.numel() for p in sae_params)
 

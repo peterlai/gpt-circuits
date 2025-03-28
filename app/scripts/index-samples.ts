@@ -1,6 +1,41 @@
 import fs from 'fs';
 import { join } from 'path';
 
+// Parse command line arguments
+const args = process.argv.slice(2);
+const buildMode = args.includes('build');
+
+let modelsDir: string;
+let indexedModelPrefixes: string[]; // Show these in the menu
+let hiddenModelPrefixes: string[]; // Hide these in the UI
+
+// Set directory and prefixes based on build mode
+if (buildMode) {
+    console.log("Building index for deployment");
+    modelsDir = buildMode ? 'build/samples' : 'public/samples';
+    indexedModelPrefixes = ["toy-v0"];
+    hiddenModelPrefixes = ["comparisons"];
+} else {
+    modelsDir = 'public/samples';
+    indexedModelPrefixes = ["toy", "comparisons"];
+    hiddenModelPrefixes = [];
+}
+
+// If building for deploying, clean up build directory
+if (buildMode) {
+    for (const modelName of fs.readdirSync(modelsDir)) {
+        // Preserve everything that is indexed or hidden.
+        if (indexedModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
+        if (hiddenModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
+
+        // Remove everything else.
+        const modelPath = join(modelsDir, modelName);
+        if (fs.statSync(modelPath).isDirectory()) {
+            fs.rmSync(modelPath, { recursive: true, force: true });
+        }
+    }
+}
+
 type SampleEntry  = {
     name: string;
     versions: string[];
@@ -8,13 +43,11 @@ type SampleEntry  = {
     decodedTokens: string;
     targetIdx: number;
 }
-const modelsDir = 'public/samples';
 const index: {[key: string]: SampleEntry[]} = {};
 
 for (const modelName of fs.readdirSync(modelsDir)) {
-    // Use whitelist.
-    const approvedModelPrefixes = ["toy", "baby"];
-    if (!approvedModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
+    // Use allowlist.
+    if (!indexedModelPrefixes.some(prefix => modelName.startsWith(prefix))) continue;
 
     // e.g. toy/
     const modelPath = join(modelsDir, modelName);

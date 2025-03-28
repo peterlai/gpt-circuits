@@ -1,3 +1,6 @@
+import sys
+sys.path.append('/root/gpt-circuits')
+
 import torch as t
 import torch.nn as nn
 from torch import Tensor
@@ -40,7 +43,7 @@ def all_ig_attributions(model: SparsifiedGPT, ds: TrainingDataLoader, nbatches: 
 
     layers = model.gpt.config.n_layer
     attributions = {}
-    for i in range(layers - 1):
+    for i in range(layers):
         attributions[f'{i}-{i+1}'] = ig_attributions(model, i, i+1, ds, nbatches, steps, just_last)
         ds.reset()
         if verbose:
@@ -167,10 +170,10 @@ def integrate_gradient(x: Tensor, x_i: Tensor | None, fun: TensorFunction, direc
 if __name__ == "__main__":
    #This code loads a model and data, and computes all the attributions
    #If you want to do you own run, just modify the strings here, and the arguments in the call to all_ig_attributions below
-    c_name = 'standardx8.shakespeare_64x4'
+    c_name = 'staircasex8.shakespeare_64x4' #config options for the sae you want
     name = ''
-    data_dir = 'data/shakespeare'
-    output_filename = 'Andy/data/just_last_attributions.safetensors'
+    data_dir = 'data/shakespeare' #location of data, remember to prepare it!
+    output_filename = 'Andy/data/standard_staircase_attributions.safetensors'
     batch_size = 32
     config = sae_options[c_name]
 
@@ -212,8 +215,11 @@ if __name__ == "__main__":
     layer0 = 0
     layer1 = 1
 
-    attributions = all_ig_attributions(model, dataloader, 16, 4, verbose = True, just_last = True)
-    save_file({"attributions0-1": attributions['0-1'], "attributions1-2": attributions['1-2'], "attributions2-3": attributions['2-3']}, output_filename)
+    attributions = all_ig_attributions(model, dataloader, 1, 2, verbose = True)
+    layers = model.gpt.config.n_layer
+
+
+    save_file(attributions, output_filename)
     
     
 

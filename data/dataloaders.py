@@ -137,6 +137,7 @@ class DatasetShard:
         shard_paths = [os.path.join(dir_path, s) for s in shard_paths]
         assert len(shard_paths) > 0, f"No shards found for split {split}"
         assert 0 <= shard_idx < len(shard_paths), f"Shard index {shard_idx} out of bounds"
+        self.dir_path = dir_path
         self.split = split
         self.shard_idx = shard_idx
         self.shard_path = shard_paths[shard_idx]

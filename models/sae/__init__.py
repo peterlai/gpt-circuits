@@ -1,7 +1,11 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional, Protocol
+from pathlib import Path
+from typing import Optional
 
 import torch
+import torch.nn as nn
+from safetensors.torch import load_model, save_model
 
 from config.sae.models import SAEConfig
 from config.sae.training import LossCoefficients
@@ -54,17 +58,24 @@ class EncoderOutput:
     loss: Optional[SAELossComponents] = None
 
 
-class SparseAutoencoder(Protocol):
+class SparseAutoencoder(nn.Module, ABC):
     """
-    Interface for a sparse autoencoder.
+    Abstract base class for a sparse autoencoder.
     """
 
-    def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients]):
+    def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients], model: nn.Module):
         """
         Initialize the sparse autoencoder.
-        """
-        ...
 
+        :param layer_idx: SAE layer index.
+        :param config: SAE configuration.
+        :param loss_coefficients: Loss coefficients for the SAE.
+        :param model: The model to which the SAE is applied.
+        """
+        self.layer_idx = layer_idx
+        super().__init__()
+
+    @abstractmethod
     def forward(self, x: torch.Tensor) -> EncoderOutput:
         """
         Forward pass of the encoder.
@@ -73,9 +84,24 @@ class SparseAutoencoder(Protocol):
         """
         ...
 
+    @abstractmethod
     def decode(self, feature_magnitudes: torch.Tensor) -> torch.Tensor:
         """
         :param feature_magnitudes: SAE activations (B, T, feature size)
         :return: reconstructed activations (B, T, embedding size)
         """
         ...
+
+    def save(self, dirpath: Path):
+        """
+        Save the sparse autoencoder to a file in the specified directory.
+        """
+        weights_path = dirpath / f"sae.{self.layer_idx}.safetensors"
+        save_model(self, str(weights_path))
+
+    def load(self, dirpath: Path, device: torch.device):
+        """
+        Load the sparse autoencoder from a file in the specified directory.
+        """
+        weights_path = dirpath / f"sae.{self.layer_idx}.safetensors"
+        load_model(self, weights_path, device=device.type)

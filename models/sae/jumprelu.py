@@ -10,7 +10,7 @@ from config.sae.training import LossCoefficients
 from models.sae import EncoderOutput, SAELossComponents, SparseAutoencoder
 
 
-class JumpReLUSAE(nn.Module, SparseAutoencoder):
+class JumpReLUSAE(SparseAutoencoder):
     """
     SAE technique as described in:
     https://arxiv.org/pdf/2407.14435
@@ -19,12 +19,13 @@ class JumpReLUSAE(nn.Module, SparseAutoencoder):
     https://github.com/bartbussmann/BatchTopK/blob/main/sae.py
     """
 
-    def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients]):
-        super().__init__()
+    def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients], model: nn.Module):
+        super().__init__(layer_idx, config, loss_coefficients, model)
         feature_size = config.n_features[layer_idx]  # SAE dictionary size.
         embedding_size = config.gpt_config.n_embd  # GPT embedding size.
         bandwidth = loss_coefficients.bandwidth if loss_coefficients else None
-        self.sparsity_coefficient = loss_coefficients.sparsity[layer_idx] if loss_coefficients else None
+        sparsity_coefficients = loss_coefficients.sparsity if loss_coefficients else None
+        self.sparsity_coefficient = sparsity_coefficients[layer_idx] if sparsity_coefficients else None
 
         self.b_dec = nn.Parameter(torch.zeros(embedding_size))
         self.b_enc = nn.Parameter(torch.zeros(feature_size))
@@ -76,11 +77,74 @@ class JumpReLUSAE(nn.Module, SparseAutoencoder):
         return output
 
 
+class StaircaseJumpReLUSharedContext(nn.Module):
+    """
+    Contains shared parameters for the staircase JumpReLU SAE.
+    """
+    def __init__(self, config: SAEConfig, loss_coefficients: Optional[LossCoefficients]):
+        super().__init__()
+        embedding_size = config.gpt_config.n_embd  # GPT embedding size.
+        feature_size = config.n_features[-1] # Last layer should be the largest and contain a superset of all features.
+        assert feature_size == max(config.n_features)
+
+        device = config.device
+        self.W_dec = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(feature_size, embedding_size, device=device)))
+        self.b_enc = nn.Parameter(torch.zeros(feature_size, device=device))
+        self.b_dec = nn.Parameter(torch.zeros(embedding_size, device=device))
+        self.W_enc = nn.Parameter(torch.empty(embedding_size, feature_size, device=device))
+        self.W_enc.data = self.W_dec.data.T.detach().clone()  # initialize W_enc from W_dec
+        
+        self.log_threshold = nn.Parameter(torch.full((feature_size,), math.log(0.1), device=device))
+        self.bandwidth = loss_coefficients.bandwidth
+        
+        
+
+class StaircaseJumpReLU(JumpReLUSAE):
+    """
+    JumpReLU that shares weights between layers.
+    """
+    def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients], model: nn.Module):
+        SparseAutoencoder.__init__(self, layer_idx, config, loss_coefficients, model)
+
+        # Shared context from which we can get weight parameters.
+        self.is_first = False
+        self.shared_context: StaircaseJumpReLUSharedContext
+        if not hasattr(model, "shared_context"):
+            # Initialize the shared context once.
+            self.is_first = True
+            model.shared_context = StaircaseJumpReLUSharedContext(config, loss_coefficients)
+        self.shared_context = model.shared_context  # type: ignore
+        feature_size = config.n_features[layer_idx]
+        embedding_size = config.gpt_config.n_embd
+        self.sparsity_coefficient = loss_coefficients.sparsity[layer_idx] if loss_coefficients else None
+
+        self.W_dec = self.shared_context.W_dec[:feature_size, :]
+        self.W_enc = self.shared_context.W_enc[:, :feature_size]
+        # self.W_dec = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(feature_size - prev_feature_size, embedding_size)))
+        # self.W_enc = nn.Parameter(torch.empty(embedding_size, feature_size - prev_feature_size))
+        # self.W_enc.data = self.W_dec.data.T.detach().clone()  # initialize W_enc from W_dec
+        #should the biases be shared, or should each layer have it's own bias?
+        #self.b_enc = shared_context.b_enc[:feature_size]
+        # self.b_dec = shared_context.b_dec
+        self.b_enc = nn.Parameter(torch.zeros(feature_size))
+        self.b_dec = nn.Parameter(torch.zeros(embedding_size))
+
+        self.jumprelu = JumpReLU(feature_size=feature_size, 
+                                 bandwidth=self.shared_context.bandwidth or 0.0,
+                                 log_threshold=self.shared_context.log_threshold[:feature_size])
+        # overwrite log_threshold parameters with a slice from the shared context
+        
+        self.should_return_losses = loss_coefficients is not None
+
+
 class JumpReLU(nn.Module):
-    def __init__(self, feature_size, bandwidth):
+    def __init__(self, feature_size, bandwidth, log_threshold : Optional[torch.Tensor] = None):
         super(JumpReLU, self).__init__()
         # NOTE: Training doesn't seem to converge unless starting with a default threshold ~ 0.1.
-        self.log_threshold = nn.Parameter(torch.full((feature_size,), math.log(0.1)))
+        if log_threshold is None:
+            self.log_threshold = nn.Parameter(torch.full((feature_size,), math.log(0.1)))
+        else:
+            self.log_threshold = log_threshold
         self.bandwidth = bandwidth
 
     def forward(self, x):

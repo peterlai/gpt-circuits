@@ -8,17 +8,18 @@ from config.sae.training import LossCoefficients
 from models.sae import EncoderOutput, SAELossComponents, SparseAutoencoder
 
 
-class StandardSAE(nn.Module, SparseAutoencoder):
+class StandardSAE(SparseAutoencoder):
     """
     SAE technique as described in:
     https://transformer-circuits.pub/2024/april-update/index.html#training-saes
     """
 
-    def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients]):
-        super().__init__()
+    def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients], model: nn.Module):
+        super().__init__(layer_idx, config, loss_coefficients, model)
         feature_size = config.n_features[layer_idx]  # SAE dictionary size.
         embedding_size = config.gpt_config.n_embd  # GPT embedding size.
-        self.l1_coefficient = loss_coefficients.sparsity[layer_idx] if loss_coefficients else None
+        l1_coefficients = loss_coefficients.sparsity if loss_coefficients else None
+        self.l1_coefficient = l1_coefficients[layer_idx] if l1_coefficients else None
         self.W_dec = nn.Parameter(torch.nn.init.kaiming_uniform_(torch.empty(feature_size, embedding_size)))
 
         self.b_enc = nn.Parameter(torch.zeros(feature_size))

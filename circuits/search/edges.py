@@ -5,7 +5,7 @@ import torch
 
 from circuits import Circuit, Edge, Node, TokenlessEdge, TokenlessNode
 from circuits.features.profiles import ModelProfile
-from circuits.search.ablation import Ablator
+from circuits.search.ablation import ResampleAblator
 from circuits.search.divergence import (
     compute_downstream_magnitudes,
     patch_feature_magnitudes,
@@ -33,7 +33,7 @@ class EdgeSearch:
     Analyze edge importance in a circuit by ablating each edge between two adjacent layers.
     """
 
-    def __init__(self, model: SparsifiedGPT, model_profile: ModelProfile, ablator: Ablator, num_samples: int):
+    def __init__(self, model: SparsifiedGPT, model_profile: ModelProfile, ablator: ResampleAblator, num_samples: int):
         """
         :param model: The sparsified model to use for circuit analysis.
         :param model_profile: The model profile containing cache feature metrics.
@@ -298,7 +298,7 @@ def expand_token_index(
 
 def compute_downstream_magnitudes_from_edges(
     model: SparsifiedGPT,
-    ablator: Ablator,
+    ablator: ResampleAblator,
     edges: frozenset[TokenlessEdge],
     upstream_magnitudes: torch.Tensor,  # Shape: (T, F)
     target_token_idx: int,
@@ -308,7 +308,7 @@ def compute_downstream_magnitudes_from_edges(
     Compute downstream feature magnitudes using only the provided edges and upstream magnitudes.
     
     :param model: Model to use for computation
-    :param ablator: Ablator to use for patching
+    :param ablator: ResampleAblator to use for patching
     :param edges: Circuit edges defining connections from layer L to layer L+1
     :param upstream_magnitudes: Upstream feature magnitudes tensor from layer L
     :param target_token_idx: Target token index
@@ -384,7 +384,7 @@ def compute_downstream_magnitudes_from_edges(
 
 def compute_batched_downstream_magnitudes_from_edges(
     model: SparsifiedGPT,
-    ablator: Ablator,
+    ablator: ResampleAblator,
     edges: frozenset[TokenlessEdge],
     upstream_magnitudes: torch.Tensor,  # Shape: (num_batches, T, F)
     target_token_idx: int,
@@ -395,7 +395,7 @@ def compute_batched_downstream_magnitudes_from_edges(
     Processes multiple batches of upstream magnitudes in parallel.
     
     :param model: Model to use for computation
-    :param ablator: Ablator to use for patching
+    :param ablator: ResampleAblator to use for patching
     :param edges: Circuit edges defining connections from layer L to layer L+1
     :param upstream_magnitudes: Upstream feature magnitudes tensor from layer L
     :param target_token_idx: Target token index

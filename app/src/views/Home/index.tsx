@@ -1,15 +1,13 @@
+import { FeatureExtraction } from "../../components/Home/FeatureExtraction";
+import { Intro } from "../../components/Home/Intro";
 import "./style.scss";
 
 function Home() {
   return (
     <div id="Home">
       <main>
-        <section className="intro">
-          <h1>
-            <img src={`${process.env.PUBLIC_URL}/logo.png`} alt="logo" />
-            <span>GPT-2 Circuits</span>
-          </h1>
-        </section>
+        <Intro />
+        <FeatureExtraction />
       </main>
     </div>
   );

@@ -5,4 +5,5 @@ datasets
 tiktoken
 gpustat
 safetensors
+plotly
 bidict

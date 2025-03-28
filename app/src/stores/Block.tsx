@@ -12,6 +12,7 @@ class BlockData {
   public tokenOffset: number;
   public layerIdx: number;
   public features: { [key: string]: BlockFeatureData };
+  public upstreamImportances: Record<number, number> = {}; // Upstream token offset -> weight
 
   constructor(tokenOffset: number, layerIdx: number) {
     this.tokenOffset = tokenOffset;
@@ -42,23 +43,24 @@ class BlockFeatureData {
   public featureId: number;
   public activation: number;
   public normalizedActivation: number;
+  public importance: number = 0; // [0, 1]
   public ablatedBy: { [key: string]: UpstreamAblationData };
-  public groupAblations: { [key: number]: number }; // Maps upstream token offset to weight
 
   constructor(
     tokenOffset: number,
     layerIdx: number,
     featureId: number,
     activation: number,
-    normalizedActivation: number
+    normalizedActivation: number,
+    importance: number
   ) {
     this.tokenOffset = tokenOffset;
     this.layerIdx = layerIdx;
     this.featureId = featureId;
     this.activation = activation;
     this.normalizedActivation = normalizedActivation;
+    this.importance = importance;
     this.ablatedBy = {};
-    this.groupAblations = {};
   }
 
   get key() {
@@ -68,6 +70,19 @@ class BlockFeatureData {
   // Returns DOM ID
   get elementId() {
     return BlockFeatureData.getElementId(this.key);
+  }
+
+  // Returns the weight of the edge from the specified upstream token offset
+  public getTokenEdgeWeight(upstreamTokenOffset: number | null) {
+    let maxEdgeWeight = Math.max(...Object.values(this.ablatedBy).map((a) => a.weight));
+    if (maxEdgeWeight === 0) {
+      return 0;
+    }
+    let tokenEdgeWeights = Object.values(this.ablatedBy)
+      .filter((a) => a.tokenOffset === upstreamTokenOffset)
+      .map((a) => a.weight);
+    let maxTokenEdgeWeight = Math.max(...tokenEdgeWeights);
+    return maxTokenEdgeWeight / maxEdgeWeight;
   }
 
   static getKey(tokenOffset: number, layerIdx: number, featureId: number) {
@@ -109,7 +124,8 @@ const blocksAtom = atom((get) => {
   const ablationGraph = data?.graph ?? {};
   const activations: { [key: string]: number } = data?.activations ?? {};
   const normalizedActivations: { [key: string]: number } = data?.normalizedActivations ?? {};
-  const groupAblationGraph: { [key: string]: [string, number][] } = data?.blockImportance ?? {};
+  const upstreamTokenImportances = data?.blockImportance ?? {};
+  const featureImportances: { [key: string]: number } = data?.featureImportance ?? {};
 
   // Gather all unique feature keys
   const featureKeys = new Set<string>();
@@ -129,10 +145,30 @@ const blocksAtom = atom((get) => {
 
     const activation = activations[featureKey] || 0;
     const normalizedActivation = normalizedActivations[featureKey] || 0;
+    const featureImportance = featureImportances[featureKey] || 0;
     const featureData =
       blockData.features[featureKey] ||
-      new BlockFeatureData(tokenOffset, layerIdx, featureId, activation, normalizedActivation);
+      new BlockFeatureData(
+        tokenOffset,
+        layerIdx,
+        featureId,
+        activation,
+        normalizedActivation,
+        featureImportance
+      );
     blockData.features[featureKey] = featureData;
+  }
+
+  // Add upstream weights to blocks
+  for (const [downstreamKey, upstreamImportances] of Object.entries(upstreamTokenImportances)) {
+    const [tokenOffset, layerIdx] = downstreamKey.split(".").map(Number);
+    const blockKey = BlockData.getKey(tokenOffset, layerIdx);
+    const importances: Record<number, number> = {};
+    for (const [upstreamKey, importance] of upstreamImportances as [string, number][]) {
+      const upstreamTokenOffset = upstreamKey.split(".").map(Number)[0];
+      importances[upstreamTokenOffset] = importance;
+    }
+    blocks[blockKey].upstreamImportances = importances;
   }
 
   // Add ablations to features
@@ -158,20 +194,6 @@ const blocksAtom = atom((get) => {
         upstreamFeatureId,
         weight
       );
-    }
-  }
-
-  // Add group ablations to features
-  for (const [downstreamKey, groupAblations] of Object.entries(groupAblationGraph)) {
-    // Get feature
-    const [tokenOffset, layerIdx] = downstreamKey.split(".").map(Number);
-    const blockKey = BlockData.getKey(tokenOffset, layerIdx);
-    const featureData = blocks[blockKey].features[downstreamKey];
-
-    // Add group ablations to feature
-    for (const [blockKey, weight] of groupAblations as [string, number][]) {
-      const upstreamTokenOffset = Number(blockKey.split(".")[0]);
-      featureData.groupAblations[upstreamTokenOffset] = weight;
     }
   }
 

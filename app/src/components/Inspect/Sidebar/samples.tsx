@@ -10,6 +10,7 @@ import { SampleData } from "../../../stores/Sample";
 import { alignmentAtom, AlignmentOptions, searchQueryAtom } from "../../../stores/Search";
 import { SamplesList } from "../../SamplesList";
 
+import { JSX } from "react";
 import "react-tooltip/dist/react-tooltip.css";
 
 function SearchableSamples({
@@ -184,10 +185,18 @@ function SamplesHistogram({
   const binCounts = activationHistogram.bins.map(({ min, max }, i) => {
     let count = 0;
     while (sortedActivations) {
-      const activation = sortedActivations.pop() ?? Infinity;
-      if (activation <= max) {
+      const activation = sortedActivations.pop();
+      if (activation === undefined) {
+        // No more activations to count.
+        break;
+      } else if (activation <= max) {
+        // Activation is within bin range.
+        count++;
+      } else if (i === activationHistogram.bins.length - 1) {
+        // If this is the last bin, count the activation anyway.
         count++;
       } else {
+        // Requeue the activation for the next bin.
         sortedActivations.push(activation);
         break;
       }

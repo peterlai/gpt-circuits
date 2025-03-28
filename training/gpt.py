@@ -3,7 +3,7 @@ Train GPT model:
 $ python -m training.gpt --config=shakespeare_64x4
 
 DDP launch for e.g. 8 GPUs:
-$ torchrun --standalone --nproc_per_node=8 -m training.gpt --config=shakespeare_64x4
+$ torchrun --standalone --nproc_per_node=8 -m training.gpt --config=stories_256x4
 """
 
 import argparse
@@ -110,4 +110,5 @@ if __name__ == "__main__":
     trainer.train()
 
     # Pring final result
-    print(f"Best validation loss: {round(trainer.best_val_loss.item(), 4)}")
+    if trainer.is_main_process:
+        print(f"Best validation loss: {round(trainer.best_val_loss.item(), 4)}")

@@ -48,12 +48,9 @@ Configurations are stored in [config/sae](config/sae). The Trainers are located 
 python -m training.sae.concurrent --config=standard.shakespeare_64x4 --load_from=shakespeare_64x4
 ```
 
-### Cache Activations
-
-For trainign multi-layer SAEs, it's faster to just shove the entire dataset through the model and cache the activations. This can be done with:
+To run the staircase SAE, use:
 
 ```
-python -m david.cache_activations --model=shakespeare_64x4 --dataset=shakespeare
+python -m training.sae.staircase_concurrent --config=topk-staircase-share.shakespeare_64x4 --load_from=shakespeare_64x4
+python -m training.sae.concurrent --config=topk-staircase-noshare.shakespeare_64x4 --load_from=shakespeare_64x4
 ```
-
-We will still need to load the model and the validation dataset  and do forward passes for eval, but training will be a lot faster.

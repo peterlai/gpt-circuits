@@ -9,23 +9,36 @@ fi
 process_token_ids() {
   local model=$1
   local split=$2
-  shift 2
+  local threshold=$3
+  shift 3
   local token_ids=("$@")
 
   for token_id in "${token_ids[@]}"; do
     echo "Processing ${split}:${token_id}"
-    $TIMEOUT 60m ./experiments/circuits/extract.sh $model $split $token_id
+    $TIMEOUT 60m ./experiments/circuits/extract.sh $model $split $token_id $threshold
   done
 }
 
-# Training shard token IDs
-TRAIN_TOKEN_IDS=(7010 300553 393485 512822 780099 872699)
+# Empty defaults
+TRAIN_TOKEN_IDS=()
+VAL_TOKEN_IDS=()
 
-# Validation shard token IDs
-VAL_TOKEN_IDS=(15524 69324 75324 85424)
+# DIRNAME="toy-v0"
+# TRAIN_TOKEN_IDS=(7010 300553 393485 512822 780099 872699)
+# VAL_TOKEN_IDS=(15 1039 15524 69324 75324 85424)
+
+# DIRNAME="comparisons-random"
+# DIRNAME="comparisons-zero"
+# DIRNAME="comparisons-cluster"
+# VAL_TOKEN_IDS=(1282 7554 8834 9218) # 3 char sequences
+# VAL_TOKEN_IDS=(6159) # 16 char sequence
+
+# DIRNAME="toy-local"
+# TRAIN_TOKEN_IDS=()
+# VAL_TOKEN_IDS=(15 1039 2063 3087 4111 5135 6159 7183)
 
 # Process training data
-process_token_ids "toy-v0" "train" "${TRAIN_TOKEN_IDS[@]}"
+process_token_ids "${DIRNAME}" "train" 0.15 "${TRAIN_TOKEN_IDS[@]}"
 
 # Process validation data
-process_token_ids "toy-v0" "val" "${VAL_TOKEN_IDS[@]}"
+process_token_ids "${DIRNAME}" "val" 0.25 "${VAL_TOKEN_IDS[@]}"

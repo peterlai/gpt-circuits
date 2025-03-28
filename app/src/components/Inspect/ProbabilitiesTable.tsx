@@ -1,9 +1,10 @@
+import { JSX } from "react";
 import "./ProbabilitiesTable.scss";
 
 function ProbabilitiesTable({
   probabilities,
   labels,
-  limit = 5,
+  limit = 4,
 }: {
   probabilities: { [key: string]: number };
   labels?: { [key: string]: JSX.Element };

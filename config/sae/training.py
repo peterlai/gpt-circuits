@@ -36,12 +36,23 @@ shakespeare_64x4_defaults = {
     "decay_lr": True,
     "min_lr": 1e-4,
 }
-tiny_32x4_defaults = {
+stories_32x4_defaults = {
     "data_dir": "data/tiny_stories_10m",
     "eval_interval": 250,
     "eval_steps": 100,
     "batch_size": 128,
     "gradient_accumulation_steps": 2,
+    "learning_rate": 1e-3,
+    "max_steps": 5000,
+    "decay_lr": True,
+    "min_lr": 1e-4,
+}
+stories_256x4_defaults = {
+    "data_dir": "data/tiny_stories",
+    "eval_interval": 250,
+    "eval_steps": 100,
+    "batch_size": 256,
+    "gradient_accumulation_steps": 8,
     "learning_rate": 1e-3,
     "max_steps": 5000,
     "decay_lr": True,
@@ -64,14 +75,15 @@ tiny_defaults = {
 
 # Training configuration options
 options: dict[str, SAETrainingConfig] = map_options(
-    SAETrainingConfig(
-    name="standard.tiny_64x2",
-    sae_config=sae_options["standardx8.tiny_64x2"],
-        **tiny_defaults,
-        loss_coefficients=LossCoefficients(
-        sparsity=(0.02, 0.06, 0.2, 0.2, 0.5),  # Targets L0s of ~10
-        ),
-    ),
+    # No such thing as tiny_64x2?
+    # SAETrainingConfig(
+    #     name="standard.tiny_64x2",
+    #     sae_config=sae_options["standardx8.tiny_64x2"],
+    #     **tiny_defaults,
+    #     loss_coefficients=LossCoefficients(
+    #     sparsity=(0.02, 0.06, 0.2, 0.2, 0.5),  # Targets L0s of ~10
+    #     ),
+    # ),
      SAETrainingConfig(
         name="standard.tiny_32x4",
         sae_config=sae_options["standardx16.tiny_32x4"],
@@ -98,7 +110,7 @@ options: dict[str, SAETrainingConfig] = map_options(
     ),
     SAETrainingConfig(
         name="topk.shakespeare_64x4",
-        sae_config=sae_options["topk-x8.shakespeare_64x4"],
+        sae_config=sae_options["topk-10-x8.shakespeare_64x4"],
         **shakespeare_64x4_defaults,
         loss_coefficients=LossCoefficients()
     ),
@@ -119,14 +131,14 @@ options: dict[str, SAETrainingConfig] = map_options(
         ),
     ),
     SAETrainingConfig(
-        name="topk-staircase.shakespeare_64x4",
-        sae_config=sae_options["topk-staircase-x8.shakespeare_64x4"],
+        name="topk-staircase-noshare.shakespeare_64x4",
+        sae_config=sae_options["topk-staircase-10-x8-noshare.shakespeare_64x4"],
         **shakespeare_64x4_defaults,
         loss_coefficients=LossCoefficients(),
     ),
     SAETrainingConfig(
-        name="topk-x40.shakespeare_64x4",
-        sae_config=sae_options["topk-x40.shakespeare_64x4"],
+        name="topk-staircase-share.shakespeare_64x4",
+        sae_config=sae_options["topk-staircase-10-x8-share.shakespeare_64x4"],
         **shakespeare_64x4_defaults,
         loss_coefficients=LossCoefficients(),
     ),
@@ -170,6 +182,15 @@ options: dict[str, SAETrainingConfig] = map_options(
         ),
     ),
     SAETrainingConfig(
+        name="jumprelu-staircase.shakespeare_64x4",
+        sae_config=sae_options["jumprelu-staircase-x8.shakespeare_64x4"],
+        **shakespeare_64x4_defaults,
+        loss_coefficients=LossCoefficients(
+            sparsity=(0.01, 0.01, 0.01, 0.03, 0.08),
+            bandwidth=0.1,
+        ),
+    ),
+    SAETrainingConfig(
         name="e2e.jumprelu.shakespeare_64x4",
         sae_config=sae_options["jumprelu-x16.shakespeare_64x4"],
         **(
@@ -181,6 +202,31 @@ options: dict[str, SAETrainingConfig] = map_options(
         ),
         loss_coefficients=LossCoefficients(
             sparsity=(0.01, 0.00001, 0.005, 0.01, 0.005),
+            downstream=1.0,
+            bandwidth=0.1,
+        ),
+    ),
+    SAETrainingConfig(
+        name="jumprelu.stories_256x4",
+        sae_config=sae_options["jumprelu-x32.stories_256x4"],
+        **stories_256x4_defaults,
+        loss_coefficients=LossCoefficients(
+            # L0s ≈ (6...20)
+            sparsity=(0.05, 0.1, 0.2, 0.4, 2.0),
+            bandwidth=0.1,
+        ),
+    ),
+    SAETrainingConfig(
+        name="e2e.jumprelu.stories_256x4",
+        sae_config=sae_options["jumprelu-x32.stories_256x4"],
+        **stories_256x4_defaults
+        | {
+            "batch_size": 64,
+            "gradient_accumulation_steps": 32,
+        },
+        loss_coefficients=LossCoefficients(
+            # L0s ≈ (10...30), CE Loss Increase < 0.1
+            sparsity=(0.002, 0.10, 0.16, 0.005, 0.005),
             downstream=1.0,
             bandwidth=0.1,
         ),

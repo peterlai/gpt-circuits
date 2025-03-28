@@ -1,0 +1,150 @@
+.sample-quote {
+    font-family: monospace;
+    white-space: pre-wrap;
+    font-size: 0.9em;
+
+    em {
+        font-style: normal;
+        background: rgba(0,0,0,0.15);
+    }
+
+    .after {
+        opacity: 0.5;
+    }
+
+    &.without-quotes:before, &.without-quotes:after {
+        content: "";
+    }
+}
+
+section.sample {
+    table {
+        padding-left: 10px;
+    }
+
+    .figures {
+        text-align: center;
+
+        figure {
+            display: inline-block;
+            width: 350px;
+        }
+
+        .description {
+            font-size: 0.85em;
+            line-height: 1.5em;
+            padding: 0 10px;
+        }
+    }
+
+    table th em {
+        background: rgba(0,0,0,0.15);
+        font-style: normal;
+    }
+
+    /* Tree layout derived from: https://codepen.io/ross-angus/pen/jwxMjL */
+    .tree {
+        $vertical-spacing: 30px; /* Spacing between layers */
+        $horizontal-spacing: 10px; /* Spacing between nodes */
+
+        display: flex;
+        flex-direction: row;
+        position: relative;
+        margin: 0 0 2.5em;
+        padding: 0;
+        list-style: none;
+        text-align: center;
+
+        ul {
+            display: flex;
+            flex-direction: row;
+            position: relative;
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        li {
+            display: flex;
+            flex-direction: column-reverse;
+            flex: 1 1 auto;
+            position: relative;
+            margin: 0;
+            padding-bottom: $vertical-spacing / 2;
+            list-style: none;
+        }
+
+        /* _________ */
+        li:before {
+            border-bottom: solid 1px rgba(255,0,0,0.75);
+            content: "";
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: $vertical-spacing / 2;
+        }
+        li:first-child:before {left: 50%;}
+        li:last-child:before {right: 50%;}
+
+        li > *:first-child {
+            position: relative;
+            margin: 0 $horizontal-spacing $vertical-spacing / 2;
+        }
+
+        /* | */
+        ul:before,
+        li > *:first-child:before {
+            border-right: solid 1px rgba(255,0,0,0.75);
+            content: "";
+            position: absolute;
+            left: 50%;
+            height: $vertical-spacing / 2;
+        }
+        ul:before {
+            bottom: 0;
+        }
+        li > *:first-child:before {
+            bottom: -$vertical-spacing / 2 - 1;
+        }
+
+        /* The root node doesn't connect upwards */
+        > li {
+            padding: 0;
+        }
+        > li > *:first-child {
+            margin-bottom: 0;
+            &:before { border: none; }
+        }
+    }
+
+    /* Tree node appearance */
+    .tree .node {
+        display: flex;
+        border: 1px solid #aaa;
+        background: #eee;
+        box-shadow: 1px 1px 1px rgba(0, 0, 0, 0.2);
+
+        .feature {
+            flex: 0 0 auto;
+            font-size: 0.9em;
+            padding: 5px;
+            border-right: 1px solid #aaa;
+        }
+
+        .description {
+            flex: 1 1 auto;
+            padding: 5px 2px;
+        }
+
+        q + q:before {
+            display: inline-block;
+            margin: -8px 10px;
+            border-right: 1px solid rgba(0,0,0,0.3);
+            height: 25px;
+        }
+
+        .spacer {
+            flex: 0 1 60px;
+        }
+    }
+}

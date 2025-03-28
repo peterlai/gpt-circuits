@@ -5,7 +5,7 @@ from typing import Sequence
 import torch
 
 from circuits import Circuit
-from circuits.search.ablation import Ablator
+from circuits.search.ablation import ResampleAblator
 from data.tokenizers import Tokenizer
 from models.sparsified import SparsifiedGPT
 
@@ -18,7 +18,7 @@ class Divergence:
 
 def analyze_divergence(
     model: SparsifiedGPT,
-    ablator: Ablator,
+    ablator: ResampleAblator,
     layer_idx: int,
     target_token_idx: int,
     target_logits: torch.Tensor,  # Shape: (V)
@@ -27,7 +27,7 @@ def analyze_divergence(
     num_samples: int,
 ) -> dict[Circuit, Divergence]:
     """
-    Calculate KL divergence between target logits and logits produced through use of circuit features.
+    Calculate KL divergence between target logits and logits produced through use of circuit nodes on a single layer.
 
     :param model: The sparsified model to use for circuit extraction.
     :param ablator: Ablation tecnique to use for circuit extraction.
@@ -78,7 +78,7 @@ def analyze_divergence(
 
 
 def patch_feature_magnitudes(
-    ablator: Ablator,
+    ablator: ResampleAblator,
     layer_idx: int,
     target_token_idx: int,
     circuit_variants: Sequence[Circuit],
@@ -95,12 +95,20 @@ def patch_feature_magnitudes(
     with ThreadPoolExecutor() as executor:
         futures: dict[Future, Circuit] = {}
         for circuit_variant in circuit_variants:
+            # Create feature mask
+            feature_mask = torch.zeros_like(feature_magnitudes, dtype=torch.bool)
+            layer_nodes = [n for n in circuit_variant.nodes if n.layer_idx == layer_idx]
+            if layer_nodes:
+                token_indices = torch.tensor([node.token_idx for node in layer_nodes])
+                feature_indices = torch.tensor([node.feature_idx for node in layer_nodes])
+                feature_mask[token_indices, feature_indices] = True
+            # Patch feature magnitudes
             future = executor.submit(
                 ablator.patch,
                 layer_idx=layer_idx,
                 target_token_idx=target_token_idx,
                 feature_magnitudes=feature_magnitudes,
-                circuit=circuit_variant,
+                feature_mask=feature_mask,
                 num_samples=num_samples,
             )
             futures[future] = circuit_variant

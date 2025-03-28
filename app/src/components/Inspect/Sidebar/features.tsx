@@ -83,30 +83,30 @@ function FeatureSidebar({ feature }: { feature: BlockFeatureData }) {
 }
 
 function FeatureSidebarSamplingStrategy() {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [strategy, setStrategy] = useAtom(samplingStrategyAtom);
 
   return (
     <div
       className="feature-sampling-strategy"
-      onClick={() => setIsOpen(!isOpen)}
-      onBlur={() => setIsOpen(false)}
+      onClick={() => setIsMenuOpen(!isMenuOpen)}
+      onBlur={() => setIsMenuOpen(false)}
       tabIndex={0}
     >
       <span className="selected-option">
         <span>
-          {strategy === SamplingStrategies.Cluster ? "Circuit Cluster" : null}
+          {strategy === SamplingStrategies.Cluster ? "From Cluster" : null}
           {strategy === SamplingStrategies.Similar ? "Similar Activations" : null}
           {strategy === SamplingStrategies.Top ? "Top Activations" : null}
         </span>
         <FaChevronDown className="icon" />
       </span>
 
-      {isOpen && (
-        <ul>
+      {isMenuOpen && (
+        <ul className="menu">
           <li className="header">Sampling Strategy</li>
           <li className="option" onClick={() => setStrategy(SamplingStrategies.Cluster)}>
-            <h4>Circuit Cluster</h4>
+            <h4>From Cluster</h4>
             <p>
               Cluster dataset samples using circuit features and boost the importance of the
               selected feature.
@@ -216,11 +216,6 @@ function UpstreamAblationsSection({
   // Compute ideal width for chart labels (in ch units)
   const chartLabelSize = Math.max(...upstreamAblations.map(([token]) => token.length)) + 2;
 
-  // Compute the maximum ablation value for the chart
-  const maxAblation = Math.max(
-    ...upstreamAblations.map(([, offset]) => feature.groupAblations[offset])
-  );
-
   return (
     <section className="ablations">
       <h3>Upstream Tokens</h3>
@@ -246,7 +241,7 @@ function UpstreamAblationsSection({
               <td
                 style={
                   {
-                    "--size": feature.groupAblations[offset] / maxAblation,
+                    "--size": Math.max(0.001, feature.getTokenEdgeWeight(offset)),
                   } as React.CSSProperties
                 }
               ></td>

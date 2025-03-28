@@ -38,7 +38,7 @@ if __name__ == "__main__":
 
     # Tokenize and save the training dataset
     train_dataset = train_dataset.map(tokenize, num_proc=num_proc)
-    save_dataset(train_dataset, out_dir, "train", num_shards=2)
+    save_dataset(train_dataset, out_dir, "train", num_shards=8)
 
     # Tokenize and save the validation dataset
     val_dataset = val_dataset.map(tokenize, num_proc=num_proc)

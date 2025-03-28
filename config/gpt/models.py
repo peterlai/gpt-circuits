@@ -30,6 +30,7 @@ class GPTConfig(Config):
         """
         Only export integer fields (exclude name and device)
         """
+        # TODO: Is dangerous, should explicitly whitelist fields
         return {k: v for (k, v) in fields if type(v) is int}
 
 
@@ -60,11 +61,11 @@ gpt_options: dict[str, GPTConfig] = map_options(
         n_embd=32,
     ),
     GPTConfig(
-        name="tiktoken_64x2",
+        name="tiktoken_256x4",
         block_size=128,
         vocab_size=TikTokenTokenizer.vocab_size,
-        n_layer=2,
+        n_layer=4,
         n_head=16,
-        n_embd=64,
+        n_embd=256,
     ),
 )

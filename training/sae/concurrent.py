@@ -2,6 +2,7 @@
 Train SAE weights for all layers concurrently.
 
 $ python -m training.sae.concurrent --config=standard.shakespeare_64x4 --load_from=shakespeare_64x4
+$ torchrun --standalone --nproc_per_node=8 -m training.sae.concurrent --config=jumprelu.stories_256x4 --load_from=stories_256x4
 """
 
 import argparse
@@ -47,6 +48,10 @@ class ConcurrentTrainer(SAETrainer):
 
         super().__init__(model, config)
 
+        if self.ddp:
+            # HACK: We're doing something that causes DDP to crash unless DDP optimization is disabled.
+            torch._dynamo.config.optimize_ddp = False  # type: ignore
+
     def output_to_loss(self, output: SparsifiedGPTOutput) -> torch.Tensor:
         """
         Return an array of losses instead of a single combined loss.
@@ -76,7 +81,7 @@ if __name__ == "__main__":
     # Load configuration
     config_name = args.config
     config = options[config_name]
-
+    assert "staircase" not in config.sae_config.sae_variant, "Staircase SAE variant is not supported for concurrent training."
     # Update outdir
     if args.name:
         config.name = args.name
