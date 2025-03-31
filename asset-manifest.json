@@ -1,6 +1,6 @@
 {
   "files": {
-    "main.css": "/gpt-circuits/static/css/main.fabfad78.css",
+    "main.css": "/gpt-circuits/static/css/main.294aa63f.css",
     "main.js": "/gpt-circuits/static/js/main.c1a0d199.js",
     "static/media/open-sans-latin-500-normal.woff2": "/gpt-circuits/static/media/open-sans-latin-500-normal.4014dc96fc81e6741eac.woff2",
     "static/media/open-sans-latin-300-normal.woff2": "/gpt-circuits/static/media/open-sans-latin-300-normal.6dacce4cff13d02117d6.woff2",
@@ -83,11 +83,11 @@
     "static/media/open-sans-greek-ext-500-normal.woff": "/gpt-circuits/static/media/open-sans-greek-ext-500-normal.bfe7c836cf6c1c0fc5a2.woff",
     "static/media/open-sans-greek-ext-700-normal.woff": "/gpt-circuits/static/media/open-sans-greek-ext-700-normal.9dded2d1769c929a982e.woff",
     "index.html": "/gpt-circuits/index.html",
-    "main.fabfad78.css.map": "/gpt-circuits/static/css/main.fabfad78.css.map",
+    "main.294aa63f.css.map": "/gpt-circuits/static/css/main.294aa63f.css.map",
     "main.c1a0d199.js.map": "/gpt-circuits/static/js/main.c1a0d199.js.map"
   },
   "entrypoints": [
-    "static/css/main.fabfad78.css",
+    "static/css/main.294aa63f.css",
     "static/js/main.c1a0d199.js"
   ]
 }
