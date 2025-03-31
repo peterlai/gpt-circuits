@@ -181,11 +181,13 @@ def main():
     experiment_params = ExperimentParams(
         task="magnitudes",
         ablator="zero",
+        edges = edge_arr,
         edge_selection_strategy=edge_selection,
         num_edges=num_edges,
         upstream_layer_idx=upstream_layer_num,
         num_samples=num_samples,
-        num_prompts=num_prompts,  
+        num_prompts=num_prompts,
+        random_seed=seed,  
         dataset_name=None
     )
     

@@ -9,17 +9,20 @@ from safetensors.torch import save_file, load_file
 
 # Imports from the project
 from config.sae.models import SAEConfig
+from circuits import TokenlessEdge
 
 @dataclass
 class ExperimentParams:
     """Parameters of the experimental setup."""
     task: str
     ablator: str
+    edges: frozenset[TokenlessEdge]
     edge_selection_strategy: str
     num_edges: int
     upstream_layer_idx: int
     num_samples: int
     num_prompts: int
+    random_seed: int
     dataset_name: Optional[str] = None
 
 @dataclass
