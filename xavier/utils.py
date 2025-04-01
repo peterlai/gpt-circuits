@@ -229,16 +229,31 @@ def get_attribution_rankings(attribution_tensor):
     sorted_indices = torch.argsort(flattened, descending=True)
     
     # Store the top indices and their values in a structured way
-    ranked_indices = []
-    attribution_values = []
+    unranked_zero_indices = []
+    ranked_positive_indices = []
+    ranked_negative_indices = []
+    attribution_values_positive = []
+    attribution_values_negative = []
     
     for i in range(len(sorted_indices)):
         idx = sorted_indices[i].item()
         # Convert flat index to 2D coordinates
         row, col = idx // attribution_tensor.shape[1], idx % attribution_tensor.shape[1]
-        ranked_indices.append((row, col))
-        attribution_values.append(attribution_tensor[row, col].item())
+
+        if attribution_tensor[row, col] == 0:
+            unranked_zero_indices.append((row, col))
+        elif attribution_tensor[row, col] > 0:
+            ranked_positive_indices.append((row, col))
+            attribution_values_positive.append(attribution_tensor[row, col].item())
+        elif attribution_tensor[row, col] < 0:
+            ranked_negative_indices.append((row, col))
+            attribution_values_negative.append(attribution_tensor[row, col].item())
     
+    # Combine rankings
+    random.shuffle(unranked_zero_indices)  # Randomly shuffle zero indices to remove structured bias
+    ranked_indices = ranked_positive_indices + unranked_zero_indices + ranked_negative_indices
+    attribution_values = attribution_values_positive + [0] * len(unranked_zero_indices) + attribution_values_negative
+
     return ranked_indices, attribution_values
 
 def load_experiments_and_extract_data(exp_output, data_dir, sae_variant, edge_sort, layers):
