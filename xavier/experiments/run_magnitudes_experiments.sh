@@ -1,16 +1,16 @@
 #!/bin/bash
-# filepath: xavier/experiments/run_magnitudes_experiments_topk.sh
+# filepath: xavier/experiments/run_magnitudes_experiments.sh
 
 # Default parameters
 NUM_SAMPLES=2
-NUM_PROMPTS=5
+NUM_PROMPTS=1
 SEED=125
 
 # Parameters to loop over
 EDGE_SELECTIONS=("random")
-UPSTREAM_LAYERS=(0 1 2 3)
+UPSTREAM_LAYERS=(0 1)
 EDGE_SET=(10 29136 58262 87388 116514 145640 174766 203892 233018 262143 262144)
-SAE_VARIANTS=("standard")
+SAE_VARIANTS=("topk")
 
 # Create log directory if it doesn't exist
 LOG_DIR="xavier/experiments/logs"

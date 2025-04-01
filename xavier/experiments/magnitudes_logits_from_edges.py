@@ -12,6 +12,7 @@ import numpy as np
 import json
 import argparse
 from safetensors.torch import load_model, load_file, save_file
+import torch.nn.functional as F
 
 # Path setup
 project_root = Path(__file__).parent.parent.parent
@@ -129,7 +130,7 @@ def main():
         with model.use_saes(layers_to_patch=[upstream_layer_num, upstream_layer_num + 1]) as encoder_outputs:
             _ = model(input_ids)
             upstream_magnitudes = encoder_outputs[upstream_layer_num].feature_magnitudes
-            downstream_magnitudes = encoder_outputs[upstream_layer_num + 1].feature_magnitudes
+            downstream_magnitudes_full_circuit = encoder_outputs[upstream_layer_num + 1].feature_magnitudes
     
     # Create edges
     num_upstream_features = model.config.n_features[upstream_layer_num]
@@ -159,13 +160,13 @@ def main():
 
     elif edge_selection == "outer":
         # Only sensible for a target token (here the final token)
-        # full_outer_tensor = torch.einsum('tf,g->tfg', upstream_magnitudes.squeeze(), downstream_magnitudes.squeeze()[-1])
+        # full_outer_tensor = torch.einsum('tf,g->tfg', upstream_magnitudes.squeeze(), downstream_magnitudes_full_circuit.squeeze()[-1])
         # outer_tensor = torch.mean(full_outer_tensor, dim=0)
         # all_edges, _ = get_attribution_rankings(outer_tensor)
         # edge_arr = all_edges[:num_edges]
 
         # Only sensible for a target token (here the first token)
-        outer_tensor = torch.einsum('f,g->fg', upstream_magnitudes.squeeze()[0], downstream_magnitudes.squeeze()[0])
+        outer_tensor = torch.einsum('f,g->fg', upstream_magnitudes.squeeze()[0], downstream_magnitudes_full_circuit.squeeze()[0])
         all_edges, _ = get_attribution_rankings(outer_tensor)
         edge_arr = all_edges[:num_edges]
     
@@ -179,7 +180,7 @@ def main():
     if num_edges == num_downstream_features * num_downstream_features:
         # Use the full circuit magnitudes
         print(f"Using full circuit magnitudes...")
-        downstream_magnitudes = downstream_magnitudes
+        downstream_magnitudes = downstream_magnitudes_full_circuit
     else:
         downstream_magnitudes = compute_batched_downstream_magnitudes_from_edges(
             model=model,
@@ -190,14 +191,30 @@ def main():
             num_samples=num_samples
         )
 
-    # Compute logits
+    # Compute logits subcircuit
     x_reconstructed = model.saes[str(upstream_layer_num + 1)].decode(downstream_magnitudes) 
     predicted_logits = model.gpt.forward_with_patched_activations(
         x_reconstructed, layer_idx=upstream_layer_num + 1
     )  # Shape: (num_batches, T, V)
 
-    print(predicted_logits.shape)
-    
+    # Compute logits full circuit
+    x_reconstructed_full_circuit = model.saes[str(upstream_layer_num + 1)].decode(downstream_magnitudes_full_circuit) 
+    predicted_logits_full_circuit = model.gpt.forward_with_patched_activations(
+        x_reconstructed_full_circuit, layer_idx=upstream_layer_num + 1
+    )  # Shape: (num_batches, T, V)
+
+    # Compute KL divergence between full and subcircuit logits
+    probs_full_circuit = F.softmax(predicted_logits_full_circuit, dim=-1)
+    probs = F.softmax(predicted_logits, dim=-1)
+
+    # Compute KL divergence: KL(P||Q) = sum_i P(i) * log(P(i)/Q(i))
+    epsilon = 1e-8
+    kl_div = probs_full_circuit * torch.log((probs_full_circuit + epsilon) / (probs + epsilon))
+    kl_div = kl_div.sum(dim=-1)  # Sum over vocabulary dimension
+
+    print(f"KL divergence shape: {kl_div.shape}")
+
+    # Compute the time taken for the computation
     execution_time = time.time() - start_time
     print(f"Computation completed in {execution_time:.2f} seconds")
     
@@ -218,11 +235,12 @@ def main():
     experiment_results = ExperimentResults(
         feature_magnitudes=downstream_magnitudes,
         logits=predicted_logits,
+        kl_divergence=kl_div,
         execution_time=execution_time
     )
     
     experiment_output = ExperimentOutput(
-        experiment_id=f"{experiment_params.task}_{sae_variant}_{upstream_layer_num}_{num_edges}_{edge_selection}",
+        experiment_id=f"{experiment_params.task}_{sae_variant}_{edge_selection}_{upstream_layer_num}_{num_edges}",
         timestamp=datetime.datetime.now(),
         model_config=config,
         experiment_params=experiment_params,
