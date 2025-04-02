@@ -15,10 +15,9 @@ import torch
 
 from config import TrainingConfig
 from config.sae.models import SAEConfig
-from config.sae.training import SAETrainingConfig, options
-from models.sae import SparseAutoencoder
-from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
-from models.sae.topk import StaircaseTopKSharedContext, StaircaseTopKSAE
+from config.sae.training import options
+from models.sparsified import SparsifiedGPT
+from models.sae.topk import StaircaseTopKSAE
 from training.sae.concurrent import ConcurrentTrainer
 
 
@@ -56,7 +55,8 @@ class StaircaseConcurrentTrainer(ConcurrentTrainer):
         if torch.all(is_best):
             # Save SAE modules
             for module in self.model.saes.values():
-                assert isinstance(module, StaircaseTopKSAE)
+                assert "staircase" in module.config.sae_variant, \
+                    f"Staircase trainer must use staircase SAE variant, Error: {module.config.sae_variant}"
                 module.save(Path(dir))
 
 

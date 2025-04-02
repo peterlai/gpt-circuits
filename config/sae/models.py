@@ -14,6 +14,7 @@ class SAEVariant(str, Enum):
     JUMP_RELU_STAIRCASE = "jumprelu_staircase"
     TOPK = "topk"
     TOPK_STAIRCASE = "topk_staircase"
+    TOPK_STAIRCASE_DETACH = "topk_staircase_detach"
 
 
 @dataclass
@@ -76,6 +77,13 @@ sae_options: dict[str, SAEConfig] = map_options(
         gpt_config=gpt_options["ascii_64x4"],
         n_features=tuple(64 * n for n in (8, 16, 24, 32, 40)),
         sae_variant=SAEVariant.TOPK_STAIRCASE,
+        top_k=(10, 10, 10, 10, 10),
+    ),
+    SAEConfig(
+        name="topk-staircase-10-x8-detach.shakespeare_64x4",
+        gpt_config=gpt_options["ascii_64x4"],
+        n_features=tuple(64 * n for n in (8, 16, 24, 32, 40)),
+        sae_variant=SAEVariant.TOPK_STAIRCASE_DETACH,
         top_k=(10, 10, 10, 10, 10),
     ),
     SAEConfig(

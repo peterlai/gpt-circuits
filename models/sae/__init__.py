@@ -73,6 +73,7 @@ class SparseAutoencoder(nn.Module, ABC):
         :param model: The model to which the SAE is applied.
         """
         self.layer_idx = layer_idx
+        self.config = config
         super().__init__()
 
     @abstractmethod
