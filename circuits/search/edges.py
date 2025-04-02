@@ -469,9 +469,16 @@ def compute_batched_downstream_magnitudes_from_edges(
             for node in dependencies_to_tokenless_nodes[expanded_dependencies.inverse[circuit_variant.nodes]]:
                 node_sampled_magnitudes = magnitudes[:, :target_token_idx+1, node.feature_idx]
                 # Average over num_samples
-                # TO DO: add flag for topk (to perform topk sampling)
                 result[:target_token_idx+1, node.feature_idx] = torch.mean(node_sampled_magnitudes, dim=0)
-    
+
+        # Apply top_k if specified
+        if model.config.top_k:
+            # Zero out all but the top-k activations
+            top_k_values, _ = torch.topk(result, k=model.config.top_k[downstream_layer_idx], dim=-1)
+            mask = result >= top_k_values[..., -1].unsqueeze(-1)
+            result = result * mask.float()
+            #result = torch.topk(result, k=model.config.top_k[downstream_layer_idx], dim=-1)
+        
         result_list.append(result)
 
     # Normalization?
