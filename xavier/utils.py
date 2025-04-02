@@ -2,6 +2,11 @@ import torch
 import torch.nn.functional as Fn
 import random
 import numpy as np
+import glob
+import os
+from safetensors.torch import load_file
+import json
+import re
 
 from circuits import Circuit, Edge, Node, TokenlessNode, TokenlessEdge
 
@@ -224,14 +229,173 @@ def get_attribution_rankings(attribution_tensor):
     sorted_indices = torch.argsort(flattened, descending=True)
     
     # Store the top indices and their values in a structured way
-    ranked_indices = []
-    attribution_values = []
+    unranked_zero_indices = []
+    ranked_positive_indices = []
+    ranked_negative_indices = []
+    attribution_values_positive = []
+    attribution_values_negative = []
     
     for i in range(len(sorted_indices)):
         idx = sorted_indices[i].item()
         # Convert flat index to 2D coordinates
         row, col = idx // attribution_tensor.shape[1], idx % attribution_tensor.shape[1]
-        ranked_indices.append((row, col))
-        attribution_values.append(attribution_tensor[row, col].item())
+
+        if attribution_tensor[row, col] == 0:
+            unranked_zero_indices.append((row, col))
+        elif attribution_tensor[row, col] > 0:
+            ranked_positive_indices.append((row, col))
+            attribution_values_positive.append(attribution_tensor[row, col].item())
+        elif attribution_tensor[row, col] < 0:
+            ranked_negative_indices.append((row, col))
+            attribution_values_negative.append(attribution_tensor[row, col].item())
     
+    # Combine rankings
+    random.shuffle(unranked_zero_indices)  # Randomly shuffle zero indices to remove structured bias
+    ranked_indices = ranked_positive_indices + unranked_zero_indices + ranked_negative_indices
+    attribution_values = attribution_values_positive + [0] * len(unranked_zero_indices) + attribution_values_negative
+
     return ranked_indices, attribution_values
+
+def load_experiments_and_extract_data(exp_output, data_dir, sae_variant, edge_sort, layers):
+
+    """
+    Extract data from experiments based on the specified parameters.
+
+    :param exp_output: Experimental data to load ('feature_magnitudes', 'logits' or 'kl_divergence').
+    :param project_root:
+    :param run_dir:
+    :param sae_variant:
+    :param edge_sort:
+    :param layers:
+
+    """
+    # Set pattern template for experiment IDs
+    pattern_template = "magnitudes_" + f"{sae_variant}_" + f"{edge_sort}_" +  "{layer}_"
+
+    # Get all safetensor files in the directory
+    safetensor_files = glob.glob(str(data_dir / "*.safetensors"))
+
+    # Dictionary to store all loaded experiments
+    experiments = {}
+
+    # Load each experiment
+    for file_path in safetensor_files:
+        # Load tensors
+        tensors = load_file(file_path)
+        
+        # Load metadata if it exists
+        metadata_path = file_path + ".metadata.json"
+        metadata = {}
+        if os.path.exists(metadata_path):
+            with open(metadata_path, "r") as f:
+                metadata = json.load(f)
+        
+        # Extract experiment ID from filename
+        filename = os.path.basename(file_path)
+        experiment_id = filename.split("_")[:-1]  # Remove timestamp part
+        experiment_id = "_".join(experiment_id)
+        
+        # Store in dictionary
+        experiments[experiment_id] = {
+            "tensors": tensors,
+            "metadata": metadata,
+            "file_path": file_path
+        }
+
+    print(f"Loaded {len(experiments)} experiments from {data_dir}")
+
+    # Example of accessing data from the first experiment
+    if experiments:
+        first_exp_id = list(experiments.keys())[0]
+        print(f"\nExample experiment ID: {first_exp_id}")
+        print(f"Available tensor keys: {list(experiments[first_exp_id]['tensors'].keys())}")
+        
+        # If feature_magnitudes exists, print its shape
+        if 'feature_magnitudes' in experiments[first_exp_id]['tensors']:
+            feat_mag = experiments[first_exp_id]['tensors']['feature_magnitudes']
+            print(f"Feature magnitudes shape: {feat_mag.shape}")
+        
+        # If logits exists, print its shape
+        if 'logits' in experiments[first_exp_id]['tensors']:
+            logits = experiments[first_exp_id]['tensors']['logits']
+            print(f"Logits shape: {logits.shape}")
+
+        # If kl_divergence exists, print its shape
+        if 'kl_divergence' in experiments[first_exp_id]['tensors']:
+            kl_div = experiments[first_exp_id]['tensors']['kl_divergence']
+            print(f"KL divergence shape: {kl_div.shape}")
+
+    # Process each layer
+    layer_data_values = []
+
+    for layer in layers:
+        # Extract all experiments with the specified pattern
+        random_level_exps = {}
+        pattern = re.compile(pattern_template.format(layer=layer) + r'(\d+)')
+
+        for exp_id, exp_data in experiments.items():
+            if f'{edge_sort}' in exp_id and exp_id.startswith(pattern_template.format(layer=layer)):
+                match = pattern.search(exp_id)
+                if match:
+                    num_features = int(match.group(1))
+                    random_level_exps[num_features] = exp_data
+
+        # Sort experiments by number of features
+        sorted_exps = sorted(random_level_exps.items())
+
+        # Extract feature counts and exp_output values
+        feature_counts = []
+        random_data_values = []
+
+        for num_features, exp_data in sorted_exps:
+            feature_counts.append(num_features)
+
+            # Get exp_output values
+            data = exp_data['tensors'][exp_output]
+            random_data_values.append(data)
+
+        # Store results for this layer
+        layer_data_values.append(random_data_values)
+    
+    return layer_data_values, feature_counts
+
+
+def bootstrap_ci(data, n_bootstrap=1000, statistic=np.mean, confidence=0.95):
+    """
+    Calculate bootstrap confidence interval for the given statistic.
+    
+    Parameters:
+    -----------
+    data : array-like
+        The data to bootstrap
+    n_bootstrap : int
+        Number of bootstrap samples to generate
+    statistic : function
+        The statistic to compute (e.g., np.mean, np.median)
+    confidence : float
+        Confidence level (e.g., 0.95 for 95% CI)
+    
+    Returns:
+    --------
+    tuple
+        Lower and upper bounds of the confidence interval
+    """
+    bootstrap_stats = []
+    
+    # Create bootstrap samples and compute statistics
+    for _ in range(n_bootstrap):
+        # Resample with replacement
+        resampled = np.random.choice(data, size=len(data), replace=True)
+        # Calculate statistic
+        bootstrap_stats.append(statistic(resampled))
+    
+    # Sort the bootstrap statistics
+    bootstrap_stats.sort()
+    
+    # Calculate the confidence interval
+    alpha = (1 - confidence) / 2
+    lower_idx = int(alpha * n_bootstrap)
+    upper_idx = int((1 - alpha) * n_bootstrap)
+    
+    # Return the confidence interval
+    return bootstrap_stats[lower_idx], bootstrap_stats[upper_idx]

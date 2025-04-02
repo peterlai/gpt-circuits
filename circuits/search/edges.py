@@ -442,33 +442,43 @@ def compute_batched_downstream_magnitudes_from_edges(
         )
 
         # Create a downstream circuit with all nodes and compute downstream magnitudes
-        all_downstream_circuit = Circuit(nodes=frozenset())
+        dummy_circuit = Circuit(nodes=frozenset()) # Dummy circuit not used for downstream computation
         dummy_downstream = compute_downstream_magnitudes(  # Shape: (num_samples, T, F)
             model,
             upstream_layer_idx,
-            {all_downstream_circuit: upstream_magnitudes[i].unsqueeze(0)}
+            {dummy_circuit: upstream_magnitudes[i].unsqueeze(0)}
         )
-        dummy_downstream_magnitudes = dummy_downstream[all_downstream_circuit].squeeze(0)
+        dummy_downstream_magnitudes = dummy_downstream[dummy_circuit].squeeze(0)
 
         # Initialise the result tensor as the patched downstream magnitudes
         downstream_layer_idx = upstream_layer_idx + 1
+        empty_circuit = Circuit(nodes=frozenset())
         patched_downstream_magnitudes = patch_feature_magnitudes(  # Shape: (num_samples, T, F)
             ablator,
             downstream_layer_idx,
             target_token_idx,
-            [all_downstream_circuit],
+            [empty_circuit],
             dummy_downstream_magnitudes,
             num_samples=num_samples,
         )
-        result = patched_downstream_magnitudes[all_downstream_circuit][0]
+        result = patched_downstream_magnitudes[empty_circuit][0]
         
         # Now fill in the actual computed values from our circuit variants
         for circuit_variant, magnitudes in sampled_downstream_magnitudes.items():
             # Compress circuit_variant.nodes over the token index
             for node in dependencies_to_tokenless_nodes[expanded_dependencies.inverse[circuit_variant.nodes]]:
                 node_sampled_magnitudes = magnitudes[:, :target_token_idx+1, node.feature_idx]
+                # Average over num_samples
                 result[:target_token_idx+1, node.feature_idx] = torch.mean(node_sampled_magnitudes, dim=0)
-    
+
+        # Apply top_k if specified
+        if model.config.top_k:
+            # Zero out all but the top-k activations
+            top_k_values, _ = torch.topk(result, k=model.config.top_k[downstream_layer_idx], dim=-1)
+            mask = result >= top_k_values[..., -1].unsqueeze(-1)
+            result = result * mask.float()
+            #result = torch.topk(result, k=model.config.top_k[downstream_layer_idx], dim=-1)
+        
         result_list.append(result)
 
     # Normalization?

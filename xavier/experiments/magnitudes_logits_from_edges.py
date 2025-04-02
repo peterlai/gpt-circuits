@@ -12,6 +12,7 @@ import numpy as np
 import json
 import argparse
 from safetensors.torch import load_model, load_file, save_file
+import torch.nn.functional as F
 
 # Path setup
 project_root = Path(__file__).parent.parent.parent
@@ -38,7 +39,7 @@ def main():
     parser.add_argument("--num-samples", type=int, default=2, help="Number of samples for patching")
     parser.add_argument("--num-prompts", type=int, default=1, help="Number of prompts to use from validation data")
     parser.add_argument("--edge-selection", type=str, default="random", 
-                        choices=["random", "gradient"], help="Edge selection strategy")
+                        choices=["random", "gradient", "gradient_reversed", "outer"], help="Edge selection strategy")
     parser.add_argument("--sae-variant", type=str, default="standard", 
                         choices=["standard", "topk", "topk-x40", "topk-staircase"], help="Type of SAE")
     parser.add_argument("--seed", type=int, default=125, help="Random seed")
@@ -54,6 +55,10 @@ def main():
     edge_selection = args.edge_selection
     sae_variant = args.sae_variant
     seed = args.seed
+
+    if edge_selection == "outer":
+        assert upstream_layer_num==3, "Only layer 3 is supported for outer product"
+        assert num_prompts==1, "Only 1 prompt is supported for outer product"
 
     # Set random seed
     random.seed(seed)
@@ -125,7 +130,7 @@ def main():
         with model.use_saes(layers_to_patch=[upstream_layer_num, upstream_layer_num + 1]) as encoder_outputs:
             _ = model(input_ids)
             upstream_magnitudes = encoder_outputs[upstream_layer_num].feature_magnitudes
-            downstream_magnitudes = encoder_outputs[upstream_layer_num + 1].feature_magnitudes
+            downstream_magnitudes_full_circuit = encoder_outputs[upstream_layer_num + 1].feature_magnitudes
     
     # Create edges
     num_upstream_features = model.config.n_features[upstream_layer_num]
@@ -144,6 +149,26 @@ def main():
         tensors = load_file(gradient_dir)
         all_edges, _ = get_attribution_rankings(tensors[f'attributions{upstream_layer_num}-{upstream_layer_num + 1}'])
         edge_arr = all_edges[:num_edges]
+
+    elif edge_selection == "gradient_reversed":
+        gradient_dir = project_root / "Andy/data/attributions.safetensors"
+        tensors = load_file(gradient_dir)
+        all_edges, _ = get_attribution_rankings(tensors[f'attributions{upstream_layer_num}-{upstream_layer_num + 1}'])
+        # Reverse the order of edges
+        all_edges_reversed = all_edges[::-1]
+        edge_arr = all_edges_reversed[:num_edges]
+
+    elif edge_selection == "outer":
+        # Only sensible for a target token (here the final token)
+        # full_outer_tensor = torch.einsum('tf,g->tfg', upstream_magnitudes.squeeze(), downstream_magnitudes_full_circuit.squeeze()[-1])
+        # outer_tensor = torch.mean(full_outer_tensor, dim=0)
+        # all_edges, _ = get_attribution_rankings(outer_tensor)
+        # edge_arr = all_edges[:num_edges]
+
+        # Only sensible for a target token (here the first token)
+        outer_tensor = torch.einsum('f,g->fg', upstream_magnitudes.squeeze()[0], downstream_magnitudes_full_circuit.squeeze()[0])
+        all_edges, _ = get_attribution_rankings(outer_tensor)
+        edge_arr = all_edges[:num_edges]
     
     # Create TokenlessEdge objects
     edges = create_tokenless_edges_from_array(edge_arr, upstream_layer_num)
@@ -155,7 +180,7 @@ def main():
     if num_edges == num_downstream_features * num_downstream_features:
         # Use the full circuit magnitudes
         print(f"Using full circuit magnitudes...")
-        downstream_magnitudes = downstream_magnitudes
+        downstream_magnitudes = downstream_magnitudes_full_circuit
     else:
         downstream_magnitudes = compute_batched_downstream_magnitudes_from_edges(
             model=model,
@@ -166,14 +191,30 @@ def main():
             num_samples=num_samples
         )
 
-    # Compute logits
+    # Compute logits subcircuit
     x_reconstructed = model.saes[str(upstream_layer_num + 1)].decode(downstream_magnitudes) 
     predicted_logits = model.gpt.forward_with_patched_activations(
         x_reconstructed, layer_idx=upstream_layer_num + 1
     )  # Shape: (num_batches, T, V)
 
-    print(predicted_logits.shape)
-    
+    # Compute logits full circuit
+    x_reconstructed_full_circuit = model.saes[str(upstream_layer_num + 1)].decode(downstream_magnitudes_full_circuit) 
+    predicted_logits_full_circuit = model.gpt.forward_with_patched_activations(
+        x_reconstructed_full_circuit, layer_idx=upstream_layer_num + 1
+    )  # Shape: (num_batches, T, V)
+
+    # Compute KL divergence between full and subcircuit logits
+    probs_full_circuit = F.softmax(predicted_logits_full_circuit, dim=-1)
+    probs = F.softmax(predicted_logits, dim=-1)
+
+    # Compute KL divergence: KL(P||Q) = sum_i P(i) * log(P(i)/Q(i))
+    epsilon = 1e-8
+    kl_div = probs_full_circuit * torch.log((probs_full_circuit + epsilon) / (probs + epsilon))
+    kl_div = kl_div.sum(dim=-1)  # Sum over vocabulary dimension
+
+    print(f"KL divergence shape: {kl_div.shape}")
+
+    # Compute the time taken for the computation
     execution_time = time.time() - start_time
     print(f"Computation completed in {execution_time:.2f} seconds")
     
@@ -181,22 +222,25 @@ def main():
     experiment_params = ExperimentParams(
         task="magnitudes",
         ablator="zero",
+        edges = edge_arr,
         edge_selection_strategy=edge_selection,
         num_edges=num_edges,
         upstream_layer_idx=upstream_layer_num,
         num_samples=num_samples,
-        num_prompts=num_prompts,  
+        num_prompts=num_prompts,
+        random_seed=seed,  
         dataset_name=None
     )
     
     experiment_results = ExperimentResults(
         feature_magnitudes=downstream_magnitudes,
         logits=predicted_logits,
+        kl_divergence=kl_div,
         execution_time=execution_time
     )
     
     experiment_output = ExperimentOutput(
-        experiment_id=f"{experiment_params.task}_{sae_variant}_{upstream_layer_num}_{num_edges}_{edge_selection}",
+        experiment_id=f"{experiment_params.task}_{sae_variant}_{edge_selection}_{upstream_layer_num}_{num_edges}",
         timestamp=datetime.datetime.now(),
         model_config=config,
         experiment_params=experiment_params,
@@ -205,7 +249,7 @@ def main():
  
     # Save results
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    output_path = project_root / f"xavier/experiments/data/{experiment_output.experiment_id}_{timestamp}.safetensors"
+    output_path = project_root / f"xavier/experiments/data/testing/{experiment_output.experiment_id}_{timestamp}.safetensors"
     experiment_output.to_safetensor(output_path)
     
     print("Done!")
