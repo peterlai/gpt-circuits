@@ -85,6 +85,14 @@ options: dict[str, SAETrainingConfig] = map_options(
     #     ),
     # ),
      SAETrainingConfig(
+        name="mlp.standard.shakespeare_64x4",
+        sae_config=sae_options["mlp.standardx8.shakespeare_64x4"],
+        **tiny_defaults,
+        loss_coefficients=LossCoefficients(
+            sparsity=(0.06, 0.06, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1),  # Targets L0s of ~10
+        ),
+    ),
+     SAETrainingConfig(
         name="standard.tiny_32x4",
         sae_config=sae_options["standardx16.tiny_32x4"],
         **tiny_defaults,

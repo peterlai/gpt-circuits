@@ -16,7 +16,7 @@ from models.sae import EncoderOutput, SAELossComponents, SparseAutoencoder
 from models.sae.gated import GatedSAE, GatedSAE_V2
 from models.sae.jumprelu import JumpReLUSAE, StaircaseJumpReLU
 from models.sae.standard import StandardSAE, StandardSAE_V2
-from models.sae.topk import StaircaseTopKSAE, TopKSAE, StaircaseTopKSAEDetach
+from models.sae.topk import StaircaseTopKSAE, StaircaseTopKSAEDetach, TopKSAE
 
 
 @dataclasses.dataclass
@@ -165,7 +165,7 @@ class SparsifiedGPT(nn.Module):
             # Output values will be overwritten (hack to pass object by reference)
             output = EncoderOutput(torch.tensor(0), torch.tensor(0))
             should_patch_activations = layer_idx in layers_to_patch
-            hook = self.create_sae_hook(sae, output, should_patch_activations)
+            hook = self.create_sae_pre_hook(sae, output, should_patch_activations)
             hooks.append(target.register_forward_pre_hook(hook))  # type: ignore
             encoder_outputs[layer_idx] = output
 
@@ -177,7 +177,7 @@ class SparsifiedGPT(nn.Module):
             for hook in hooks:
                 hook.remove()
 
-    def create_sae_hook(self, sae, output, should_patch_activations):
+    def create_sae_pre_hook(self, sae, output, should_patch_activations):
         """
         Create a forward pre-hook for the given layer index for applying sparse autoencoding.
 

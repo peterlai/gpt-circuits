@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
+
 from config import Config, map_options
 from config.gpt.models import GPTConfig, gpt_options
 
@@ -39,6 +40,12 @@ class SAEConfig(Config):
 
 # SAE configuration options
 sae_options: dict[str, SAEConfig] = map_options(
+    SAEConfig(
+        name="mlp.standardx8.shakespeare_64x4",
+        gpt_config=gpt_options["ascii_64x4"],
+        n_features=tuple(64 * n for n in (8, 8, 8, 8, 8, 8, 8 , 8)),
+        sae_variant=SAEVariant.STANDARD,
+    ),
     SAEConfig(
         name="standardx16.tiny_32x4",
         gpt_config=gpt_options["tiktoken_32x4"],
