@@ -19,6 +19,7 @@ class StaircaseBaseSAE():
     def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients], model: nn.Module, shared_context: Type[nn.Module]):
 
         # Shared context from which we can get weight parameters.
+        self.config = config
         assert "staircase" in config.sae_variant, "staircase variant must be used with staircase SAEs"
         self.is_first = False
         if not hasattr(model, "shared_context"):
@@ -26,6 +27,7 @@ class StaircaseBaseSAE():
             self.is_first = True
             model.shared_context = shared_context(config)
         self.shared_context = model.shared_context  # type: ignore
+        self.layer_idx = layer_idx
         
     def save(self, dirpath: Path) -> None:
         # Save non-shared parameters
