@@ -106,13 +106,14 @@ class TopKSharedContext(nn.Module):
         self.W_enc.data = self.W_dec.data.T.detach().clone()  # initialize W_enc from W_dec
 
         
-class StaircaseTopKSAE(TopKBase, StaircaseBaseSAE):
+class StaircaseTopKSAE(TopKBase, StaircaseBaseSAE, SparseAutoencoder):
     """
     TopKSAEs that share weights between layers, and each child uses slices into weights inside shared context.
     """
 
     def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients], model: nn.Module):
-        # We don't want to call init for TopKSAE because we need custom logic for instantiating weight parameters.
+        # We don't want to call init for TopKSAE because we need custom logic for instantiating weight parameters
+        SparseAutoencoder.__init__(self, layer_idx, config, loss_coefficients, model)
         TopKBase.__init__(self, layer_idx, config, loss_coefficients, model)
         StaircaseBaseSAE.__init__(self, layer_idx, config, loss_coefficients, model, TopKSharedContext)
         # All weight parameters are just views from the shared context.
