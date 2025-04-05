@@ -85,9 +85,9 @@ class SparsifiedGPT(nn.Module):
         if is_eval and targets is not None:
             # Calculate cross-entropy loss increase for each SAE layer
             ce_loss_increases = []
-            for layer_idx, output in encoder_outputs.items():
+            for activation_idx, output in encoder_outputs.items():
                 x = output.reconstructed_activations
-                sae_logits = self.gpt.forward_with_patched_activations(x, layer_idx)
+                sae_logits = self.gpt.forward_with_patched_activations(x, activation_idx)
                 sae_ce_loss = F.cross_entropy(sae_logits.view(-1, sae_logits.size(-1)), targets.view(-1))
                 ce_loss_increases.append(sae_ce_loss - cross_entropy_loss)
             ce_loss_increases = torch.stack(ce_loss_increases)

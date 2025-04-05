@@ -91,30 +91,6 @@ class SparsifiedMLPGPT(SparsifiedGPT):
             for hook in hooks:
                 hook.remove()
 
-    def create_sae_pre_hook(self, sae, output, should_patch_activations):
-        """
-        Create a forward pre-hook for the given layer index for applying sparse autoencoding.
-
-        :param sae: SAE module to use for the forward pass.
-        :param output: Encoder output to be updated.
-        :param should_patch_activations: Whether to patch activations.
-        """
-
-        @torch.compiler.disable(recursive=False)  # type: ignore
-        def sae_hook(_, inputs):
-            """
-            NOTE: Compiling seems to struggle with branching logic, and so we disable it (non-recursively).
-            """
-
-            x = inputs[0]
-            # Override field values instead of replacing reference
-            output.__dict__ = sae(x).__dict__
-
-            # Patch activations if needed
-            return (output.reconstructed_activations,) if should_patch_activations else inputs
-
-        return sae_hook
-
     def create_sae_post_hook(self, sae, sae_output, should_patch_activations):
         """
         Create a forward post-hook for the given layer index for applying sparse autoencoding.
@@ -135,7 +111,9 @@ class SparsifiedMLPGPT(SparsifiedGPT):
             sae_output.__dict__ = sae(x).__dict__
 
             # Patch activations if needed
-            return output.reconstructed_activations if should_patch_activations else output
+            return (
+                output.reconstructed_activations if should_patch_activations else output
+            )
 
         return sae_hook
 
@@ -144,6 +122,6 @@ class SparsifiedMLPGPT(SparsifiedGPT):
         SAE layer -> Targeted module for forward hook.
 
         Every pair of SAE layers target the same MLP, representing either the inputs or outputs.
-        E.g.: Layers 0 and 1 both target the first MLP. 
+        E.g.: Layers 0 and 1 both target the first MLP.
         """
         return self.gpt.transformer.h[layer_idx // 2].mlp  # type: ignore
