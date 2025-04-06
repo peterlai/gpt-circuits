@@ -3,7 +3,7 @@
 # %autoreload 2         # COMMENT OUT or REMOVE
 # %%
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+#os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 # Change current working directory to parent
 while not os.getcwd().endswith("gpt-circuits"):
     os.chdir("..")
