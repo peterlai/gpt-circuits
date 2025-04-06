@@ -141,8 +141,8 @@ class JSAESparsifiedGPT(SparsifiedGPT):
             assert isinstance(inputs, tuple), f"inputs: {inputs}"
             assert hook_loc == 'mlpin' or outputs is not None, f"hook_loc: {hook_loc}, outputs: {outputs}"
             # TODO: Why is inputs wrapped in a tuple, but outputs is not?
-            activations = inputs[0] if hook_loc == 'mlpin' else outputs
-            encoder_outputs[sae_key] = sae(activations)
+            x = inputs[0] if hook_loc == 'mlpin' else outputs
+            encoder_outputs[sae_key] = sae(x)
 
             # Patch activations if needed
             if should_patch_activations:
@@ -159,7 +159,7 @@ class JSAESparsifiedGPT(SparsifiedGPT):
         return int(sae_key.split('_')[0]), sae_key.split('_')[-1]
             
     @contextmanager
-    def use_saes(self, activations_to_patch: Iterable[tuple[int, str]] = ()):
+    def use_saes(self, activations_to_patch: Iterable[str] = ()):
         """
         Context manager for using SAE layers during the forward pass.
 

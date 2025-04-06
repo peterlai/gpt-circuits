@@ -84,6 +84,35 @@ for layer_idx in range(len(tl_gpt_mlp.blocks)):
 
 # %%
 
+out = gpt_mlp(tok, targets=tok, is_eval=True)
+tl_logits, cache = tl_gpt_mlp.run_with_cache(tok)
+
+torch.testing.assert_close(out.logits, tl_logits)
+
+
+for layer_idx in range(len(tl_gpt_mlp.blocks)):
+    
+    
+    mlp_in_hat = out.reconstructed_activations[f"{layer_idx}_mlpin"]
+    mlp_out_hat = out.reconstructed_activations[f"{layer_idx}_mlpout"]
+    
+    tl_mlp_in = cache[f'blocks.{layer_idx}.ln2.hook_normalized']
+    tl_mlp_in_hat = gpt_mlp.saes[f"{layer_idx}_mlpin"](tl_mlp_in).reconstructed_activations
+    
+    tl_mlp_out = cache[f'blocks.{layer_idx}.hook_mlp_out']
+    tl_mlp_out_hat = gpt_mlp.saes[f"{layer_idx}_mlpout"](tl_mlp_out).reconstructed_activations
+    
+    torch.testing.assert_close(mlp_in_hat, tl_mlp_in_hat)
+    torch.testing.assert_close(mlp_out_hat, tl_mlp_out_hat)
+    
+    tl_mlp_in_featmag = gpt_mlp.saes[f"{layer_idx}_mlpin"].encode(tl_mlp_in)
+    tl_mlp_out_featmag = gpt_mlp.saes[f"{layer_idx}_mlpout"].encode(tl_mlp_out)
+    
+    mlp_in_featmag = out.feature_magnitudes[f"{layer_idx}_mlpin"]
+    mlp_out_featmag = out.feature_magnitudes[f"{layer_idx}_mlpout"]
+    
+    torch.testing.assert_close(mlp_in_featmag, tl_mlp_in_featmag)
+    torch.testing.assert_close(mlp_out_featmag, tl_mlp_out_featmag)
 
 
 
@@ -103,3 +132,5 @@ for layer_idx in range(len(tl_gpt_mlp.blocks)):
     
     
 
+
+# %%

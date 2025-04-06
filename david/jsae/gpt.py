@@ -4,10 +4,26 @@ import torch
 from torch import Tensor
 from jaxtyping import Float
 from models.sparsified import SparsifiedGPT
+import os
+import json
+from safetensors.torch import load_model
 
 class JSAE_GPT(GPT):
     def __init__(self, config: GPTConfig):
         super().__init__(config)
+        
+    @classmethod
+    def load(cls, dir, device: torch.device):
+        meta_path = os.path.join(dir, "model.json")
+        weights_path = os.path.join(dir, "model.safetensors")
+
+        with open(meta_path, "r") as f:
+            meta = json.load(f)
+
+        model = JSAE_GPT(GPTConfig(**meta))
+
+        load_model(model, weights_path, device=device.type)
+        return model
         
     def forward_with_patched_activations(self, 
                                          x: Float[Tensor, "B T n_embd"], 
