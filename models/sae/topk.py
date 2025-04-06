@@ -71,7 +71,7 @@ class TopKBase(nn.Module):
         self.b_enc.data = torch.zeros_like(self.b_enc.data)
         #self.b_dec.data = torch.zeros_like(self.b_dec.data)
 
-class TopKSAE(SparseAutoencoder, TopKBase):
+class TopKSAE(TopKBase, SparseAutoencoder):
     """
     Top-k sparse autoencoder as described in:
     https://arxiv.org/pdf/2406.04093v1
