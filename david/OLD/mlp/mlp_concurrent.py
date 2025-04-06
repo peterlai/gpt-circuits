@@ -9,7 +9,7 @@ import torch
 from config import TrainingConfig
 from config.sae.training import SAETrainingConfig, options
 from models.sparsified import SparsifiedGPTOutput
-from david.OLD.sparsified_mlp import SparsifiedMLPGPT
+from david.OLD.mlp.sparsified_mlp import SparsifiedMLPGPT
 from training.sae import SAETrainer
 
 

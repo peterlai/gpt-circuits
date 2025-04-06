@@ -1,8 +1,8 @@
-"""
-Train SAE weights for all layers concurrently.
+# """
+# Train SAE weights for all layers concurrently.
 
-$ python -m david.jsae.train
-"""
+# $ python -m david.jsae.train
+# """
 # %%
 import argparse
 from pathlib import Path
@@ -25,7 +25,7 @@ from models.sparsified import SparsifiedGPTOutput
 from config.sae.models import SAEConfig, SAEVariant
 from config.gpt.models import gpt_options
 from config.sae.training import LossCoefficients
-from david.jsae.sparsified import JSAESparsifiedGPT
+from david.jsae.jsparsified import JSAESparsifiedGPT
 from training.sae import SAETrainer
 from training.sae.concurrent import ConcurrentTrainer
 from training import Trainer
@@ -103,7 +103,7 @@ if __name__ == "__main__":
     "gradient_accumulation_steps": 1,
     "learning_rate": 1e-3,
     "warmup_steps": 750,
-    "max_steps": 100,
+    "max_steps": 7500,
     "decay_lr": True,
     "min_lr": 1e-4,
 }

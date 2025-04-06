@@ -7,8 +7,9 @@ from typing import Optional, Type, Iterable
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from safetensors.torch import save_model, load_model
 
-from david.jsae.gpt import JSAE_GPT
+from david.jsae.jgpt import JSAE_GPT
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
 from config.sae.models import SAEConfig
 from config.sae.training import LossCoefficients
@@ -34,6 +35,31 @@ class JSAESparsifiedGPT(SparsifiedGPT):
         
         self.saes = nn.ModuleDict(dict([(key, sae_class(idx, config, loss_coefficients, self)) 
                                         for idx, key in enumerate(sae_keys)]))
+       
+        # While a nice idea, it might break other code as TopKSAE
+        # has a different save format 
+        # for sae_key, sae in self.saes.items():
+        #     self.saes[sae_key].sae_key = sae_key
+        
+        # def sae_save(self, dirpath: Path):
+        #     """
+        #     Save the sparse autoencoder to a file in the specified directory.
+        #     """
+        #     sae_key = self.sae_key
+        #     weights_path = dirpath / f"sae.{sae_key}.safetensors"
+        #     save_model(self, str(weights_path))
+
+        # def sae_load(self, dirpath: Path, device: torch.device):
+        #     """
+        #     Load the sparse autoencoder from a file in the specified directory.
+        #     """
+        #     sae_key = self.sae_key
+        #     weights_path = dirpath / f"sae.{sae_key}.safetensors"
+        #     load_model(self, weights_path, device=device.type)
+        
+        # for sae_key, sae in self.saes.items():
+        #     sae.save = lambda dirpath, current_sae=sae: sae_save(current_sae, dirpath)
+        #     sae.load = lambda dirpath, device, current_sae=sae: sae_load(current_sae, dirpath, device)
         
         
     def forward(
@@ -46,33 +72,34 @@ class JSAESparsifiedGPT(SparsifiedGPT):
         :param targets: Target tensor.
         :param is_eval: Whether the model is in evaluation mode.
         """
-        activations : dict[str, torch.Tensor] # activations[f'{layer_idx}_{hook_loc}']
         with self.record_activations() as activations:
-            
-            encoder_outputs : dict[str, EncoderOutput] # encoder_outputs[f'{layer_idx}_{hook_loc}']
             with self.use_saes() as encoder_outputs:
                 logits, cross_entropy_loss = self.gpt(idx, targets)
+        # print(cross_entropy_loss) # Optional: Keep for debugging
+        # print(self.resid_mid_cache) # Optional: Keep for debugging
+        #torch.cuda.synchronize()
+        #print("SLOW DOWN BUDDY")
+        
+        # If targets are provided during training evaluation, gather more metrics
+        ce_loss_increases = None
+        compound_ce_loss_increase = None
+        if is_eval and targets is not None:
+            # Calculate cross-entropy loss increase for each SAE layer
+            ce_loss_increases = []
+            for key in self.saes.keys():
+                layer_idx, hook_loc = self.split_sae_key(key)
+                recon_act = encoder_outputs[key].reconstructed_activations
+                resid_mid = activations[f'{layer_idx}_residmid']
+                
+                sae_logits = self.gpt.forward_with_patched_activations(recon_act, resid_mid, layer_idx, hook_loc)
+                sae_ce_loss = F.cross_entropy(sae_logits.view(-1, sae_logits.size(-1)), targets.view(-1))
+                ce_loss_increases.append(sae_ce_loss - cross_entropy_loss)
+            ce_loss_increases = torch.stack(ce_loss_increases)
 
-                # If targets are provided during training evaluation, gather more metrics
-                ce_loss_increases = None
-                compound_ce_loss_increase = None
-                if is_eval and targets is not None:
-                    # Calculate cross-entropy loss increase for each SAE layer
-                    ce_loss_increases = []
-                    for key in self.saes.keys():
-                        layer_idx, hook_loc = self.split_sae_key(key)
-                        x = encoder_outputs[key].reconstructed_activations
-                        resid_mid = activations[f'{layer_idx}_residmid']
-                        
-                        sae_logits = self.gpt.forward_with_patched_activations(x, resid_mid, layer_idx, hook_loc)
-                        sae_ce_loss = F.cross_entropy(sae_logits.view(-1, sae_logits.size(-1)), targets.view(-1))
-                        ce_loss_increases.append(sae_ce_loss - cross_entropy_loss)
-                    ce_loss_increases = torch.stack(ce_loss_increases)
-
-                    # Calculate compound cross-entropy loss as a result of patching activations.
-                    with self.use_saes(activations_to_patch=self.saes.keys()):
-                        _, compound_cross_entropy_loss = self.gpt(idx, targets)
-                        compound_ce_loss_increase = compound_cross_entropy_loss - cross_entropy_loss
+            # Calculate compound cross-entropy loss as a result of patching activations.
+            with self.use_saes(activations_to_patch=self.saes.keys()):
+                _, compound_cross_entropy_loss = self.gpt(idx, targets)
+                compound_ce_loss_increase = compound_cross_entropy_loss - cross_entropy_loss
 
         return SparsifiedGPTOutput(
             logits=logits,
@@ -93,7 +120,7 @@ class JSAESparsifiedGPT(SparsifiedGPT):
         :yield activations: Dictionary of activations.
         activations[f'{layer_idx}_mlpin'] = h[layer_idx].mlpin
         activations[f'{layer_idx}_mlpout'] = h[layer_idx].mlpout
-        activations[f'{layer_idx}_residmid'] = h[layer_idx].resid_mid
+        # NOTE: resid_mid is stored in self.resid_mid_cache, not yielded directly
         """
         activations: dict[str, torch.Tensor] = {}
 
@@ -104,14 +131,23 @@ class JSAESparsifiedGPT(SparsifiedGPT):
             ln2 = self.gpt.transformer.h[layer_idx].ln_2
             
             # run post hook for mlp to capture both inputs and outputs
+            #seems to work even without disabling compiler
+            @torch.compiler.disable(recursive=False)
             def mlp_hook_fn(module, inputs, outputs, layer_idx=layer_idx):
                 # TODO: Why is inputs wrapped in a tuple, but outputs is not?
+                # Why don't
                 activations[f'{layer_idx}_mlpin'] = inputs[0]
                 activations[f'{layer_idx}_mlpout'] = outputs
             
             # run pre hook for ln2 to capture resid_mid
+            # need to sneak them out of the hook_fn
+            
+            # If you don't disable compiler, you get an error
+            # about 0_residmid not being found???
+            @torch.compiler.disable(recursive=False)
             def ln2_hook_fn(module, inputs, layer_idx=layer_idx):
                 activations[f'{layer_idx}_residmid'] = inputs[0]
+
             
             hooks.append(ln2.register_forward_pre_hook(ln2_hook_fn))  # type: ignore
             hooks.append(mlp.register_forward_hook(mlp_hook_fn))  # type: ignore
@@ -139,7 +175,11 @@ class JSAESparsifiedGPT(SparsifiedGPT):
             """
             hook_loc = sae_key.split('_')[-1]
             assert isinstance(inputs, tuple), f"inputs: {inputs}"
-            assert hook_loc == 'mlpin' or outputs is not None, f"hook_loc: {hook_loc}, outputs: {outputs}"
+            if hook_loc == 'mlpin':
+                assert outputs is None, f"outputs: {outputs}"
+            if hook_loc == 'mlpout':
+                assert outputs is not None, f"outputs: {outputs}"
+            
             # TODO: Why is inputs wrapped in a tuple, but outputs is not?
             x = inputs[0] if hook_loc == 'mlpin' else outputs
             encoder_outputs[sae_key] = sae(x)

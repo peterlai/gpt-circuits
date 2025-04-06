@@ -26,7 +26,7 @@ class JSAE_GPT(GPT):
         return model
         
     def forward_with_patched_activations(self, 
-                                         x: Float[Tensor, "B T n_embd"], 
+                                         patched_activations: Float[Tensor, "B T n_embd"], 
                                          resid_mid: Float[Tensor, "B T n_embd"],
                                          layer_idx: int,
                                          hook_loc: str) -> torch.Tensor:
@@ -38,25 +38,25 @@ class JSAE_GPT(GPT):
         3 : h[1].mlp_out
         ...
         :param resid_mid: Residual stream activations at the middle of the transformer block. Shape: (B, T, n_embd)
-        :param x: Input activations. Shape: (B, T, n_embd)
+        :param patched_activations: Input activations. Shape: (B, T, n_embd)
         :param layer_idx: Layer index. 0 patches activations just before the first transformer block.
         :param mlp_idx: MLP index. 0 patches activations just before the first transformer block.
         """
-        assert isinstance(x, torch.Tensor), f"x: {x}"
+        assert isinstance(patched_activations, torch.Tensor), f"x: {patched_activations}"
         if hook_loc == 'mlpin':
-            mlp_out = self.transformer.h[layer_idx].mlp(x)
+            mlp_out = self.transformer.h[layer_idx].mlp(patched_activations)
         elif hook_loc == 'mlpout':
-            mlp_out = x
+            mlp_out = patched_activations
         else:
             raise ValueError(f"fo: Invalid hook location: {hook_loc}")
         
-        x = x + resid_mid
+        resid_post = mlp_out + resid_mid
         # forward through transformer blocks starting with the specified layer
         for block in self.transformer.h[layer_idx+1:]:
-            x = block(x)
+            resid_post = block(resid_post)
 
         # forward through the final layernorm and the classifier
-        x = self.transformer.ln_f(x)
-        logits = self.lm_head(x)
+        resid_post_normalized = self.transformer.ln_f(resid_post)
+        logits = self.lm_head(resid_post_normalized)
 
         return logits
