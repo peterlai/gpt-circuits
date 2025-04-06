@@ -9,14 +9,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from safetensors.torch import save_model, load_model
 
-from david.jsae.jgpt import JSAE_GPT
+from models.mlpgpt import MLP_GPT
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
 from config.sae.models import SAEConfig
 from config.sae.training import LossCoefficients
 from models.sae import SparseAutoencoder, EncoderOutput 
 
 
-class JSAESparsifiedGPT(SparsifiedGPT):
+class MLPSparsifiedGPT(SparsifiedGPT):
     def __init__(
         self, 
         config: SAEConfig,
@@ -26,7 +26,7 @@ class JSAESparsifiedGPT(SparsifiedGPT):
         nn.Module.__init__(self)
         self.config = config
         self.loss_coefficients = loss_coefficients
-        self.gpt = JSAE_GPT(config.gpt_config)
+        self.gpt = MLP_GPT(config.gpt_config)
         assert len(config.n_features) == self.gpt.config.n_layer * 2
         self.layer_idxs = trainable_layers if trainable_layers else list(range(self.gpt.config.n_layer))
         sae_keys = [f'{x}_{y}' for x in self.layer_idxs for y in ['mlpin', 'mlpout']] # index of the mlpin and mlpout activations
@@ -238,7 +238,7 @@ class JSAESparsifiedGPT(SparsifiedGPT):
         Load a sparsified GPT model from a directory.
         """
         # Load GPT model
-        gpt = JSAE_GPT.load(dir, device=device)
+        gpt = MLP_GPT.load(dir, device=device)
 
         # Load SAE config
         meta_path = os.path.join(dir, "sae.json")
@@ -248,7 +248,7 @@ class JSAESparsifiedGPT(SparsifiedGPT):
         config.gpt_config = gpt.config
 
         # Create model using saved config
-        model = JSAESparsifiedGPT(config, loss_coefficients, trainable_layers)
+        model = MLPSparsifiedGPT(config, loss_coefficients, trainable_layers)
         model.gpt = gpt
 
         # Load SAE weights
@@ -264,4 +264,4 @@ class JSAESparsifiedGPT(SparsifiedGPT):
         Load just the GPT model weights without loading SAE weights.
         """
         device = next(self.gpt.lm_head.parameters()).device
-        self.gpt = JSAE_GPT.load(dir, device=device)
+        self.gpt = MLP_GPT.load(dir, device=device)

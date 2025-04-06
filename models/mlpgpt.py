@@ -3,12 +3,11 @@ from config.gpt.models import GPTConfig
 import torch
 from torch import Tensor
 from jaxtyping import Float
-from models.sparsified import SparsifiedGPT
 import os
 import json
 from safetensors.torch import load_model
 
-class JSAE_GPT(GPT):
+class MLP_GPT(GPT):
     def __init__(self, config: GPTConfig):
         super().__init__(config)
         
@@ -20,7 +19,7 @@ class JSAE_GPT(GPT):
         with open(meta_path, "r") as f:
             meta = json.load(f)
 
-        model = JSAE_GPT(GPTConfig(**meta))
+        model = MLP_GPT(GPTConfig(**meta))
 
         load_model(model, weights_path, device=device.type)
         return model

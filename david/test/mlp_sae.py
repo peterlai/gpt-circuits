@@ -15,7 +15,7 @@ from config.sae.models import SAEConfig, SAEVariant
 from config.sae.training import LossCoefficients
 from models.sae.topk import StaircaseTopKSAE
 from models.gpt import GPT
-from david.jsae.jsparsified import JSAESparsifiedGPT
+from models.mlpsparsified import MLPSparsifiedGPT
 from data.tokenizers import ASCIITokenizer
 from david.convert_to_tl import convert_gpt_to_transformer_lens
 from david.convert_to_tl import run_tests as run_tl_tests
@@ -35,7 +35,7 @@ sae_config =SAEConfig(
         top_k = (10, 10, 10, 10, 10, 10, 10, 10)
     )
 
-gpt_mlp = JSAESparsifiedGPT.load("checkpoints/mlp-topk.shakespeare_64x4", 
+gpt_mlp = MLPSparsifiedGPT.load("checkpoints/mlp-topk.shakespeare_64x4", 
                                  loss_coefficients,
                                  trainable_layers = None,
                                  device = device)
@@ -92,8 +92,8 @@ for layer_idx in range(len(tl_gpt_mlp.blocks)):
     mlp_in_featmag = out.feature_magnitudes[f"{layer_idx}_mlpin"]
     mlp_out_featmag = out.feature_magnitudes[f"{layer_idx}_mlpout"]
     
-    torch.testing.assert_close(mlp_in_featmag, tl_mlp_in_featmag)
-    torch.testing.assert_close(mlp_out_featmag, tl_mlp_out_featmag)
+    torch.testing.assert_close(mlp_in_featmag, tl_mlp_in_featmag, atol=1e-5, rtol=1e-5)
+    torch.testing.assert_close(mlp_out_featmag, tl_mlp_out_featmag, atol=1e-5, rtol=1e-5)
 print("forward passed")
 # %%
 

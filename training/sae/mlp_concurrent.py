@@ -1,8 +1,6 @@
-# """
-# Train SAE weights for all layers concurrently.
-
-# $ python -m david.jsae.train
-# """
+"""
+python -m training.sae.mlp_concurrent --config=mlp-topk.shakespeare_64x4 --load_from=shakespeare_64x4
+"""
 # %%
 import argparse
 from pathlib import Path
@@ -11,25 +9,38 @@ import sys
 import os
 
 # Change current working directory to parent
-while not os.getcwd().endswith("gpt-circuits"):
-    os.chdir("..")
-print(os.getcwd())
+# while not os.getcwd().endswith("gpt-circuits"):
+#     os.chdir("..")
+# print(os.getcwd())
 
 
 import torch
 
-
 from config import TrainingConfig
 from config.sae.training import SAETrainingConfig, shakespeare_64x4_defaults
-from models.sparsified import SparsifiedGPTOutput
+
 from config.sae.models import SAEConfig, SAEVariant
 from config.gpt.models import gpt_options
+from config.sae.training import options
 from config.sae.training import LossCoefficients
-from david.jsae.jsparsified import JSAESparsifiedGPT
+
+from models.mlpsparsified import MLPSparsifiedGPT
+
 from training.sae import SAETrainer
 from training.sae.concurrent import ConcurrentTrainer
 from training import Trainer
-class JSAEConcurrentTrainer(ConcurrentTrainer):
+
+def parse_args() -> argparse.Namespace:
+    """
+    Parse command line arguments.
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=str, help="Training config")
+    parser.add_argument("--load_from", type=str, help="GPT model weights to load")
+    parser.add_argument("--name", type=str, help="Model name for checkpoints")
+    return parser.parse_args()
+
+class MLPConcurrentTrainer(ConcurrentTrainer):
     """
     Train SAE weights for all layers concurrently.
     """
@@ -39,7 +50,7 @@ class JSAEConcurrentTrainer(ConcurrentTrainer):
         Load and freeze GPT weights before training SAE weights.
         """
         # Create model
-        model = JSAESparsifiedGPT(config.sae_config, 
+        model = MLPSparsifiedGPT(config.sae_config, 
                                   config.loss_coefficients, 
                                   config.trainable_layers)
 
@@ -67,7 +78,7 @@ class JSAEConcurrentTrainer(ConcurrentTrainer):
             torch.distributed.barrier()
 
         # Reload all checkpoint weights, which may include those that weren't trained.
-        self.model = JSAESparsifiedGPT.load(
+        self.model = MLPSparsifiedGPT.load(
             self.config.out_dir,
             loss_coefficients=self.config.loss_coefficients,
             trainable_layers=None,  # Load all layers
@@ -91,37 +102,20 @@ class JSAEConcurrentTrainer(ConcurrentTrainer):
             print(f"Final compound CE loss increase: {self.pretty_print(self.checkpoint_compound_ce_loss_increase)}")
 
 
-
-# %%
 if __name__ == "__main__":
     # Parse command line arguments
-    mlp_sae_defaults = {
-    "data_dir": "data/shakespeare",
-    "eval_interval": 250,
-    "eval_steps": 100,
-    "batch_size": 128,
-    "gradient_accumulation_steps": 1,
-    "learning_rate": 1e-3,
-    "warmup_steps": 750,
-    "max_steps": 7500,
-    "decay_lr": True,
-    "min_lr": 1e-4,
-}
+    args = parse_args()
+
     # Load configuration
-    config = SAETrainingConfig(
-        name="mlp-topk.shakespeare_64x4",
-        sae_config=SAEConfig(
-            name="topk-10-x8-mlp.shakespeare_64x4",
-            gpt_config=gpt_options["ascii_64x4"],
-            n_features=tuple(64 * n for n in (8,8,8,8,8,8,8,8)),
-            top_k=(10,10,10,10,10,10,10,10),
-            sae_variant=SAEVariant.TOPK,
-        ),
-        **mlp_sae_defaults,
-        loss_coefficients=LossCoefficients()
-    )
+    config_name = args.config
+    config = options[config_name]
+
+    # Update outdir
+    if args.name:
+        config.name = args.name
 
     # Initialize trainer
-    trainer = JSAEConcurrentTrainer(config, load_from=TrainingConfig.checkpoints_dir / "shakespeare_64x4")
+    trainer = MLPConcurrentTrainer(config, load_from=TrainingConfig.checkpoints_dir / args.load_from)
     trainer.train()
+
 # %%
