@@ -58,7 +58,6 @@ def main():
 
     if edge_selection == "outer":
         assert upstream_layer_num==3, "Only layer 3 is supported for outer product"
-        assert num_prompts==1, "Only 1 prompt is supported for outer product"
 
     # Set random seed
     random.seed(seed)
@@ -125,41 +124,30 @@ def main():
     reshaped_val_tensor = usable_data.reshape(num_chunks, sequence_length)
     input_ids = reshaped_val_tensor[:num_prompts, :].to(device)  # Also move to the correct device
     
-    print(f"Computing upstream & downstream magnitudes (full circuit)...")
-    with torch.no_grad():    
-        with model.use_saes(layers_to_patch=[upstream_layer_num, upstream_layer_num + 1]) as encoder_outputs:
-            _ = model(input_ids)
-            upstream_magnitudes = encoder_outputs[upstream_layer_num].feature_magnitudes
-            downstream_magnitudes_full_circuit = encoder_outputs[upstream_layer_num + 1].feature_magnitudes
-    
-    # Create edges
-    num_upstream_features = model.config.n_features[upstream_layer_num]
-    num_downstream_features = model.config.n_features[upstream_layer_num + 1]
-    
-    print(f"Creating {num_edges} edges using {edge_selection} selection strategy...")
-    
-    # Create edge array based on selection strategy
-    if edge_selection == "random":
-        # Create a random permutation of all possible edges
-        all_edges = [(a, b) for a in range(num_upstream_features) for b in range(num_downstream_features)]
-        random.shuffle(all_edges)
-        edge_arr = all_edges[:num_edges]
-    elif edge_selection == "gradient":
-        gradient_dir = project_root / "Andy/data/attributions.safetensors"
-        tensors = load_file(gradient_dir)
-        all_edges, _ = get_attribution_rankings(tensors[f'attributions{upstream_layer_num}-{upstream_layer_num + 1}'])
-        edge_arr = all_edges[:num_edges]
+    start_time = time.time()
 
-    elif edge_selection == "gradient_reversed":
-        gradient_dir = project_root / "Andy/data/attributions.safetensors"
-        tensors = load_file(gradient_dir)
-        all_edges, _ = get_attribution_rankings(tensors[f'attributions{upstream_layer_num}-{upstream_layer_num + 1}'])
-        # Reverse the order of edges
-        all_edges_reversed = all_edges[::-1]
-        edge_arr = all_edges_reversed[:num_edges]
+    downstream_magnitudes_list = []
+    predicted_logits_list = []
+    kl_div_list = []
 
-    elif edge_selection == "outer":
-        # Only sensible for a target token (here the final token)
+    for prompt_idx in range(num_prompts):
+
+        print(f"Computing upstream & downstream magnitudes (full circuit)...")
+        with torch.no_grad():    
+            with model.use_saes(layers_to_patch=[upstream_layer_num, upstream_layer_num + 1]) as encoder_outputs:
+                _ = model(input_ids[prompt_idx].unsqueeze(0))
+                upstream_magnitudes = encoder_outputs[upstream_layer_num].feature_magnitudes
+                downstream_magnitudes_full_circuit = encoder_outputs[upstream_layer_num + 1].feature_magnitudes
+        
+        # Create edges
+        num_upstream_features = model.config.n_features[upstream_layer_num]
+        num_downstream_features = model.config.n_features[upstream_layer_num + 1]
+        
+        print(f"Creating {num_edges} edges using {edge_selection} selection strategy...")
+        
+        # Create edge array based on selection strategy
+
+        # # Only sensible for a target token (here the final token)
         # full_outer_tensor = torch.einsum('tf,g->tfg', upstream_magnitudes.squeeze(), downstream_magnitudes_full_circuit.squeeze()[-1])
         # outer_tensor = torch.mean(full_outer_tensor, dim=0)
         # all_edges, _ = get_attribution_rankings(outer_tensor)
@@ -169,51 +157,58 @@ def main():
         outer_tensor = torch.einsum('f,g->fg', upstream_magnitudes.squeeze()[0], downstream_magnitudes_full_circuit.squeeze()[0])
         all_edges, _ = get_attribution_rankings(outer_tensor)
         edge_arr = all_edges[:num_edges]
+        
+        # Create TokenlessEdge objects
+        edges = create_tokenless_edges_from_array(edge_arr, upstream_layer_num)
+        
+        # Compute downstream magnitudes from edges
+        print(f"Computing downstream magnitudes from {len(edges)} edges...")
+        
+        if num_edges == num_upstream_features * num_downstream_features:
+            # Use the full circuit magnitudes
+            print(f"Using full circuit magnitudes...")
+            downstream_magnitudes = downstream_magnitudes_full_circuit
+        else:
+            downstream_magnitudes = compute_batched_downstream_magnitudes_from_edges(
+                model=model,
+                ablator=ablator,
+                edges=edges,
+                upstream_magnitudes=upstream_magnitudes,
+                target_token_idx=target_token_idx,
+                num_samples=num_samples
+            )
+
+        # Compute logits subcircuit
+        x_reconstructed = model.saes[str(upstream_layer_num + 1)].decode(downstream_magnitudes) 
+        predicted_logits = model.gpt.forward_with_patched_activations(
+            x_reconstructed, layer_idx=upstream_layer_num + 1
+        )  # Shape: (num_batches, T, V)
+
+        # Compute logits full circuit
+        x_reconstructed_full_circuit = model.saes[str(upstream_layer_num + 1)].decode(downstream_magnitudes_full_circuit) 
+        predicted_logits_full_circuit = model.gpt.forward_with_patched_activations(
+            x_reconstructed_full_circuit, layer_idx=upstream_layer_num + 1
+        )  # Shape: (num_batches, T, V)
+
+        # Compute KL divergence between full and subcircuit logits
+        probs_full_circuit = F.softmax(predicted_logits_full_circuit, dim=-1)
+        probs = F.softmax(predicted_logits, dim=-1)
+
+        # Compute KL divergence: KL(P||Q) = sum_i P(i) * log(P(i)/Q(i))
+        epsilon = 1e-8
+        kl_div = probs_full_circuit * torch.log((probs_full_circuit + epsilon) / (probs + epsilon))
+        kl_div = kl_div.sum(dim=-1)  # Sum over vocabulary dimension
+
+        print(f"KL divergence shape: {kl_div.shape}")
+
+        downstream_magnitudes_list.append(downstream_magnitudes)
+        predicted_logits_list.append(predicted_logits)
+        kl_div_list.append(kl_div)
+
+    all_downstream_magnitudes = torch.cat(downstream_magnitudes_list, dim=0)
+    all_predicted_logits = torch.cat(predicted_logits_list, dim=0)
+    all_kl_div = torch.cat(kl_div_list, dim=0)
     
-    # Create TokenlessEdge objects
-    edges = create_tokenless_edges_from_array(edge_arr, upstream_layer_num)
-    
-    # Compute downstream magnitudes from edges
-    print(f"Computing downstream magnitudes from {len(edges)} edges...")
-    start_time = time.time()
-    
-    if num_edges == num_upstream_features * num_downstream_features:
-        # Use the full circuit magnitudes
-        print(f"Using full circuit magnitudes...")
-        downstream_magnitudes = downstream_magnitudes_full_circuit
-    else:
-        downstream_magnitudes = compute_batched_downstream_magnitudes_from_edges(
-            model=model,
-            ablator=ablator,
-            edges=edges,
-            upstream_magnitudes=upstream_magnitudes,
-            target_token_idx=target_token_idx,
-            num_samples=num_samples
-        )
-
-    # Compute logits subcircuit
-    x_reconstructed = model.saes[str(upstream_layer_num + 1)].decode(downstream_magnitudes) 
-    predicted_logits = model.gpt.forward_with_patched_activations(
-        x_reconstructed, layer_idx=upstream_layer_num + 1
-    )  # Shape: (num_batches, T, V)
-
-    # Compute logits full circuit
-    x_reconstructed_full_circuit = model.saes[str(upstream_layer_num + 1)].decode(downstream_magnitudes_full_circuit) 
-    predicted_logits_full_circuit = model.gpt.forward_with_patched_activations(
-        x_reconstructed_full_circuit, layer_idx=upstream_layer_num + 1
-    )  # Shape: (num_batches, T, V)
-
-    # Compute KL divergence between full and subcircuit logits
-    probs_full_circuit = F.softmax(predicted_logits_full_circuit, dim=-1)
-    probs = F.softmax(predicted_logits, dim=-1)
-
-    # Compute KL divergence: KL(P||Q) = sum_i P(i) * log(P(i)/Q(i))
-    epsilon = 1e-8
-    kl_div = probs_full_circuit * torch.log((probs_full_circuit + epsilon) / (probs + epsilon))
-    kl_div = kl_div.sum(dim=-1)  # Sum over vocabulary dimension
-
-    print(f"KL divergence shape: {kl_div.shape}")
-
     # Compute the time taken for the computation
     execution_time = time.time() - start_time
     print(f"Computation completed in {execution_time:.2f} seconds")
@@ -233,9 +228,9 @@ def main():
     )
     
     experiment_results = ExperimentResults(
-        feature_magnitudes=downstream_magnitudes,
-        logits=predicted_logits,
-        kl_divergence=kl_div,
+        feature_magnitudes=all_downstream_magnitudes,
+        logits=all_predicted_logits,
+        kl_divergence=all_kl_div,
         execution_time=execution_time
     )
     
@@ -249,7 +244,7 @@ def main():
  
     # Save results
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    output_path = project_root / f"xavier/experiments/data/testing/{experiment_output.experiment_id}_{timestamp}.safetensors"
+    output_path = project_root / f"xavier/experiments/data/run_16/{experiment_output.experiment_id}_{timestamp}.safetensors"
     experiment_output.to_safetensor(output_path)
     
     print("Done!")
