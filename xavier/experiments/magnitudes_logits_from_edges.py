@@ -42,6 +42,7 @@ def main():
                         choices=["random", "gradient", "gradient_reversed", "outer"], help="Edge selection strategy")
     parser.add_argument("--sae-variant", type=str, default="standard", 
                         choices=["standard", "topk", "topk-x40", "topk-staircase", "jumprelu", "regularized", "top5", "top20", "topk"], help="Type of SAE")
+    parser.add_argument("--run-index", type=str, default="testing", help="Index of the run")
     parser.add_argument("--seed", type=int, default=125, help="Random seed")
     args = parser.parse_args()
     
@@ -54,6 +55,7 @@ def main():
     num_prompts = args.num_prompts
     edge_selection = args.edge_selection
     sae_variant = args.sae_variant
+    run_idx = args.run_index
     seed = args.seed
 
     if edge_selection == "outer":
@@ -249,7 +251,10 @@ def main():
  
     # Save results
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    output_path = project_root / f"xavier/experiments/data/testing/{experiment_output.experiment_id}_{timestamp}.safetensors"
+    output_dir = project_root / f"xavier/experiments/data/{run_idx}"
+    output_path = output_dir / f"{experiment_output.experiment_id}_{timestamp}.safetensors"
+    if not output_dir.exists():
+            output_dir.mkdir(parents=True, exist_ok=True)
     experiment_output.to_safetensor(output_path)
     
     print("Done!")
