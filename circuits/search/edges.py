@@ -435,10 +435,12 @@ def compute_batched_downstream_magnitudes_from_edges(
         )
 
         # Compute downstream feature magnitudes for each set of dependencies
+        include_nonlinearity = False if model.config.top_k else True
         sampled_downstream_magnitudes = compute_downstream_magnitudes(  # Shape: (num_samples, T, F)
             model,
             upstream_layer_idx,
             patched_upstream_magnitudes,
+            include_nonlinearity
         )
 
         # Create a downstream circuit with all nodes and compute downstream magnitudes
