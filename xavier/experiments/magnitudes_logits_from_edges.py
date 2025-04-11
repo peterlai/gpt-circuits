@@ -39,7 +39,7 @@ def main():
     parser.add_argument("--num-samples", type=int, default=2, help="Number of samples for patching")
     parser.add_argument("--num-prompts", type=int, default=1, help="Number of prompts to use from validation data")
     parser.add_argument("--edge-selection", type=str, default="random", 
-                        choices=["random", "gradient", "gradient_reversed", "outer"], help="Edge selection strategy")
+                        choices=["random", "gradient", "gradient_reversed", "manual_scaled", "manual_pos_scaled", "manual_unscaled"], help="Edge selection strategy")
     parser.add_argument("--sae-variant", type=str, default="standard", 
                         choices=["standard", "topk", "topk-x40", "topk-staircase", "jumprelu", "regularized", "top5", "top20", "topk"], help="Type of SAE")
     parser.add_argument("--run-index", type=str, default="testing", help="Index of the run")
@@ -146,30 +146,37 @@ def main():
         all_edges = [(a, b) for a in range(num_upstream_features) for b in range(num_downstream_features)]
         random.shuffle(all_edges)
         edge_arr = all_edges[:num_edges]
+
     elif edge_selection == "gradient":
-        gradient_dir = project_root / "Andy/data/attributions.safetensors"
+        gradient_dir = project_root / f"Andy/ForXavier/{sae_variant}_igattributions.safetensors"
         tensors = load_file(gradient_dir)
-        all_edges, _ = get_attribution_rankings(tensors[f'attributions{upstream_layer_num}-{upstream_layer_num + 1}'])
+        all_edges, _ = get_attribution_rankings(tensors[f'{upstream_layer_num}-{upstream_layer_num + 1}'])
         edge_arr = all_edges[:num_edges]
 
     elif edge_selection == "gradient_reversed":
-        gradient_dir = project_root / "Andy/data/attributions.safetensors"
+        gradient_dir = project_root / f"Andy/ForXavier/{sae_variant}_igattributions.safetensors"
         tensors = load_file(gradient_dir)
-        all_edges, _ = get_attribution_rankings(tensors[f'attributions{upstream_layer_num}-{upstream_layer_num + 1}'])
-        # Reverse the order of edges
+        all_edges, _ = get_attribution_rankings(tensors[f'{upstream_layer_num}-{upstream_layer_num + 1}'])
+        edge_arr = all_edges[:num_edges]
         all_edges_reversed = all_edges[::-1]
         edge_arr = all_edges_reversed[:num_edges]
 
-    elif edge_selection == "outer":
-        # Only sensible for a target token (here the final token)
-        # full_outer_tensor = torch.einsum('tf,g->tfg', upstream_magnitudes.squeeze(), downstream_magnitudes_full_circuit.squeeze()[-1])
-        # outer_tensor = torch.mean(full_outer_tensor, dim=0)
-        # all_edges, _ = get_attribution_rankings(outer_tensor)
-        # edge_arr = all_edges[:num_edges]
+    elif edge_selection == "manual_scaled":
+        gradient_dir = project_root / f"Andy/ForXavier/{sae_variant}_manual_ablation_scaled.safetensors"
+        tensors = load_file(gradient_dir)
+        all_edges, _ = get_attribution_rankings(tensors[f'{upstream_layer_num}-{upstream_layer_num + 1}'])
+        edge_arr = all_edges[:num_edges]
 
-        # Only sensible for a target token (here the first token)
-        outer_tensor = torch.einsum('f,g->fg', upstream_magnitudes.squeeze()[0], downstream_magnitudes_full_circuit.squeeze()[0])
-        all_edges, _ = get_attribution_rankings(outer_tensor)
+    elif edge_selection == "manual_pos_scaled":
+        gradient_dir = project_root / f"Andy/ForXavier/{sae_variant}_manual_ablation_pos_scaled.safetensors"
+        tensors = load_file(gradient_dir)
+        all_edges, _ = get_attribution_rankings(tensors[f'{upstream_layer_num}-{upstream_layer_num + 1}'])
+        edge_arr = all_edges[:num_edges]
+
+    elif edge_selection == "manual_unscaled":
+        gradient_dir = project_root / f"Andy/ForXavier/{sae_variant}_manual_ablation_unscaled.safetensors"
+        tensors = load_file(gradient_dir)
+        all_edges, _ = get_attribution_rankings(tensors[f'{upstream_layer_num}-{upstream_layer_num + 1}'])
         edge_arr = all_edges[:num_edges]
     
     # Create TokenlessEdge objects
