@@ -1,0 +1,5 @@
+I tried to make names as simple as possible. Every safetensors file is a dict, and all keys are in ['0-1','1-2','2-3','3-4']
+
+any file starting standard uses the model located at davidquarel/standard.shakespeare_64x4
+any file starting topk uses the model located at davidquarel/topk.shakespeare_64x4
+

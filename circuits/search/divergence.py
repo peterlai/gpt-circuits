@@ -157,37 +157,6 @@ def get_predicted_logits(
 
     return results
 
-
-@torch.no_grad()
-def compute_downstream_magnitudes(
-    model: SparsifiedGPT,
-    layer_idx: int,
-    patched_feature_magnitudes: dict[Circuit, torch.Tensor],  # Shape: (num_samples, T, F)
-) -> dict[Circuit, torch.Tensor]:  # Shape: (num_sample, T, F)
-    """
-    Get downstream feature magnitudes for a set of circuit variants when using patched feature magnitudes.
-
-    TODO: Use batching to improve performance
-    """
-    results: dict[Circuit, torch.Tensor] = {}
-
-    for circuit_variant, feature_magnitudes in patched_feature_magnitudes.items():
-        # Reconstruct activations
-        x_reconstructed = model.saes[str(layer_idx)].decode(feature_magnitudes)  # type: ignore
-
-        # Compute downstream activations
-        x_downstream = model.gpt.transformer.h[layer_idx](x_reconstructed)  # type: ignore
-
-        # Encode to get feature magnitudes
-        downstream_sae = model.saes[str(layer_idx + 1)]
-        downstream_feature_magnitudes = downstream_sae(x_downstream).feature_magnitudes  # Shape: (num_sample, T, F)
-
-        # Store results
-        results[circuit_variant] = downstream_feature_magnitudes
-
-    return results
-
-
 def get_predictions(
     tokenizer: Tokenizer,
     logits: torch.Tensor,  # Shape: (V)
@@ -276,3 +245,37 @@ def get_batched_predicted_logits_from_full_circuit(
     
     # Stack the results
     return torch.stack(batch_logits)
+
+@torch.no_grad()
+def compute_downstream_magnitudes(
+    model: SparsifiedGPT,
+    layer_idx: int,
+    patched_feature_magnitudes: dict[Circuit, torch.Tensor],  # Shape: (num_samples, T, F)
+    include_nonlinearity: bool = True,
+) -> dict[Circuit, torch.Tensor]:  # Shape: (num_sample, T, F)
+    """
+    Get downstream feature magnitudes for a set of circuit variants when using patched feature magnitudes.
+
+    TODO: Use batching to improve performance
+    """
+    results: dict[Circuit, torch.Tensor] = {}
+
+    for circuit_variant, feature_magnitudes in patched_feature_magnitudes.items():
+        # Reconstruct activations
+        x_reconstructed = model.saes[str(layer_idx)].decode(feature_magnitudes)  # type: ignore
+
+        # Compute downstream activations
+        x_downstream = model.gpt.transformer.h[layer_idx](x_reconstructed)  # type: ignore
+
+        # Encode to get feature magnitudes
+        downstream_sae = model.saes[str(layer_idx + 1)]
+        if include_nonlinearity:
+            downstream_feature_magnitudes = downstream_sae(x_downstream).feature_magnitudes  # Shape: (num_sample, T, F)
+        else:
+            # Encode activations 'by hand' to get feature magnitudes
+            downstream_feature_magnitudes = (x_downstream - downstream_sae.b_dec) @ downstream_sae.W_enc + downstream_sae.b_enc
+
+        # Store results
+        results[circuit_variant] = downstream_feature_magnitudes
+
+    return results

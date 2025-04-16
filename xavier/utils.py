@@ -399,3 +399,55 @@ def bootstrap_ci(data, n_bootstrap=1000, statistic=np.mean, confidence=0.95):
     
     # Return the confidence interval
     return bootstrap_stats[lower_idx], bootstrap_stats[upper_idx]
+
+def analyze_nonzero_tensor(tensor, print_results=True, max_print=10, threshold=1e-5):
+    """
+    Analyze a tensor to find values above a threshold, their indices, and statistics.
+    
+    Args:
+        tensor: PyTorch tensor of any shape
+        print_results: Whether to print summary and values
+        max_print: Maximum number of non-zero values to print
+        threshold: Values above this threshold are considered non-zero
+    
+    Returns:
+        A dictionary containing:
+        - 'non_zero_count': Number of elements above threshold
+        - 'percentage': Percentage of elements above threshold
+        - 'non_zero_indices': Indices of elements above threshold as a tuple of tensors
+        - 'non_zero_values': Values of elements above threshold
+        - 'indices_list': List of tuples with indices in (a, b, c) format
+    """
+    # Get elements above threshold
+    non_zero_mask = torch.abs(tensor) > threshold
+    non_zero_indices = torch.nonzero(non_zero_mask, as_tuple=True)
+    non_zero_values = tensor[non_zero_indices]
+    
+    # Calculate statistics
+    total_elements = tensor.numel()
+    non_zero_count = non_zero_values.numel()
+    percentage = (non_zero_count / total_elements) * 100
+    
+    # Create list of index tuples
+    indices_list = list(zip(*(idx.tolist() for idx in non_zero_indices)))
+    
+    if print_results:
+        print(f"Tensor shape: {tensor.shape}")
+        print(f"Total elements: {total_elements}")
+        print(f"Elements above threshold {threshold}: {non_zero_count} ({percentage:.4f}%)")
+        
+        if non_zero_count > 0:
+            print("\nSample of values above threshold:")
+            for i in range(min(non_zero_count, max_print)):
+                # Create index tuple for this specific element
+                idx = tuple(dim[i].item() for dim in non_zero_indices)
+                val = tensor[idx].item()
+                print(f"Index: {idx}, Value: {val:.6f}")
+    
+    return {
+        'non_zero_count': non_zero_count,
+        'percentage': percentage,
+        'non_zero_indices': non_zero_indices,
+        'non_zero_values': non_zero_values,
+        'indices_list': indices_list
+    }

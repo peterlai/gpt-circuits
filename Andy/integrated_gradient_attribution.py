@@ -212,14 +212,19 @@ if __name__ == "__main__":
     x,_ = dataloader.next_batch(device)
 
     
-    layer0 = 0
-    layer1 = 1
-
-    attributions = all_ig_attributions(model, dataloader, 1, 2, verbose = True)
-    layers = model.gpt.config.n_layer
 
 
-    save_file(attributions, output_filename)
+    attributions1 = all_ig_attributions(model, dataloader, nbatches=32, steps=4, verbose = True)
+
+    output_filename1 = 'Andy/data/standard_staircase_attributionsV1.safetensors'
+    save_file(attributions1, output_filename1)
+
+    print("Doing second version")
+
+    attributions2 = all_ig_attributions(model, dataloader, nbatches=32, steps=4, verbose = True)
+
+    output_filename2 = 'Andy/data/standard_staircase_attributionsV2.safetensors'
+    save_file(attributions2, output_filename2)
     
     
 

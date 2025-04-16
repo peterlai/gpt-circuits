@@ -28,9 +28,8 @@ from typing import Callable
 from data.dataloaders import TrainingDataLoader
 TensorFunction = Callable[[Tensor], Tensor]
 
-def direct_estimate(model: SparsifiedGPT, layer0: int, layer1: int, ds: TrainingDataLoader, nbatches: int=32):
+def direct_estimate(model: SparsifiedGPT, layer0: int, layer1: int, ds: TrainingDataLoader, nbatches: int=32, epsilon=0):
     with t.no_grad():
-        epsilon = .001
         
         assert layer0 < layer1
         assert layer0 >= 0
@@ -64,8 +63,9 @@ def direct_estimate(model: SparsifiedGPT, layer0: int, layer1: int, ds: Training
             input, _ = ds.next_batch(model.gpt.config.device) #get batch of inputs 
             output = model.forward(input.long(), targets=None, is_eval=True)
             feature_magnitudes0 = output.feature_magnitudes[layer0] #feature magnitudes at source layer (batchsize, seqlen, source_size)
-            feature_magnitudes1 = output.feature_magnitudes[layer1]
+            feature_magnitudes1 = output.feature_magnitudes[layer1] #feature magnitudes at target layer (batchsize, seqlen, target_size)
             batchsize = feature_magnitudes0.shape[0]
+            #epsilon = feature_magnitudes0.mean().item()
 
             batch_patches = []
             batch_indices = []
@@ -82,12 +82,13 @@ def direct_estimate(model: SparsifiedGPT, layer0: int, layer1: int, ds: Training
 
         # Run a single forward pass for all patches
         if batch_patches:
-            batch_patches = t.cat(batch_patches, dim=0)  # Concatenate patches into a single tensor
-            results = forward(batch_patches)  # Forward pass for all patches
+            batch_patches = t.cat(batch_patches, dim=0) # Concatenate patches into a single tensor (num_patches, seq_len, source_size)
+            #print(batch_patches.shape)  
+            results = forward(batch_patches)  # Forward pass for all patches (num_patches, seq_len, target_size)
 
             # Update scores and occurrences
             for i, (b, seq_idx, src_idx) in enumerate(batch_indices):
-                scores[seq_idx, src_idx] += (results[i] - feature_magnitudes1[b]).abs().sum(dim=(0, 1))
+                scores[src_idx] += (results[i] - feature_magnitudes1[b]).abs().sum(dim=(0))
                 occurences[seq_idx, src_idx] += 1
         return scores, occurences
 
@@ -116,15 +117,15 @@ def direct_estimate(model: SparsifiedGPT, layer0: int, layer1: int, ds: Training
 if __name__ == "__main__":
    #This code loads a model and data, and computes all the attributions
    #If you want to do you own run, just modify the strings here, and the arguments in the call to all_ig_attributions below
-    c_name = 'staircasex8.shakespeare_64x4' #config options for the sae you want
+    c_name = 'topk-10-x8.shakespeare_64x4' #config options for the sae you want
     name = ''
     data_dir = 'data/shakespeare' #location of data, remember to prepare it!
-    output_filename = 'Andy/data/direct_estimation.safetensors'
+    #output_filename = 'Andy/data/direct_estimation.safetensors'
     batch_size = 16
     config = sae_options[c_name]
 
     model = SparsifiedGPT(config)
-    model_path = os.path.join("checkpoints", name)
+    model_path = os.path.join("checkpoints/topk", name)
     model = model.load(model_path, device=config.device)
     model.to(config.device) #for some reason, when I do this the model starts on the cpu, and I have to move it
 
@@ -160,14 +161,30 @@ if __name__ == "__main__":
     
     layers = model.gpt.config.n_layer
 
-    out = {}
+    out1 = {}
+    output_filename1 = 'Andy/data/topk_manual_ablation1.safetensors'
     for layer in range(layers):
 
-        estimation, occ = direct_estimate(model, layer, layer+1, dataloader, nbatches=5)
-        out[f'{layer}-{layer+1} scores'] = estimation
-        out[f'{layer}-{layer+1} occurences'] = occ
+        estimation, occ = direct_estimate(model, layer, layer+1, dataloader, nbatches=32)
+        out1[f'{layer}-{layer+1} scores'] = estimation
+        out1[f'{layer}-{layer+1} occurences'] = occ
         print(f'Finished layer {layer} to {layer+1}')
 
-    save_file(out, output_filename)
-    print(f'Saved to {output_filename}')
+    save_file(out1, output_filename1)
+    print(f'Saved to {output_filename1}')
+
+    out2 = {}
+    output_filename2 = 'Andy/data/topk_manual_ablation2.safetensors'
+    for layer in range(layers):
+
+        estimation, occ = direct_estimate(model, layer, layer+1, dataloader, nbatches=32)
+        out2[f'{layer}-{layer+1} scores'] = estimation
+        out2[f'{layer}-{layer+1} occurences'] = occ
+        print(f'Finished layer {layer} to {layer+1}')
+
+    save_file(out2, output_filename2)
+    print(f'Saved to {output_filename2}')
+
+
+
     
