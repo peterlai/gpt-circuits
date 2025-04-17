@@ -3,8 +3,11 @@ import sys  # Add this import
 import torch
 import random
 import time
+import datetime
 from pathlib import Path
 import numpy as np
+import json
+import argparse
 from transformer_lens.hook_points import HookPoint
 import torch.nn.functional as F
 
@@ -22,16 +25,40 @@ from david.convert_to_tl import convert_gpt_to_transformer_lens
 from david.convert_to_tl import run_tests as run_tl_tests
 from xavier.utils import create_tokenless_edges_from_array
 
+from circuits.features.cache import ModelCache
+from circuits.features.profiles import ModelProfile
+from circuits.search.ablation import ResampleAblator
+from circuits.search.edges import compute_batched_downstream_magnitudes_from_edges_mlp
+from xavier.experiments import ExperimentParams, ExperimentResults, ExperimentOutput
+
 @torch.no_grad()
 def main():
 
-    # Parameters
-    num_edges = 1000
-    upstream_layer_num = 0
-    num_prompts = 3
-    edge_selection = 'random'
-    seed = 25
+    # Parse arguments
+    parser = argparse.ArgumentParser(description="Compute downstream magnitudes & logits from edges")
+    parser.add_argument("--num-edges", type=int, default=100, help="Number of edges to use")
+    parser.add_argument("--upstream-layer-num", type=int, default=0, help="Upstream layer index")
+    parser.add_argument("--num-samples", type=int, default=2, help="Number of samples for patching")
+    parser.add_argument("--num-prompts", type=int, default=1, help="Number of prompts to use from validation data")
+    parser.add_argument("--edge-selection", type=str, default="random", 
+                        choices=["random", "gradient", "gradient_reversed", "manual_scaled", "manual_pos_scaled", "manual_unscaled"], help="Edge selection strategy")
+    parser.add_argument("--sae-variant", type=str, default="standard", 
+                        choices=["standard", "topk", "topk-x40", "topk-staircase", "jumprelu", "regularized", "top5", "top20", "topk"], help="Type of SAE")
+    parser.add_argument("--run-index", type=str, default="testing", help="Index of the run")
+    parser.add_argument("--seed", type=int, default=125, help="Random seed")
+    args = parser.parse_args()
+    
+    torch.manual_seed(args.seed)
 
+    # Experiment parameters
+    num_edges = args.num_edges
+    upstream_layer_num = args.upstream_layer_num
+    num_samples = args.num_samples
+    num_prompts = args.num_prompts
+    edge_selection = args.edge_selection
+    sae_variant = args.sae_variant
+    run_idx = args.run_index
+    seed = args.seed
 
     # Set random seed
     random.seed(seed)
@@ -43,19 +70,20 @@ def main():
     # Setup model paths
     checkpoint_dir = project_root / "checkpoints"
     gpt_dir = checkpoint_dir / "shakespeare_64x4"
-    mlp_dir = checkpoint_dir / "mlp-topk.shakespeare_64x4"
+    mlp_dir = checkpoint_dir / f"mlp-{sae_variant}.shakespeare_64x4"
     data_dir = project_root / "data"
 
     # Load GPT model
     print("Loading GPT model...")
     gpt = GPT.load(gpt_dir, device=device)
 
-    sae_config =SAEConfig(
-            gpt_config=gpt.config,
-            n_features=tuple(64 * n for n in (8,8,8,8,8,8,8,8)),
-            sae_variant=SAEVariant.TOPK,
-            top_k = (10, 10, 10, 10, 10, 10, 10, 10)
-        )
+    # Not necessary?
+    # sae_config =SAEConfig(
+    #         gpt_config=gpt.config,
+    #         n_features=tuple(64 * n for n in (8,8,8,8,8,8,8,8)),
+    #         sae_variant=SAEVariant.TOPK,
+    #         top_k = (10, 10, 10, 10, 10, 10, 10, 10)
+    #     )
 
     # Load GPT MLP
     print("Loading sparsified MLP model...")
@@ -65,6 +93,26 @@ def main():
                                     trainable_layers = None,
                                     device = device)
     model.to(device)
+
+    # Load SAE config
+    meta_path = os.path.join(mlp_dir, "sae.json")
+    with open(meta_path, "r") as f:
+        meta = json.load(f)
+    config = SAEConfig(**meta)
+    config.gpt_config = gpt.config
+
+    # Create a model profile (will only work for zero ablation)
+    model_profile = ModelProfile()
+
+    # Create an empty cache (since we won't use it for zero ablation)
+    model_cache = ModelCache()
+
+    # Create the ResampleAblator with k_nearest=0 for zero ablation
+    ablator = ResampleAblator(
+        model_profile=model_profile,
+        model_cache=model_cache,
+        k_nearest=0  # This setting enables zero ablation
+    )
 
     # Load validation data
     val_data_dir = data_dir / 'shakespeare/val_000000.npy'
@@ -89,6 +137,7 @@ def main():
         downstream_magnitudes_full_circuit = encoder_outputs[keys[1]].feature_magnitudes
 
     # Create edges
+    # STILL CORRECT?
     num_upstream_features = model.config.n_features[upstream_layer_num]
     num_downstream_features = model.config.n_features[upstream_layer_num + 1]
     
@@ -114,8 +163,14 @@ def main():
         downstream_magnitudes = downstream_magnitudes_full_circuit
     else:
         # Compute downstream magnitudes from edges
-        # WRITE THIS FUNCTION
-        downstream_magnitudes = torch.zeros_like(downstream_magnitudes_full_circuit)
+        downstream_magnitudes = compute_batched_downstream_magnitudes_from_edges_mlp(
+            model=model,
+            ablator=ablator,
+            edges=edges,
+            upstream_magnitudes=upstream_magnitudes,
+            target_token_idx=target_token_idx,
+            num_samples=num_samples
+        )
 
     # Prepare data to compute logits
     with model.record_activations() as activations:
@@ -156,14 +211,52 @@ def main():
     execution_time = time.time() - start_time
     print(f"Computation completed in {execution_time:.2f} seconds")
 
-
-    print("Upstream Magnitudes:")
-    print(upstream_magnitudes.shape)
-
-    print("Downstream Magnitudes:")
-    print(downstream_magnitudes.shape)
+    # Create experiment output
+    experiment_params = ExperimentParams(
+        task="magnitudes",
+        ablator="zero",
+        edges = edge_arr,
+        edge_selection_strategy=edge_selection,
+        num_edges=num_edges,
+        upstream_layer_idx=upstream_layer_num,
+        num_samples=num_samples,
+        num_prompts=num_prompts,
+        random_seed=seed,  
+        dataset_name=None
+    )
+    
+    experiment_results = ExperimentResults(
+        feature_magnitudes=downstream_magnitudes,
+        logits=predicted_logits,
+        kl_divergence=kl_div,
+        execution_time=execution_time
+    )
+    
+    experiment_output = ExperimentOutput(
+        experiment_id=f"{experiment_params.task}_{sae_variant}_{edge_selection}_{upstream_layer_num}_{num_edges}",
+        timestamp=datetime.datetime.now(),
+        model_config=config,
+        experiment_params=experiment_params,
+        results=experiment_results
+    )
+ 
+    # Save results
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    output_dir = project_root / f"xavier/experiments/data/{run_idx}"
+    output_path = output_dir / f"{experiment_output.experiment_id}_{timestamp}.safetensors"
+    if not output_dir.exists():
+            output_dir.mkdir(parents=True, exist_ok=True)
+    experiment_output.to_safetensor(output_path)
+    
+    print("Done!")
+    
+    # Print summary
+    print(f"\nSummary:")
+    print(f"- Upstream layer: {args.upstream_layer_num}")
+    print(f"- Number of edges: {args.num_edges}")
+    print(f"- Downstream magnitudes shape: {downstream_magnitudes.shape}")
+    print(f"- Downstream logits shape: {predicted_logits.shape}")
+    print(f"- Results saved to: {output_path}")
 
 if __name__ == "__main__":
-    print('starting...')
     main()
-    print('done...')
