@@ -78,3 +78,23 @@ print(generate_with_mlpsae(tokens, gpt_mlp))
 
 
 # %%# %%
+# For Xavier's code
+def run_resid(resid, model, layer_idx):
+    """
+    Runs the residual stream through the MLP layer, with the pre and post SAE layers.
+    """
+    resid_norm = model.blocks[layer_idx].ln2(resid)
+    resid_premlp = model.saes[f"{layer_idx}_mlpin"](resid_norm)
+    resid_postmlp = model.blocks[layer_idx].mlp(resid_premlp)
+    resid_post = model.saes[f"{layer_idx}_mlpout"](resid_postmlp)
+    resid_post = resid_post + resid
+
+    return resid_post
+
+
+
+
+
+
+
+
