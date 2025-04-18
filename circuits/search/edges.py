@@ -8,9 +8,11 @@ from circuits.features.profiles import ModelProfile
 from circuits.search.ablation import ResampleAblator
 from circuits.search.divergence import (
     compute_downstream_magnitudes,
+    compute_downstream_magnitudes_mlp,
     patch_feature_magnitudes,
 )
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
+from models.mlpsparsified import MLPSparsifiedGPT
 
 from bidict import bidict
 
@@ -446,6 +448,112 @@ def compute_batched_downstream_magnitudes_from_edges(
         # Create a downstream circuit with all nodes and compute downstream magnitudes
         dummy_circuit = Circuit(nodes=frozenset()) # Dummy circuit not used for downstream computation
         dummy_downstream = compute_downstream_magnitudes(  # Shape: (num_samples, T, F)
+            model,
+            upstream_layer_idx,
+            {dummy_circuit: upstream_magnitudes[i].unsqueeze(0)}
+        )
+        dummy_downstream_magnitudes = dummy_downstream[dummy_circuit].squeeze(0)
+
+        # Initialise the result tensor as the patched downstream magnitudes
+        downstream_layer_idx = upstream_layer_idx + 1
+        empty_circuit = Circuit(nodes=frozenset())
+        patched_downstream_magnitudes = patch_feature_magnitudes(  # Shape: (num_samples, T, F)
+            ablator,
+            downstream_layer_idx,
+            target_token_idx,
+            [empty_circuit],
+            dummy_downstream_magnitudes,
+            num_samples=num_samples,
+        )
+        result = patched_downstream_magnitudes[empty_circuit][0]
+        
+        # Now fill in the actual computed values from our circuit variants
+        for circuit_variant, magnitudes in sampled_downstream_magnitudes.items():
+            # Compress circuit_variant.nodes over the token index
+            for node in dependencies_to_tokenless_nodes[expanded_dependencies.inverse[circuit_variant.nodes]]:
+                node_sampled_magnitudes = magnitudes[:, :target_token_idx+1, node.feature_idx]
+                # Average over num_samples
+                result[:target_token_idx+1, node.feature_idx] = torch.mean(node_sampled_magnitudes, dim=0)
+
+        # Apply top_k if specified
+        if model.config.top_k:
+            # Zero out all but the top-k activations
+            top_k_values, _ = torch.topk(result, k=model.config.top_k[downstream_layer_idx], dim=-1)
+            mask = result >= top_k_values[..., -1].unsqueeze(-1)
+            result = result * mask.float()
+            #result = torch.topk(result, k=model.config.top_k[downstream_layer_idx], dim=-1)
+        
+        result_list.append(result)
+
+    # Normalization?
+    
+    return torch.stack(result_list)
+
+
+def compute_batched_downstream_magnitudes_from_edges_mlp(
+    model: MLPSparsifiedGPT,
+    ablator: ResampleAblator,
+    edges: frozenset[TokenlessEdge],
+    upstream_magnitudes: torch.Tensor,  # Shape: (num_batches, T, F)
+    target_token_idx: int,
+    num_samples: int = 2
+) -> torch.Tensor: # Shape: (num_batches, T, F)
+    """
+    Compute downstream feature magnitudes using only the provided edges and upstream magnitudes.
+    Processes multiple batches of upstream magnitudes in parallel.
+    
+    :param model: Model to use for computation
+    :param ablator: ResampleAblator to use for patching
+    :param edges: Circuit edges defining connections from layer L to layer L+1
+    :param upstream_magnitudes: Upstream feature magnitudes tensor from layer L
+    :param target_token_idx: Target token index
+    :param num_samples: Number of samples for patching
+    :returns: Downstream feature magnitudes tensor at layer L+1
+    """
+    # Extract all downstream nodes from edges
+    downstream_nodes = frozenset({edge.downstream for edge in edges})
+    
+    # Map downstream nodes to upstream dependencies
+    tokenless_node_to_dependencies: dict[TokenlessNode, frozenset[TokenlessNode]] = {}
+    for node in downstream_nodes:
+        tokenless_node_to_dependencies[node] = frozenset({edge.upstream for edge in edges if edge.downstream == node})
+    dependencies_to_tokenless_nodes: dict[frozenset[TokenlessNode], set[TokenlessNode]] = defaultdict(set)
+    for node, dependencies in tokenless_node_to_dependencies.items():
+        dependencies_to_tokenless_nodes[dependencies].add(node)
+
+    # Create a bidirectional mapping between dependencies (TokenlessNodes) and expanded dependencies (Nodes)
+    expanded_dependencies = bidict({dependencies: expand_token_index(dependencies, target_token_idx) for dependencies in dependencies_to_tokenless_nodes.keys()})
+
+    num_batches = upstream_magnitudes.shape[0]
+    result_list = []
+
+    # Loop over batches
+    for i in range(num_batches):
+        # Patch upstream feature magnitudes for each set of dependencies
+        # Expand dependencies over the token index
+        circuit_variants = [Circuit(nodes=expanded_dependencies[dependencies]) for dependencies in dependencies_to_tokenless_nodes.keys()]
+        upstream_layer_idx = next(iter(downstream_nodes)).layer_idx - 1
+        patched_upstream_magnitudes = patch_feature_magnitudes(  # Shape: (num_samples, T, F)
+            ablator,
+            upstream_layer_idx,
+            target_token_idx,
+            circuit_variants,
+            upstream_magnitudes[i],
+            num_samples=num_samples,
+        )
+
+        # Compute downstream feature magnitudes for each set of dependencies
+        include_nonlinearity = False if model.config.top_k else True
+        sampled_downstream_magnitudes = compute_downstream_magnitudes_mlp(  # Shape: (num_samples, T, F)
+            model,
+            upstream_layer_idx,
+            patched_upstream_magnitudes,
+            include_nonlinearity
+        )
+
+        # Create a downstream circuit with all nodes and compute downstream magnitudes
+        dummy_circuit = Circuit(nodes=frozenset()) # Dummy circuit not used for downstream computation
+        dummy_downstream = compute_downstream_magnitudes_mlp(  # Shape: (num_samples, T, F)
             model,
             upstream_layer_idx,
             {dummy_circuit: upstream_magnitudes[i].unsqueeze(0)}
