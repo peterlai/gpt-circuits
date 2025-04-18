@@ -1,5 +1,6 @@
 import sys
 sys.path.append('/root/gpt-circuits/')
+import random
 
 
 import torch as t
@@ -7,6 +8,7 @@ import torch.nn as nn
 from torch import Tensor
 from torch.autograd.functional import jacobian
 import os
+import bisect
 
 from safetensors.torch import save_file
 
@@ -28,7 +30,34 @@ from typing import Callable
 from data.dataloaders import TrainingDataLoader
 TensorFunction = Callable[[Tensor], Tensor]
 
-def direct_estimate(model: SparsifiedGPT, layer0: int, layer1: int, ds: TrainingDataLoader, nbatches: int=32, epsilon=0):
+class MaxSizeList():
+    def __init__(self, max_size: int):
+        self.max_size = max_size
+        self.data = []
+
+    def append(self, item):
+        #item is a tuple of index and value
+        #add item to list using bisect to preserve sorted order
+        #if size is too large remove the first element
+        bisect.insort(self.data, item, key=lambda x: x[1])
+        if len(self.data) > self.max_size:
+            self.data.pop(0)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index):
+        return self.data[index]
+    
+    def _get_valueless_list(self):
+        #return a list of the indices in the data
+        return [x[0] for x in self.data]
+
+    def __iter__(self):
+        return iter(self.data)
+
+
+def direct_estimate(model: SparsifiedGPT, layer0: int, layer1: int, ds: TrainingDataLoader, nbatches: int=32, epsilon=0, max_size: int=10000):
     with t.no_grad():
         
         assert layer0 < layer1
@@ -67,8 +96,8 @@ def direct_estimate(model: SparsifiedGPT, layer0: int, layer1: int, ds: Training
             batchsize = feature_magnitudes0.shape[0]
             #epsilon = feature_magnitudes0.mean().item()
 
-            batch_patches = []
-            batch_indices = []
+            batch_patches = MaxSizeList(max_size)  # List to store patches
+            batch_indices = MaxSizeList(max_size)  # List to store indices
 
             for b in range(batchsize):
                 up = feature_magnitudes0[b:b+1].contiguous()  # (1, seqlen, source_size)
@@ -77,19 +106,29 @@ def direct_estimate(model: SparsifiedGPT, layer0: int, layer1: int, ds: Training
                 for idx in zip(*nz):
                     patch = up.clone()  # Clone once per batch element
                     patch[0, idx[1], idx[2]] = 0  # Modify in-place
-                    batch_patches.append(patch)
-                    batch_indices.append((b, idx[1], idx[2]))
+                    batch_patches.append((patch, up[0, idx[1], idx[2]]))  # Append the patch and the original value
+                    batch_indices.append(((b, idx[1], idx[2]), up[0, idx[1], idx[2]])) # Append the index and the original value
+            batch_patches = batch_patches._get_valueless_list()  # Get the list of patches
+            batch_indices = batch_indices._get_valueless_list()  # Get the list of indices
 
-        # Run a single forward pass for all patches
-        if batch_patches:
-            batch_patches = t.cat(batch_patches, dim=0) # Concatenate patches into a single tensor (num_patches, seq_len, source_size)
-            #print(batch_patches.shape)  
-            results = forward(batch_patches)  # Forward pass for all patches (num_patches, seq_len, target_size)
+            # Run a single forward pass for all patches
+            if batch_patches:
+                #print(len(batch_patches))
+                batch_patches = t.cat(batch_patches, dim=0) # Concatenate patches into a single tensor (num_patches, seq_len, source_size)
+                #print(batch_patches.shape)  
+                results = forward(batch_patches)  # Forward pass for all patches (num_patches, seq_len, target_size)
 
-            # Update scores and occurrences
-            for i, (b, seq_idx, src_idx) in enumerate(batch_indices):
-                scores[src_idx] += (results[i] - feature_magnitudes1[b]).abs().sum(dim=(0))
-                occurences[seq_idx, src_idx] += 1
+                # Update scores and occurrences
+                for i, (b, seq_idx, src_idx) in enumerate(batch_indices):
+                    scores[src_idx] += (results[i] - feature_magnitudes1[b]).abs().sum(dim=(0))
+                    occurences[seq_idx, src_idx] += 1
+
+                # Clear the batch lists
+                # This is important to avoid memory leaks
+                del batch_patches
+                del batch_indices
+                del results
+                t.cuda.empty_cache()
         return scores, occurences
 
         """         mask = t.ones((1, model.gpt.config.block_size, source_size), device = model.gpt.config.device) #mask for the input to the forward function
@@ -117,15 +156,15 @@ def direct_estimate(model: SparsifiedGPT, layer0: int, layer1: int, ds: Training
 if __name__ == "__main__":
    #This code loads a model and data, and computes all the attributions
    #If you want to do you own run, just modify the strings here, and the arguments in the call to all_ig_attributions below
-    c_name = 'topk-10-x8.shakespeare_64x4' #config options for the sae you want
+    c_name = "standardx16.tiny_32x4" #config options for the sae you want
     name = ''
-    data_dir = 'data/shakespeare' #location of data, remember to prepare it!
-    #output_filename = 'Andy/data/direct_estimation.safetensors'
-    batch_size = 16
+    data_dir = 'data/tiny_stories_10m' #location of data, remember to prepare it!
+    output_filename = 'Andy/data/standard_tiny.safetensors'
+    batch_size = 32
     config = sae_options[c_name]
 
     model = SparsifiedGPT(config)
-    model_path = os.path.join("checkpoints/topk", name)
+    model_path = os.path.join("checkpoints/standard.tiny_32x4", name)
     model = model.load(model_path, device=config.device)
     model.to(config.device) #for some reason, when I do this the model starts on the cpu, and I have to move it
 
@@ -162,10 +201,10 @@ if __name__ == "__main__":
     layers = model.gpt.config.n_layer
 
     out1 = {}
-    output_filename1 = 'Andy/data/topk_manual_ablation1.safetensors'
+    output_filename1 = 'Andy/data/standard_tiny_manual_ablation1.safetensors'
     for layer in range(layers):
 
-        estimation, occ = direct_estimate(model, layer, layer+1, dataloader, nbatches=32)
+        estimation, occ = direct_estimate(model, layer, layer+1, dataloader, nbatches=32, epsilon=.01)
         out1[f'{layer}-{layer+1} scores'] = estimation
         out1[f'{layer}-{layer+1} occurences'] = occ
         print(f'Finished layer {layer} to {layer+1}')
@@ -174,10 +213,10 @@ if __name__ == "__main__":
     print(f'Saved to {output_filename1}')
 
     out2 = {}
-    output_filename2 = 'Andy/data/topk_manual_ablation2.safetensors'
+    output_filename2 = 'Andy/data/standard_tiny_manual_ablation2.safetensors'
     for layer in range(layers):
 
-        estimation, occ = direct_estimate(model, layer, layer+1, dataloader, nbatches=32)
+        estimation, occ = direct_estimate(model, layer, layer+1, dataloader, nbatches=32, epsilon=.01)
         out2[f'{layer}-{layer+1} scores'] = estimation
         out2[f'{layer}-{layer+1} occurences'] = occ
         print(f'Finished layer {layer} to {layer+1}')
