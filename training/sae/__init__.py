@@ -60,16 +60,6 @@ class SAETrainer(Trainer):
         """
         Gather metrics from loss and model output.
         """
-        # Add SAE metrics
-        # TODO: This is a hack as a result of the way the loss is computed for the JSAETrainer
-        if "jsae" in self.config.sae_config.sae_variant:
-            split_idx = 2 * self.model.config.gpt_config.n_layer
-            sae_loss, jacobian_loss = loss[:split_idx], loss[split_idx:]
-        else:
-            sae_loss = loss
-    
-        
-        
         sae_l0s = torch.stack([loss_components.l0 for loss_components in output.sae_loss_components.values()])
         metrics = {
             "loss": sae_loss,
@@ -88,20 +78,7 @@ class SAETrainer(Trainer):
                 )
             }
         )
-        
-        if "staircase" in self.config.sae_config.sae_variant:
-            l0_per_chunk = {}
-            for layer_idx, feature_magnitudes in output.feature_magnitudes.items():
-                num_chunks = layer_idx + 1
-                grouped_feature_magnitudes = torch.chunk(feature_magnitudes, num_chunks, dim=-1) # tuple[(batch, seq, feature_size_each_chunk)]
-                grouped_feature_magnitudes = torch.stack(grouped_feature_magnitudes, dim=-2) # (batch, seq, n_chunks, feature_size_each_chunk)
-                grouped_l0 = (grouped_feature_magnitudes != 0).float().sum(dim=-1) # (batch, seq, n_chunks)
-                l0_per_chunk[layer_idx] = grouped_l0.mean(dim=(0,1)) # (n_chunks)
-                metrics[f"l0_{layer_idx}"] = l0_per_chunk[layer_idx]
-                
-        if "jsae" in self.config.sae_config.sae_variant:
-            metrics["∇_l1"] = jacobian_loss
-            
+             
         return metrics
 
     def train(self):
