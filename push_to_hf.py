@@ -1,10 +1,15 @@
 import os
 import argparse
+import glob
 from huggingface_hub import HfApi, create_repo, upload_folder
 
-def push_to_huggingface(directory):
+def push_to_huggingface(directory, dry_run=False):
     """
     Pushes all files from the specified directory to a Hugging Face model repo.
+    
+    Args:
+        directory: Path to the directory to upload
+        dry_run: If True, only print what would be uploaded without actually uploading
     """
     # Ensure the directory exists
     if not os.path.isdir(directory):
@@ -16,6 +21,10 @@ def push_to_huggingface(directory):
     
     hf_username = "davidquarel"  # Change this if needed
     repo_id = f"{hf_username}/{model_name}"
+    
+    if dry_run:
+        print(f"🔍 [DRY RUN] Would upload '{directory}' to '{repo_id}'")
+        return
     
     api = HfApi()
 
@@ -38,10 +47,30 @@ if __name__ == "__main__":
         description="Push a model directory to Hugging Face."
     )
     parser.add_argument(
-        "directory",
+        "directory_pattern",
         type=str,
-        help="Full path to the model directory. Example: '/path/to/shakespeare_64x4'"
+        help="Path pattern to the model directories. Supports wildcards. Example: '/path/to/jsae*'"
+    )
+    parser.add_argument(
+        "--dryrun",
+        action="store_true",
+        help="Only print directories that would be uploaded without actually uploading"
     )
     
     args = parser.parse_args()
-    push_to_huggingface(args.directory)
+    
+    # Find all directories matching the pattern
+    matching_dirs = glob.glob(args.directory_pattern)
+    matching_dirs = [d for d in matching_dirs if os.path.isdir(d)]
+    
+    if not matching_dirs:
+        print(f"❌ Error: No directories found matching pattern '{args.directory_pattern}'")
+        exit(1)
+    
+    print(f"🔍 Found {len(matching_dirs)} matching directories:")
+    for directory in matching_dirs:
+        print(f"  - {directory}")
+    
+    # Process each matching directory
+    for directory in matching_dirs:
+        push_to_huggingface(directory, args.dryrun)
