@@ -68,6 +68,7 @@ class Trainer:
 
         # Prepare model
         self.model = model.to(self.device)
+        self.model_type = type(model)
         if config.compile:
             self.model = torch.compile(self.model)  # type: ignore
 

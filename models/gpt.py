@@ -58,6 +58,14 @@ class MLP(nn.Module):
         x = self.gelu(x)
         x = self.c_proj(x)
         return x
+    
+    @property
+    def W_in(self) -> torch.Tensor:
+        return self.c_fc.weight
+    
+    @property
+    def W_out(self) -> torch.Tensor:
+        return self.c_proj.weight
 
 
 class Block(nn.Module):

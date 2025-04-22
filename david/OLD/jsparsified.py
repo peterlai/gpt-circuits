@@ -9,62 +9,40 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from config.sae.models import SAEConfig, SAEVariant
+from config.sae.models import SAEConfig
+from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
 from config.sae.training import LossCoefficients
 from models.gpt import GPT
-from models.sae import EncoderOutput, SAELossComponents, SparseAutoencoder
-from models.sae.gated import GatedSAE, GatedSAE_V2
-from models.sae.jumprelu import JumpReLUSAE, StaircaseJumpReLU
-from models.sae.standard import StandardSAE, StandardSAE_V2
-from models.sae.topk import StaircaseTopKSAE, StaircaseTopKSAEDetach, TopKSAE
+from models.sae import EncoderOutput, SparseAutoencoder
+from models.mlpgpt import MLP_GPT
+from models.sae.jsae import JSAE
+from models.mlpsparsified import MLPSparsifiedGPT
+
+import itertools
+
+def flatten(list2d):
+    return list(itertools.chain(*list2d))
 
 
-@dataclasses.dataclass
-class SparsifiedGPTOutput:
-    """
-    Output from the forward pass of a sparsified GPT model.
-    """
-
-    logits: torch.Tensor
-    cross_entropy_loss: torch.Tensor
-    # Residual stream activations at every layer
-    activations: dict[int, torch.Tensor]
-    ce_loss_increases: Optional[torch.Tensor]
-    # Compound cross-entropy loss increase if using SAE reconstructions for all trainable layers
-    compound_ce_loss_increase: Optional[torch.Tensor]
-    sae_loss_components: dict[int, SAELossComponents]
-    feature_magnitudes: dict[int, torch.Tensor]
-    reconstructed_activations: dict[int, torch.Tensor]
-    indices: dict[int, torch.Tensor] = None
-
-    @property
-    def sae_losses(self) -> torch.Tensor:
-        """
-        SAE losses for each trainable layer.
-        """
-        return torch.stack([loss.total for loss in self.sae_loss_components.values()])
-
-
-class SparsifiedGPT(nn.Module):
-    """
-    GPT Model with sparsified activations using sparse autoencoders.
-    """
-
+class MLPSparsifiedGPT(SparsifiedGPT):
     def __init__(
-        self,
+        self, 
         config: SAEConfig,
         loss_coefficients: Optional[LossCoefficients] = None,
         trainable_layers: Optional[tuple] = None,
     ):
-        super().__init__()
+        nn.Module.__init__(self)
         self.config = config
         self.loss_coefficients = loss_coefficients
-        self.gpt = GPT(config.gpt_config)
-
-        # Construct sae layers
+        self.gpt = MLP_GPT(config.gpt_config)
+        assert len(config.n_features) == self.gpt.config.n_layer * 2
+        self.layer_idxs = trainable_layers if trainable_layers else list(range(self.gpt.config.n_layer))
+        sae_keys = [f'{x}_{y}' for x in self.layer_idxs for y in ['mlpin', 'mlpout']] # index of the mlpin and mlpout activations
+        
         sae_class: Type[SparseAutoencoder] = self.get_sae_class(config)
-        self.layer_idxs = trainable_layers if trainable_layers else list(range(len(config.n_features)))
-        self.saes = nn.ModuleDict(dict([(f"{i}", sae_class(i, config, loss_coefficients, self)) for i in self.layer_idxs]))
+        
+        self.saes = nn.ModuleDict(dict([(key, sae_class(idx, config, loss_coefficients, self)) 
+                                        for idx, key in enumerate(sae_keys)]))
 
     def forward(
         self, idx: torch.Tensor, targets: Optional[torch.Tensor] = None, is_eval: bool = False
@@ -107,33 +85,11 @@ class SparsifiedGPT(nn.Module):
             sae_loss_components={i: output.loss for i, output in encoder_outputs.items() if output.loss},
             feature_magnitudes={i: output.feature_magnitudes for i, output in encoder_outputs.items()},
             reconstructed_activations={i: output.reconstructed_activations for i, output in encoder_outputs.items()},
-            indices={i: output.indices for i, output in encoder_outputs.items()},
         )
 
     @contextmanager
     def record_activations(self):
-        """
-        Context manager for recording residual stream activations.
-
-        :yield activations: Dictionary of activations.
-        """
-        # Dictionary for storing results
-        activations: dict[int, torch.Tensor] = {}
-
-        # Register hooks
-        hooks = []
-        for layer_idx in list(range(len(self.config.n_features))):
-            target = self.get_hook_target(layer_idx)
-            hook = self.create_activation_hook(activations, layer_idx)
-            hooks.append(target.register_forward_pre_hook(hook))  # type: ignore
-
-        try:
-            yield activations
-
-        finally:
-            # Unregister hooks
-            for hook in hooks:
-                hook.remove()
+        return MLPSparsifiedGPT.record_activations(self)
 
     def create_activation_hook(self, activations, layer_idx):
         """
@@ -149,35 +105,35 @@ class SparsifiedGPT(nn.Module):
         return activation_hook
 
     @contextmanager
-    def use_saes(self, layers_to_patch: Iterable[int] = ()):
+    def use_saes(self, activations_to_patch: Iterable[str] = ()):
         """
         Context manager for using SAE layers during the forward pass.
 
-        :param layers_to_patch: Layer indices for patching residual stream activations with reconstructions.
+        :param activations_to_patch: Layer indices and hook locations for patching residual stream activations with reconstructions.
         :yield encoder_outputs: Dictionary of encoder outputs.
         """
         # Dictionary for storing results
-        encoder_outputs: dict[int, EncoderOutput] = {}
+        encoder_outputs: dict[str, tuple[EncoderOutput, EncoderOutput]] = {}
 
         # Register hooks
         hooks = []
         for layer_idx in self.layer_idxs:
-            target = self.get_hook_target(layer_idx)
-            sae = self.saes[f"{layer_idx}"]
-            # Output values will be overwritten (hack to pass object by reference)
-            output = EncoderOutput(torch.tensor(0), torch.tensor(0))
-            should_patch_activations = layer_idx in layers_to_patch
-            hook = self.create_sae_pre_hook(sae, output, should_patch_activations)
-            hooks.append(target.register_forward_pre_hook(hook))  # type: ignore
-            encoder_outputs[layer_idx] = output
+            target = self.gpt.transformer.h[layer_idx].mlp
+            should_patch_activations = layer_idx in activations_to_patch
+            
+            sae_mlpin = self.saes[f"{layer_idx}"].mlp_in
+            sae_mlpout = self.saes[f"{layer_idx}"].mlp_out
+            hook_fn = self.create_sae_hook(sae_mlpin, sae_mlpout, encoder_outputs, should_patch_activations)
+            
+            hooks.append(target.register_forward_pre_hook(hook_fn))  # type: ignore
 
         try:
             yield encoder_outputs
 
         finally:
             # Unregister hooks
-            for hook in hooks:
-                hook.remove()
+            for hook_fn in hooks:
+                hook_fn.remove()
 
     def create_sae_pre_hook(self, sae, output, should_patch_activations):
         """
@@ -270,31 +226,3 @@ class SparsifiedGPT(nn.Module):
             if layer_name in layers_to_save:
                 assert isinstance(module, SparseAutoencoder)
                 module.save(Path(dir))
-
-    def get_sae_class(self, config: SAEConfig) -> Type[SparseAutoencoder]:
-        """
-        Maps the SAE variant to the actual class.
-        """
-        match config.sae_variant:
-            case SAEVariant.STANDARD:
-                return StandardSAE
-            case SAEVariant.STANDARD_V2:
-                return StandardSAE_V2
-            case SAEVariant.GATED:
-                return GatedSAE
-            case SAEVariant.GATED_V2:
-                return GatedSAE_V2
-            case SAEVariant.JUMP_RELU:
-                return JumpReLUSAE
-            case SAEVariant.JUMP_RELU_STAIRCASE:
-                return StaircaseJumpReLU
-            case SAEVariant.TOPK:
-                return TopKSAE
-            case SAEVariant.TOPK_STAIRCASE:
-                return StaircaseTopKSAE
-            case SAEVariant.TOPK_STAIRCASE_DETACH:
-                return StaircaseTopKSAEDetach
-            case SAEVariant.JSAE:
-                return TopKSAE
-            case _:
-                raise ValueError(f"Unrecognized SAE variant: {config.sae_variant}")

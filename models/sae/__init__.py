@@ -55,6 +55,7 @@ class EncoderOutput:
 
     reconstructed_activations: torch.Tensor
     feature_magnitudes: torch.Tensor
+    indices: Optional[torch.Tensor] = None # Which features fired in the middle layer
     loss: Optional[SAELossComponents] = None
 
 

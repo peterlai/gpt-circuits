@@ -29,18 +29,21 @@ class TopKBase(nn.Module):
         # we know that we should compute losses and omit doing so otherwise.
         self.should_return_losses = loss_coefficients is not None
         
-    def encode(self, x: torch.Tensor) -> torch.Tensor:
+    def encode(self, x, return_topk_indices: bool = False) -> torch.Tensor:
         """
         x: GPT model activations (B, T, embedding size)
         """
         latent = F.relu((x - self.b_dec) @ self.W_enc + self.b_enc)
 
         # Zero out all but the top-k activations
-        top_k_values, _ = torch.topk(latent, self.k, dim=-1)
+        top_k_values, top_k_indices = torch.topk(latent, self.k, dim=-1)
         mask = latent >= top_k_values[..., -1].unsqueeze(-1)
         latent_k_sparse = latent * mask.float()
 
-        return latent_k_sparse
+        if return_topk_indices:
+            return latent_k_sparse, top_k_indices
+        else:
+            return latent_k_sparse
 
     def decode(self, feature_magnitudes: torch.Tensor) -> torch.Tensor:
         """
@@ -55,9 +58,9 @@ class TopKBase(nn.Module):
 
         x: GPT model activations (B, T, embedding size)
         """
-        feature_magnitudes = self.encode(x)
+        feature_magnitudes, top_k_indices = self.encode(x, return_topk_indices=True)
         x_reconstructed = self.decode(feature_magnitudes)
-        output = EncoderOutput(x_reconstructed, feature_magnitudes)
+        output = EncoderOutput(x_reconstructed, feature_magnitudes, indices = top_k_indices)
         if self.should_return_losses:
             sparsity_loss = torch.tensor(0.0, device=x.device)  # no need for sparsity loss for top-k SAE
             output.loss = SAELossComponents(x, x_reconstructed, feature_magnitudes, sparsity_loss)

@@ -16,7 +16,7 @@ class SAEVariant(str, Enum):
     TOPK = "topk"
     TOPK_STAIRCASE = "topk_staircase"
     TOPK_STAIRCASE_DETACH = "topk_staircase_detach"
-
+    JSAE = "jsae"
 
 @dataclass
 class SAEConfig(Config):
@@ -51,6 +51,13 @@ sae_options: dict[str, SAEConfig] = map_options(
         gpt_config=gpt_options["ascii_64x4"],
         n_features=tuple(64 * n for n in (8, 8, 8, 8, 8, 8, 8, 8)),
         sae_variant=SAEVariant.TOPK,
+        top_k=(10, 10, 10, 10, 10, 10, 10, 10),
+    ),
+    SAEConfig(
+        name="jsae.topkx8.shakespeare_64x4",
+        gpt_config=gpt_options["ascii_64x4"],
+        n_features=tuple(64 * n for n in (8, 8, 8, 8, 8, 8, 8, 8)),
+        sae_variant=SAEVariant.JSAE,
         top_k=(10, 10, 10, 10, 10, 10, 10, 10),
     ),
     SAEConfig(

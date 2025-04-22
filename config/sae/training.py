@@ -90,6 +90,14 @@ options: dict[str, SAETrainingConfig] = map_options(
         **shakespeare_64x4_defaults,
         loss_coefficients=LossCoefficients(),
     ),
+    SAETrainingConfig(
+        name="jsae.shakespeare_64x4",
+        sae_config=sae_options["jsae.topkx8.shakespeare_64x4"],
+        **shakespeare_64x4_defaults,
+        loss_coefficients=LossCoefficients(
+            sparsity=(0.02, 0.02, 0.02, 0.02),  # How do we tune the sparsity? What is the target?
+        ),
+    ),
      SAETrainingConfig(
         name="standard.tiny_32x4",
         sae_config=sae_options["standardx16.tiny_32x4"],

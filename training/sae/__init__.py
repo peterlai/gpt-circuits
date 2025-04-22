@@ -61,9 +61,18 @@ class SAETrainer(Trainer):
         Gather metrics from loss and model output.
         """
         # Add SAE metrics
+        # TODO: This is a hack as a result of the way the loss is computed for the JSAETrainer
+        if "jsae" in self.config.sae_config.sae_variant:
+            split_idx = 2 * self.model.config.gpt_config.n_layer
+            sae_loss, jacobian_loss = loss[:split_idx], loss[split_idx:]
+        else:
+            sae_loss = loss
+    
+        
+        
         sae_l0s = torch.stack([loss_components.l0 for loss_components in output.sae_loss_components.values()])
         metrics = {
-            "loss": loss,
+            "loss": sae_loss,
             "ce_loss": output.cross_entropy_loss,
             "sae_losses": output.sae_losses,
             "ce_loss_increases": output.ce_loss_increases,
@@ -89,7 +98,10 @@ class SAETrainer(Trainer):
                 grouped_l0 = (grouped_feature_magnitudes != 0).float().sum(dim=-1) # (batch, seq, n_chunks)
                 l0_per_chunk[layer_idx] = grouped_l0.mean(dim=(0,1)) # (n_chunks)
                 metrics[f"l0_{layer_idx}"] = l0_per_chunk[layer_idx]
-
+                
+        if "jsae" in self.config.sae_config.sae_variant:
+            metrics["∇_l1"] = jacobian_loss
+            
         return metrics
 
     def train(self):
@@ -104,7 +116,8 @@ class SAETrainer(Trainer):
             torch.distributed.barrier()
 
         # Reload all checkpoint weights, which may include those that weren't trained.
-        self.model = SparsifiedGPT.load(
+        # NOTE: We're using `model_type` to account for use of subclasses.
+        self.model = self.model_type.load(
             self.config.out_dir,
             loss_coefficients=self.config.loss_coefficients,
             trainable_layers=None,  # Load all layers
