@@ -62,7 +62,7 @@ class SAETrainer(Trainer):
         """
         sae_l0s = torch.stack([loss_components.l0 for loss_components in output.sae_loss_components.values()])
         metrics = {
-            "loss": sae_loss,
+            "loss": loss,
             "ce_loss": output.cross_entropy_loss,
             "sae_losses": output.sae_losses,
             "ce_loss_increases": output.ce_loss_increases,

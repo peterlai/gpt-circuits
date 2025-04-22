@@ -36,6 +36,8 @@ class SparsifiedGPTOutput:
     feature_magnitudes: dict[int, torch.Tensor]
     reconstructed_activations: dict[int, torch.Tensor]
     indices: dict[int, torch.Tensor] = None
+    sparsity_losses: dict[int, torch.Tensor] = None # for storing sparsity losses
+    aux_losses: dict[int, torch.Tensor] = None # for any other losses
 
     @property
     def sae_losses(self) -> torch.Tensor:
@@ -43,6 +45,14 @@ class SparsifiedGPTOutput:
         SAE losses for each trainable layer.
         """
         return torch.stack([loss.total for loss in self.sae_loss_components.values()])
+    
+    @property
+    def recon_losses(self) -> torch.Tensor:
+        """
+        Reconstruction losses for each trainable layer.
+        """
+        return torch.stack([loss.reconstruct for loss in self.sae_loss_components.values()])
+    
 
 
 class SparsifiedGPT(nn.Module):
