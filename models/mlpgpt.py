@@ -11,19 +11,6 @@ class MLP_GPT(GPT):
     def __init__(self, config: GPTConfig):
         super().__init__(config)
         
-    @classmethod
-    def load(cls, dir, device: torch.device):
-        meta_path = os.path.join(dir, "model.json")
-        weights_path = os.path.join(dir, "model.safetensors")
-
-        with open(meta_path, "r") as f:
-            meta = json.load(f)
-
-        model = MLP_GPT(GPTConfig(**meta))
-
-        load_model(model, weights_path, device=device.type)
-        return model
-        
     def forward_with_patched_activations(self, 
                                          patched_activations: Float[Tensor, "B T n_embd"], 
                                          resid_mid: Float[Tensor, "B T n_embd"],

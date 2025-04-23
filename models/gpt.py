@@ -168,8 +168,8 @@ class GPT(nn.Module):
 
         with open(meta_path, "r") as f:
             meta = json.load(f)
-
-        model = GPT(GPTConfig(**meta))
+        
+        model = cls(GPTConfig(**meta))
 
         load_model(model, weights_path, device=device.type)
         return model
