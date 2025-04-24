@@ -17,6 +17,9 @@ import torch
 from models.gpt import GPT
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
 
+
+from safetensors.torch import load_file, save_file
+
 def parse_args() -> argparse.Namespace:
     """
     Parse command line arguments.
@@ -71,37 +74,35 @@ if __name__ == "__main__":
         attributor = ManualAblationAttributor(model, dataloader, nbatches = args.num_batches, verbose=args.verbose, epsilon=args.epsilon)
         attributions = attributor.layer_by_layer()
 
-    attributions_listed = {}
-    for key in attributions.keys():
-        attributions_listed[key] = sorted_indices_by_value(attributions[key])
+    #attributions_listed = {}
+    #for key in attributions.keys():
+        #attributions_listed[key] = sorted_indices_by_value(attributions[key])
 
 
     output_filename = args.save_to
     name = args.save_name
     if name == '':
-        name = config_name + '_' + args.attribution_method
+        name = string(os.path.basename(os.path.normpath(model_path))) + '_' + args.attribution_method
 
-    if output_filename.endswith(".json"):
+    if output_filename.endswith(".safetensors"):
         path = Path(output_filename)
     else:
-        path = os.path.join(output_filename, "attributions.json")
+        path = os.path.join(output_filename, f"{name}.safetensors")
 
-    # Load existing data if the file exists
-    if os.path.isfile(path):
-        with open(path, "r") as f:
-            try:
-                data = json.load(f)
-            except json.JSONDecodeError:
-                raise ValueError("attributions.json exists but is not valid JSON")
-    else:
-        data = {}
+    save_file(
+        attributions,
+        path,
+        metadata={
+            "model_name": model_path.name,
+            "attribution_method": args.attribution_method,
+            "batch_size": f"{batch_size}",
+            "num_batches": f"{args.num_batches}",
+            "steps": f"{args.steps}" if args.attribution_method == "ig" else "N/A",
+            "epsilon": f"{args.epsilon}" if args.attribution_method == "ma" else "N/A",
+        },
+    )
 
-    # Add or update the entry
-    data[name] = attributions_listed
-
-    # Save it back to disk
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
+    print(f"Attributions saved to {name} in {path}")
     
 
 
