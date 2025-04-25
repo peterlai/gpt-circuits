@@ -31,6 +31,7 @@ class ExperimentResults:
     feature_magnitudes: torch.tensor
     logits: torch.tensor
     kl_divergence: torch.tensor
+    kl_divergence_full_model: torch.tensor
     execution_time: Optional[float] = None
     
 @dataclass
@@ -54,7 +55,7 @@ class ExperimentOutput:
             file_path: Path where to save the SafeTensor file
         """
         # Extract the tensor
-        tensors = {"feature_magnitudes": self.results.feature_magnitudes, "logits": self.results.logits, "kl_divergence": self.results.kl_divergence}
+        tensors = {"feature_magnitudes": self.results.feature_magnitudes, "logits": self.results.logits, "kl_divergence": self.results.kl_divergence, "kl_divergence_full_model": self.results.kl_divergence_full_model}
         
         # Create metadata from non-tensor fields
         metadata = {

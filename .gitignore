@@ -1,5 +1,6 @@
 # Training output
 checkpoints/
+attributions/
 *.npy
 
 # Node app
@@ -19,3 +20,9 @@ __pycache__/
 
 # Virtual environment
 .venv/
+
+# Xavier 
+myenv/
+xavier/experiments/data/
+xavier/experiments/logs/
+xavier/experiments/plots/

@@ -451,3 +451,63 @@ def analyze_nonzero_tensor(tensor, print_results=True, max_print=10, threshold=1
         'non_zero_values': non_zero_values,
         'indices_list': indices_list
     }
+
+
+def extract_l1_gradients(logs, target_step=20000):
+    # Find the entry closest to the target step
+    closest_log = None
+    closest_step_diff = float('inf')
+    
+    for line in logs:
+        if "type eval" not in line:
+            continue
+            
+        # Extract step number
+        step_match = re.search(r'step (\d+)', line)
+        if step_match:
+            step = int(step_match.group(1))
+            step_diff = abs(step - target_step)
+            
+            if step_diff < closest_step_diff:
+                closest_step_diff = step_diff
+                closest_log = line
+    
+    if closest_log:
+        # Extract the L1 gradient values
+        # Pattern based on observed log format where L1 gradients follow after layers
+        l1_match = re.search(r'∇_l1 ([\d\.]+) ([\d\.]+) ([\d\.]+) ([\d\.]+)', closest_log)
+        if l1_match:
+            l1_values = [float(l1_match.group(i)) for i in range(1, 5)]
+            return l1_values
+    
+    return None
+
+
+def extract_compound_ce_loss_increase(logs, target_step=20000):
+    # Find the entry closest to the target step
+    closest_log = None
+    closest_step_diff = float('inf')
+    
+    for line in logs:
+        if "type eval" not in line:
+            continue
+            
+        # Extract step number
+        step_match = re.search(r'step (\d+)', line)
+        if step_match:
+            step = int(step_match.group(1))
+            step_diff = abs(step - target_step)
+            
+            if step_diff < closest_step_diff:
+                closest_step_diff = step_diff
+                closest_log = line
+    
+    if closest_log:
+        # Extract the L1 gradient values
+        # Pattern based on observed log format where L1 gradients follow after layers
+        l1_match = re.search(r'ce_loss_increases', closest_log)
+        if l1_match:
+            l1_values = [float(l1_match.group(i)) for i in range(1, 9)]
+            return l1_values
+    
+

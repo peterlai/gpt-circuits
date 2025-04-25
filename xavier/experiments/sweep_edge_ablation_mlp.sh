@@ -3,15 +3,15 @@
 
 # Default parameters
 NUM_SAMPLES=2
-NUM_PROMPTS=5
+NUM_PROMPTS=3
 SEED=125
 
 # Parameters to loop over
-RUN_INDEX="testing_mlp"
-EDGE_SELECTIONS=("random")
+RUN_INDEX="jsae"
+EDGE_SELECTIONS=("gradient")
 UPSTREAM_LAYERS=(3)
 EDGE_SET=(10 29136 58262 87388 116514 145640 174766 203892 233018 262143 262144)
-SAE_VARIANTS=("topk")
+SAE_VARIANTS=("1.0e-03" "1.2e-03" "1.5e-03" "1.8e-03" "2.2e-03" "2.7e-03" "3.3e-03" "3.9e-03" "4.7e-03" "5.6e-03" "6.8e-03" "1.0e-02")
 
 # Create log directory if it doesn't exist
 LOG_DIR="xavier/experiments/logs"
