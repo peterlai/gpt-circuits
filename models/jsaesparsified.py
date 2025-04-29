@@ -146,7 +146,7 @@ class JSparsifiedGPT(MLPSparsifiedGPT):
                 pre_actfn_copy = pre_actfn.detach().requires_grad_(True)
                 
                 with torch.enable_grad():
-                    recomputed_post_actfn = F.gelu(pre_actfn_copy)
+                    recomputed_post_actfn = F.gelu(pre_actfn_copy, approximate="tanh")
                 
                     grad_of_actfn = torch.autograd.grad(
                         outputs=recomputed_post_actfn, 
