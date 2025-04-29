@@ -49,10 +49,6 @@ class JSparsifiedGPT(MLPSparsifiedGPT):
         with self.record_activations() as activations:
             with self.use_saes() as encoder_outputs:
                 logits, cross_entropy_loss = self.gpt(idx, targets)
-        # print(cross_entropy_loss) # Optional: Keep for debugging
-        # print(self.resid_mid_cache) # Optional: Keep for debugging
-        #torch.cuda.synchronize()
-        #print("SLOW DOWN BUDDY")
         
         # If targets are provided during training evaluation, gather more metrics
         ce_loss_increases = None
@@ -107,7 +103,7 @@ class JSparsifiedGPT(MLPSparsifiedGPT):
         
         resid_post = post_mlp_recon + resid_mid
         
-        return self.gpt.forward_from_layer(resid_post, layer_idx+1)
+        return self.gpt.forward(resid_post, start_at_layer=layer_idx+1).logits
             
     
     @contextmanager

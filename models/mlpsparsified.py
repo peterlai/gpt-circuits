@@ -80,10 +80,6 @@ class MLPSparsifiedGPT(SparsifiedGPT):
         with self.record_activations() as activations:
             with self.use_saes() as encoder_outputs:
                 logits, cross_entropy_loss = self.gpt(idx, targets)
-        # print(cross_entropy_loss) # Optional: Keep for debugging
-        # print(self.resid_mid_cache) # Optional: Keep for debugging
-        #torch.cuda.synchronize()
-        #print("SLOW DOWN BUDDY")
         
         # If targets are provided during training evaluation, gather more metrics
         ce_loss_increases = None
@@ -135,21 +131,15 @@ class MLPSparsifiedGPT(SparsifiedGPT):
         for layer_idx in self.layer_idxs:
             mlp = self.gpt.transformer.h[layer_idx].mlp
             ln2 = self.gpt.transformer.h[layer_idx].ln_2
-            
-            # run post hook for mlp to capture both inputs and outputs
-            #seems to work even without disabling compiler
+
             @torch.compiler.disable(recursive=False)
             def mlp_hook_fn(module, inputs, outputs, layer_idx=layer_idx):
-                # TODO: Why is inputs wrapped in a tuple, but outputs is not?
-                # Why don't
                 activations[f'{layer_idx}_mlpin'] = inputs[0]
                 activations[f'{layer_idx}_mlpout'] = outputs
             
             # run pre hook for ln2 to capture resid_mid
             # need to sneak them out of the hook_fn
             
-            # If you don't disable compiler, you get an error
-            # about 0_residmid not being found???
             @torch.compiler.disable(recursive=False)
             def ln2_hook_fn(module, inputs, layer_idx=layer_idx):
                 activations[f'{layer_idx}_residmid'] = inputs[0]
@@ -162,7 +152,6 @@ class MLPSparsifiedGPT(SparsifiedGPT):
             yield activations
 
         finally:
-            # Unregister hooks
             for hook_fn in hooks:
                 hook_fn.remove()
  
@@ -186,11 +175,9 @@ class MLPSparsifiedGPT(SparsifiedGPT):
             if hook_loc == 'mlpout':
                 assert outputs is not None, f"outputs: {outputs}"
             
-            # TODO: Why is inputs wrapped in a tuple, but outputs is not?
             x = inputs[0] if hook_loc == 'mlpin' else outputs
             encoder_outputs[sae_key] = sae(x)
 
-            # Patch activations if needed
             if should_patch_activations:
                 return encoder_outputs[sae_key].reconstructed_activations
             else:
@@ -213,10 +200,8 @@ class MLPSparsifiedGPT(SparsifiedGPT):
         :yield encoder_outputs: Dictionary of encoder outputs.
         key = f"{layer_idx}_{hook_loc}" e.g. 0_mlpin, 0_mlpout, 1_mlpin, 1_mlpout, etc.
         """
-        # Dictionary for storing results
         encoder_outputs: dict[str, EncoderOutput] = {}
 
-        # Register hooks
         hooks = []
         for sae_key in self.saes.keys():
             layer_idx, hook_loc = self.split_sae_key(sae_key)
@@ -234,7 +219,6 @@ class MLPSparsifiedGPT(SparsifiedGPT):
             yield encoder_outputs
 
         finally:
-            # Unregister hooks
             for hook_fn in hooks:
                 hook_fn.remove()
 

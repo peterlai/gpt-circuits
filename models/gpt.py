@@ -5,15 +5,21 @@ GPT-2 model. Adopted from: https://github.com/karpathy/build-nanogpt
 import dataclasses
 import json
 import os
-from typing import Optional
+from typing import Optional, Union, Tuple
 
 import torch
 import torch.nn as nn
 from safetensors.torch import load_model, save_model
 from torch.nn import functional as F
-
+from torch import Tensor
 from config.gpt.models import GPTConfig
+from jaxtyping import Float, Int
 
+import warnings
+
+from collections import namedtuple
+
+GPTOutput = namedtuple("GPTOutput", ["logits", "loss"])
 
 class CausalSelfAttention(nn.Module):
 
@@ -119,9 +125,8 @@ class GPT(nn.Module):
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 
-    def forward(self, idx, targets=None):
-        # idx is of shape (B, T)
 
+    def embed(self, idx : Int[Tensor, "B T"]) -> Float[Tensor, "B T n_embd"]:
         B, T = idx.size()
         assert (
             T <= self.config.block_size
@@ -130,36 +135,87 @@ class GPT(nn.Module):
         pos = torch.arange(0, T, dtype=torch.long, device=idx.device)  # shape (T)
         pos_emb = self.transformer.wpe(pos)  # position embeddings of shape (T, n_embd)
         tok_emb = self.transformer.wte(idx)  # token embeddings of shape (B, T, n_embd)
-        x = tok_emb + pos_emb
-        # forward the blocks of the transformer
-        for block in self.transformer.h:
-            x = block(x)
+        resid = tok_emb + pos_emb
+        return resid
+
+    
+    def forward(self,
+                input : Union[Int[Tensor, "B T"], Float[Tensor, "B T n_embd"]],
+                targets : Optional[Int[Tensor, "B T"]]=None,
+                start_at_layer : Optional[int]=None,
+                stop_at_layer : Optional[int]=None
+        ) -> Union[Float[Tensor, "B T n_embd"], GPTOutput]: # NOTE: Assumes GPTOutput namedtuple is defined elsewhere
+        # idx is of shape (B, T)
+        """
+        Forward pass of the GPT model.
+        start_at_layer and stop_at_layer are optional parameters that allow the forward pass to be
+        stopped at a specific layer. If not specified, the full model is run.
+        See https://github.com/TransformerLensOrg/TransformerLens/blob/main/transformer_lens/HookedTransformer.py
+        
+        Args:
+            input: Input tensor. Can be token indices (Int[Tensor, "B T"]) or embeddings
+                   (Float[Tensor, "B T n_embd"]) if start_at_layer is specified.
+            targets: Optional target tensor for loss calculation. Shape: (Int[Tensor, "B T"]).
+            start_at_layer: Optional layer index to start the forward pass from. Inclusive.
+                            Requires input to be embeddings. Defaults to None (start from embedding).
+            stop_at_layer: Optional layer index to stop the forward pass at. Exclusive.
+                           If specified, returns the residual stream at that point. Defaults to None (run full model).
+
+        Returns:
+            Union[Float[Tensor, "B T n_embd"], GPTOutput]:
+                - If stop_at_layer is not None, returns the residual stream tensor of shape (B, T, n_embd).
+                - Otherwise, returns a GPTOutput namedtuple containing:
+                    - logits: Output logits tensor of shape (B, T, vocab_size).
+                    - loss: Calculated cross-entropy loss (scalar tensor) if targets are provided, else None.
+
+        start_at_layer Optional[int]: If not None, start the forward pass at the specified
+                layer. Requires input to be the residual stream before the specified layer with
+                shape [batch, pos, d_model]. Inclusive - ie, start_at_layer = 0 skips the embedding
+                then runs the rest of the model. Supports negative indexing. start_at_layer = -1
+                only runs the final block and the unembedding. Defaults to None (run the full
+                model).
+                
+         stop_at_layer Optional[int]: If not None, stop the forward pass at the specified layer.
+                Exclusive - ie, stop_at_layer = 0 will only run the embedding layer, stop_at_layer =
+                1 will run the embedding layer and the first transformer block, etc. Supports
+                negative indexing. Useful for analysis of intermediate layers, eg finding neuron
+                activations in layer 3 of a 24 layer model. Defaults to None (run the full model).
+                If not None, we return the last residual stream computed.
+        """
+        if start_at_layer is None:
+            assert input.ndim == 2 and not input.is_floating_point(), f"input must be an integer tensor of shape (B, T) when start_at_layer is None"
+            resid = self.embed(input)
+            start_at_layer = 0
+        else:
+            assert input.ndim == 3 and input.is_floating_point(), f"input must be a float tensor of shape (B, T, n_embd) when start_at_layer is specified"
+            resid = input
+
+        if start_at_layer < 0:
+            start_at_layer = self.config.n_layer + start_at_layer
+
+        if stop_at_layer is not None and stop_at_layer < 0:
+             stop_at_layer = self.config.n_layer + stop_at_layer
+
+        for block in self.transformer.h[start_at_layer:stop_at_layer]:
+            resid = block(resid)
+
+        if stop_at_layer is not None:
+            if targets is not None:
+                warnings.warn("GPT.forward: Cannot measure loss if stop_at_layer is used. Returning last residual stream.")
+            return resid
 
         # forward the final layernorm and the classifier
-        x = self.transformer.ln_f(x)
-        logits = self.lm_head(x)  # (B, T, vocab_size)
+        resid = self.transformer.ln_f(resid)
+        logits = self.lm_head(resid)  # (B, T, vocab_size)
+
+        loss = None
         if targets is not None:
             loss = F.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
-            return (logits, loss)
-        else:
-            return (logits, None)
 
-    def forward_with_patched_activations(self, x: torch.Tensor, layer_idx: int) -> torch.Tensor:
-        """
-        Forward pass of the model with patched activations.
+        return GPTOutput(logits=logits, loss=loss)
 
-        :param x: Patched activations. Shape: (B, T, n_embd)
-        :param layer_idx: Layer index. 0 patches activations just before the first transformer block.
-        """
-        # forward through transformer blocks starting with the specified layer
-        for block in self.transformer.h[layer_idx:]:
-            x = block(x)
-
-        # forward through the final layernorm and the classifier
-        x = self.transformer.ln_f(x)
-        logits = self.lm_head(x)
-
-        return logits
+    def forward_with_patched_activations(self, resid: torch.Tensor, layer_idx: int) -> torch.Tensor:
+        return self.forward(resid, start_at_layer=layer_idx).logits
 
     @classmethod
     def load(cls, dir, device: torch.device):
