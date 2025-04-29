@@ -1,5 +1,5 @@
 """
-python -m training.sae.jsae_concurrent [--config=jsae.shakespeare_64x4] [--load_from=shakespeare_64x4] [--sparsity=0.02]
+python -m training.sae.jsae_concurrent [--config=jsae.shakespeare_64x4] [--load_from=shakespeare_64x4] [--sparsity=0.02|0.1,0.2,0.3,0.4]
 """
 # %%
 import argparse
@@ -23,7 +23,7 @@ import dataclasses
 import json
 from config.sae.models import SAEConfig
 
-from typing import Optional
+from typing import Optional, List, Union
 # Change current working directory to parent
 # while not os.getcwd().endswith("gpt-circuits"):
 #     os.chdir("..")
@@ -40,7 +40,7 @@ def get_jacobian_mlp_sae(
 ) -> torch.Tensor:
     # required to transpose mlp weights as nn.Linear stores them backwards
     # everything should be of shape (d_out, d_in)
-    
+
     wd1 = sae_mlpin.W_dec @ mlp.W_in.T #(feat_size, d_model) @ (d_model, d_mlp) -> (feat_size, d_mlp)
     w2e = mlp.W_out.T @ sae_mlpout.W_enc #(d_mlp, d_model) @ (d_model, feat_size) -> (d_mlp, feat_size)
 
@@ -63,8 +63,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, help="Training config", default="jsae.shakespeare_64x4")
     parser.add_argument("--load_from", type=str, help="GPT model weights to load", default="shakespeare_64x4")
-    parser.add_argument("--name", type=str, help="Model name for checkpoints")
-    parser.add_argument("--sparsity", type=float, help="Jacobian sparsity loss coefficient", default=0.02)
+    parser.add_argument("--name", type=str, help="Model name for checkpoints", default="jsae.shk_64x4")
+    parser.add_argument("--sparsity", type=str, help="Jacobian sparsity loss coefficient(s). Either a single float or comma-separated floats for each layer.", default="0.02")
     parser.add_argument("--max_steps", type=int, help="Maximum number of steps to train", default=7500)
     return parser.parse_args()
 
@@ -150,9 +150,9 @@ class JSaeTrainer(ConcurrentTrainer):
                 continue
             topk_indices_mlpin = output.indices[f'{layer_idx}_mlpin']
             topk_indices_mlpout = output.indices[f'{layer_idx}_mlpout']
-            
+
             mlp_act_grads = output.activations[f"{layer_idx}_mlpactgrads"]
-            
+
             jacobian_loss = get_jacobian_mlp_sae(
                 sae_mlpin = self.model.saes[f'{layer_idx}_mlpin'],
                 sae_mlpout = self.model.saes[f'{layer_idx}_mlpout'],
@@ -161,19 +161,19 @@ class JSaeTrainer(ConcurrentTrainer):
                 topk_indices_mlpout = topk_indices_mlpout,
                 mlp_act_grads = mlp_act_grads,
             )
-            
+
             # Each SAE has it's own loss term, and are trained "independently"
             # so we will put the jacobian loss into the aux loss term
             # for the sae_mlpout for each pair of SAEs
             jacobian_losses[layer_idx] = jacobian_loss
-        
+
         # Store computed loss components in sparsify output to be read out by gather_metrics
         output.sparsity_losses = jacobian_losses.detach()
-        
+
         pair_losses = einops.rearrange(recon_losses, "(layer pair) -> layer pair", pair=2).sum(dim=-1)
         losses = pair_losses + j_coeffs * jacobian_losses # (layer)
         return losses
-            
+
 
     def gather_metrics(self, loss: torch.Tensor, output: SparsifiedGPTOutput) -> dict[str, torch.Tensor]:
         """
@@ -182,7 +182,7 @@ class JSaeTrainer(ConcurrentTrainer):
         metrics =  super().gather_metrics(loss, output)
         metrics["∇_l1"] = output.sparsity_losses
         metrics["recon_l2"] = output.recon_losses
-            
+
         return metrics
 
 if __name__ == "__main__":
@@ -197,21 +197,39 @@ if __name__ == "__main__":
         config.name = args.name
     if args.max_steps:
         config.max_steps = args.max_steps
-        
-    if args.sparsity is not None:
-        num_trainable_layers = len(config.loss_coefficients.sparsity)
-        config.loss_coefficients.sparsity = (args.sparsity, ) * num_trainable_layers
-        print(f"Setting sparsity to {args.sparsity} for all {num_trainable_layers} layers")
-        
-        config.name = f"{config.name}-sparsity-{args.sparsity:.1e}"
-        
-        # Update outdir
 
+    if args.sparsity is not None:
+        try:
+            sparsity_values_str = args.sparsity.split(',')
+            sparsity_values = [float(s.strip()) for s in sparsity_values_str]
+        except ValueError:
+            print(f"Error: Invalid format for --sparsity. Expected a single float or comma-separated floats. Got: {args.sparsity}")
+            sys.exit(1)
+
+        num_trainable_layers = len(config.loss_coefficients.sparsity) # Use initial config to know layer count
+
+        if len(sparsity_values) == 1:
+            # Single value provided, apply to all layers
+            sparsity_val = sparsity_values[0]
+            config.loss_coefficients.sparsity = (sparsity_val,) * num_trainable_layers
+            print(f"Setting sparsity to {sparsity_val} for all {num_trainable_layers} layers")
+            config.name = f"{config.name}-sparse-{sparsity_val:.1e}"
+        elif len(sparsity_values) == num_trainable_layers:
+            # Correct number of values provided for each layer
+            config.loss_coefficients.sparsity = tuple(sparsity_values)
+            print(f"Setting per-layer sparsity: {config.loss_coefficients.sparsity}")
+            # Modify name to include all sparsity values
+            sparsity_str = "_".join([f"{s:.1e}" for s in sparsity_values])
+            config.name = f"{config.name}-sparse-{sparsity_str}"
+        else:
+            # Incorrect number of values
+            raise ValueError(f"Error: --sparsity must provide either 1 value (for all layers) or {num_trainable_layers} values (one per layer). Got {len(sparsity_values)} values.")
 
     # Initialize trainer
     trainer = JSaeTrainer(config, load_from=TrainingConfig.checkpoints_dir / args.load_from)
     print(f'{trainer.model.saes.keys()=}')
     print(f'{trainer.model.layer_idxs=}')
+    print(f'Using sparsity coefficients: {trainer.model.loss_coefficients.sparsity}')
     trainer.train()
 
 # %%
