@@ -80,7 +80,11 @@ class TopKSAE(TopKBase, SparseAutoencoder):
     https://arxiv.org/pdf/2406.04093v1
     """
 
-    def __init__(self, layer_idx: int, config: SAEConfig, loss_coefficients: Optional[LossCoefficients], model: nn.Module):
+    def __init__(self, 
+                 layer_idx: int, 
+                 config: SAEConfig, 
+                 loss_coefficients: Optional[LossCoefficients] = None, 
+                 model: Optional[nn.Module] = None):
         SparseAutoencoder.__init__(self, layer_idx, config, loss_coefficients, model)
         TopKBase.__init__(self, layer_idx, config, loss_coefficients, model)
         

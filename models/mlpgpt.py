@@ -38,11 +38,18 @@ class MLP_GPT(GPT):
         
         resid_post = mlp_out + resid_mid
         # forward through transformer blocks starting with the specified layer
-        for block in self.transformer.h[layer_idx+1:]:
-            resid_post = block(resid_post)
-
-        # forward through the final layernorm and the classifier
-        resid_post_normalized = self.transformer.ln_f(resid_post)
+        return self.forward_from_layer(resid_post, layer_idx+1)
+            
+    def forward_from_layer(self, 
+                           resid_mid: Float[Tensor, "B T n_embd"],
+                           layer_idx: int) -> torch.Tensor:
+        """
+        Forward pass of the model from the specified layer.
+        """
+        for block in self.transformer.h[layer_idx:]:
+            resid_mid = block(resid_mid)
+        
+        resid_post_normalized = self.transformer.ln_f(resid_mid)
         logits = self.lm_head(resid_post_normalized)
-
+        
         return logits
