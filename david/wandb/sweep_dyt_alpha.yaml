@@ -1,0 +1,33 @@
+command:
+  - ${env}
+  - python
+  - -m
+  - training.gpt_wandb
+  - "--config=shakespeare_64x4_dyt"
+  - "--wandb-project=gpt-sweep-shakespeare"
+method: bayes
+metric:
+  name: best_val_loss
+  goal: minimize
+parameters:
+  config:
+    value: "shakespeare_64x4"
+  wandb_project:
+    value: "gpt-sweep-dyt-alpha"
+  # wandb_entity: # Optional: uncomment and set if needed
+  #   value: "your_wandb_username_or_team"
+
+  # --- Hyperparameters to sweep ---
+  max_steps:
+    values: [5000, 7500, 10000, 12500, 15000, 20000]
+  lr_end: # Corresponds to config.min_lr
+    distribution: log_uniform_values
+    min: 5e-6
+    max: 5e-4
+  alpha_mlp: # Corresponds to config.gpt_config.alpha_mlp
+    distribution: log_uniform_values
+    min: 0.1
+    max: 10.0
+  # --- Fixed parameters for all runs in this sweep (optional) ---
+  norm_strategy:
+    value: "DynamicTanh" # Example: Force DynamicTanh for all runs 

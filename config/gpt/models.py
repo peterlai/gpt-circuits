@@ -1,7 +1,14 @@
 from dataclasses import dataclass
+from enum import Enum
 
 from config import Config, map_options
 from data.tokenizers import ASCIITokenizer, TikTokenTokenizer, Tokenizer
+
+
+class NormalizationStrategy(str, Enum):
+    LAYER_NORM = "LayerNorm"
+    DYNAMIC_TANH = "DynamicTanh"
+    IDENTITY = "Identity"
 
 
 @dataclass
@@ -11,6 +18,9 @@ class GPTConfig(Config):
     n_layer: int = 0  # number of layers
     n_head: int = 0  # number of heads
     n_embd: int = 0  # embedding dimension
+    norm_strategy: NormalizationStrategy = NormalizationStrategy.LAYER_NORM
+    alpha_attn: float = 2.0 # DyT alpha attention block
+    alpha_mlp: float = 2.0
 
     @property
     def tokenizer(self) -> Tokenizer:
@@ -44,6 +54,16 @@ gpt_options: dict[str, GPTConfig] = map_options(
         n_head=4,
         n_embd=64,
     ),
+     GPTConfig(
+        name="ascii_64x4_dyt",
+        block_size=128,
+        vocab_size=ASCIITokenizer.vocab_size,
+        n_layer=4,
+        n_head=4,
+        n_embd=64,
+        norm_strategy=NormalizationStrategy.DYNAMIC_TANH,
+        alpha_mlp=10.0,
+    ),
     GPTConfig(
         name="ascii_128x6",
         block_size=128,
@@ -68,4 +88,4 @@ gpt_options: dict[str, GPTConfig] = map_options(
         n_head=16,
         n_embd=256,
     ),
-)
+)#type: ignore

@@ -9,7 +9,10 @@ from typing import Optional, Union, Tuple
 
 import torch
 import torch.nn as nn
+from config.gpt.models import GPTConfig, NormalizationStrategy
+from jaxtyping import Float, Int
 from safetensors.torch import load_model, save_model
+from torch import Tensor
 from torch.nn import functional as F
 from torch import Tensor
 from config.gpt.models import GPTConfig
@@ -18,8 +21,42 @@ from jaxtyping import Float, Int
 import warnings
 
 from collections import namedtuple
+from typing import Literal
 
-GPTOutput = namedtuple("GPTOutput", ["logits", "loss"])
+class DynamicTanh(nn.Module):
+    def __init__(self, n_embd, init_alpha=2):
+        super().__init__()
+        self.alpha = nn.Parameter(torch.ones(1) * init_alpha)
+        self.gamma = nn.Parameter(torch.ones(n_embd))
+        self.beta = nn.Parameter(torch.zeros(n_embd))
+
+    def forward(self, x : Float[Tensor, "batch seq n_embd"]) -> torch.Tensor:
+        x = torch.tanh(self.alpha * x)
+        return self.gamma * x + self.beta
+    
+
+def norm_factory(loc : Literal["attn", "mlp", "final"], config: GPTConfig) -> nn.Module:
+    match config.norm_strategy:
+        case NormalizationStrategy.LAYER_NORM:
+            return nn.LayerNorm(config.n_embd)
+        
+        case NormalizationStrategy.DYNAMIC_TANH:
+            match loc:
+                case "attn":
+                    return nn.LayerNorm(config.n_embd)
+                case "mlp":
+                    return DynamicTanh(config.n_embd, init_alpha=config.alpha_mlp)
+                case "final":
+                    return nn.LayerNorm(config.n_embd)
+                case _:
+                    raise ValueError(f"Invalid location: {loc}")
+        
+        # Control case: No normalization
+        case NormalizationStrategy.IDENTITY:
+            return nn.Identity
+        
+        case _:
+            raise ValueError(f"Unknown normalization strategy: {config.norm_strategy}")
 
 class CausalSelfAttention(nn.Module):
 
@@ -73,14 +110,13 @@ class MLP(nn.Module):
     def W_out(self) -> torch.Tensor:
         return self.c_proj.weight
 
-
 class Block(nn.Module):
 
-    def __init__(self, config, layer_idx):
+    def __init__(self, config, norm_class):
         super().__init__()
-        self.ln_1 = nn.LayerNorm(config.n_embd)
+        self.ln_1 = norm_factory(loc="attn", config=config)
         self.attn = CausalSelfAttention(config)
-        self.ln_2 = nn.LayerNorm(config.n_embd)
+        self.ln_2 = norm_factory(loc="mlp", config=config)
         self.mlp = MLP(config)
 
     def forward(self, resid_pre : torch.Tensor) -> torch.Tensor:
@@ -88,19 +124,21 @@ class Block(nn.Module):
         resid_post = resid_mid + self.mlp(self.ln_2(resid_mid)) #can capture resid_mid via input to ln_2
         return resid_post
 
+GPTOutput = namedtuple("GPTOutput", ["logits", "loss"])
 
 class GPT(nn.Module):
 
     def __init__(self, config: GPTConfig):
         super().__init__()
         self.config = config
-
+        norm_class = self.get_normalization_class(config)
+        
         self.transformer = nn.ModuleDict(
             dict(
                 wte=nn.Embedding(config.vocab_size, config.n_embd),
                 wpe=nn.Embedding(config.block_size, config.n_embd),
-                h=nn.ModuleList([Block(config, layer_idx=i + 1) for i in range(config.n_layer)]),
-                ln_f=nn.LayerNorm(config.n_embd),
+                h=nn.ModuleList([Block(config, norm_class) for i in range(config.n_layer)]),
+                ln_f=norm_factory(loc="final", config=config),
             )
         )
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
@@ -239,3 +277,20 @@ class GPT(nn.Module):
             json.dump(meta, f)
 
         save_model(self, weights_path)
+
+    def get_normalization_class(self, config) -> type[nn.Module]:
+        """
+        Returns the NN class to use for normalization.
+        """
+        norm_class = None
+        match config.norm_strategy:
+            case NormalizationStrategy.LAYER_NORM:
+                norm_class = nn.LayerNorm
+            case NormalizationStrategy.DYNAMIC_TANH:
+                norm_class = DynamicTanh
+            case NormalizationStrategy.IDENTITY:
+                norm_class = nn.Identity
+            case _:
+                raise Exception("Unknown layer norm strategy")
+        return norm_class
+
