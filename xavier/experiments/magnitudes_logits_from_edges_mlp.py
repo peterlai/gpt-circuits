@@ -10,6 +10,7 @@ import json
 import argparse
 from transformer_lens.hook_points import HookPoint
 import torch.nn.functional as F
+from safetensors.torch import load_model, load_file, save_file
 
 # Path setup
 project_root = Path(__file__).parent.parent.parent
@@ -23,8 +24,13 @@ from models.mlpsparsified import MLPSparsifiedGPT
 from data.tokenizers import ASCIITokenizer
 from david.convert_to_tl import convert_gpt_to_transformer_lens
 from david.convert_to_tl import run_tests as run_tl_tests
-from xavier.utils import create_tokenless_edges_from_array
+from xavier.utils import create_tokenless_edges_from_array, get_attribution_rankings
 
+from circuits import Circuit
+from circuits.search.divergence import (
+    compute_downstream_magnitudes_mlp,
+    patch_feature_magnitudes,
+)
 from circuits.features.cache import ModelCache
 from circuits.features.profiles import ModelProfile
 from circuits.search.ablation import ResampleAblator
@@ -42,8 +48,9 @@ def main():
     parser.add_argument("--num-prompts", type=int, default=1, help="Number of prompts to use from validation data")
     parser.add_argument("--edge-selection", type=str, default="random", 
                         choices=["random", "gradient", "gradient_reversed", "manual_scaled", "manual_pos_scaled", "manual_unscaled"], help="Edge selection strategy")
-    parser.add_argument("--sae-variant", type=str, default="standard", 
-                        choices=["standard", "topk", "topk-x40", "topk-staircase", "jumprelu", "regularized", "top5", "top20", "topk"], help="Type of SAE")
+    parser.add_argument("--sae-variant", type=str, default="standard", help="Type of SAE")
+    #parser.add_argument("--sae-variant", type=str, default="standard", 
+                        #choices=["standard", "topk", "topk-x40", "topk-staircase", "jumprelu", "regularized", "top5", "top20", "topk", "mlp-topk", "jsae", "1e0", "1e-1", "1e-2", "1e-3", "2e-1", "2e-2", "5e-1", "5e-2", "5e-3"], help="Type of SAE")
     parser.add_argument("--run-index", type=str, default="testing", help="Index of the run")
     parser.add_argument("--seed", type=int, default=125, help="Random seed")
     args = parser.parse_args()
@@ -70,8 +77,15 @@ def main():
     # Setup model paths
     checkpoint_dir = project_root / "checkpoints"
     gpt_dir = checkpoint_dir / "shakespeare_64x4"
-    mlp_dir = checkpoint_dir / f"mlp-{sae_variant}.shakespeare_64x4"
     data_dir = project_root / "data"
+
+    # Hacky fix for loading the model
+    if sae_variant == "mlp-topk":
+        mlp_dir = checkpoint_dir / f"{sae_variant}.shakespeare_64x4"
+    elif sae_variant == "jsae":
+        mlp_dir = checkpoint_dir / f"{sae_variant}.shakespeare_64x4"
+    else:
+        mlp_dir = checkpoint_dir / f"jsae.shk_64x4-sparse-{sae_variant}-steps-20k"
 
     # Load GPT model
     print("Loading GPT model...")
@@ -150,6 +164,12 @@ def main():
         random.shuffle(all_edges)
         edge_arr = all_edges[:num_edges]
 
+    elif edge_selection == "gradient":
+        gradient_dir = project_root / f"attributions/jsae.shakespeare_64x4-sparsity-{sae_variant}-20k.safetensors"
+        tensors = load_file(gradient_dir)
+        all_edges, _ = get_attribution_rankings(tensors[f'{2*upstream_layer_num}-{2*upstream_layer_num + 1}'])
+        edge_arr = all_edges[:num_edges]
+
     # Create TokenlessEdge objects
     edges = create_tokenless_edges_from_array(edge_arr, upstream_layer_num)
     
@@ -157,10 +177,43 @@ def main():
     print(f"Computing downstream magnitudes from {len(edges)} edges...")
     start_time = time.time()
     
+    print(upstream_magnitudes.shape)
+    print(downstream_magnitudes_full_circuit.shape)
     if num_edges == num_upstream_features * num_downstream_features:
         # Use the full circuit magnitudes
         print(f"Using full circuit magnitudes...")
         downstream_magnitudes = downstream_magnitudes_full_circuit
+
+    elif num_edges == 0:
+        # Create a dummy circuit for the ablator
+        empty_circuit = Circuit(nodes=frozenset()) # Dummy circuit not used for downstream computation
+        
+        downstream_magnitudes_list = []
+        for i in range(num_prompts):
+            dummy_downstream = compute_downstream_magnitudes_mlp(  # Shape: (num_samples, T, F)
+                model,
+                upstream_layer_num,
+                {empty_circuit: upstream_magnitudes[i].unsqueeze(0)}
+            )
+            dummy_downstream_magnitudes = dummy_downstream[empty_circuit].squeeze(0)
+            print(dummy_downstream_magnitudes.shape)
+
+            # Initialise the result tensor as the patched downstream magnitudes
+            patched_downstream_magnitudes = patch_feature_magnitudes(  # Shape: (num_samples, T, F)
+                ablator,
+                upstream_layer_num + 1,
+                target_token_idx,
+                [empty_circuit],
+                dummy_downstream_magnitudes,
+                num_samples=num_samples,
+            )
+
+            # Average over num_samples
+            averaged_downstream_magnitudes = patched_downstream_magnitudes[empty_circuit][0].mean(dim=0)
+            downstream_magnitudes_list.append(averaged_downstream_magnitudes)
+            
+        downstream_magnitudes = torch.stack(downstream_magnitudes_list, dim=0)
+
     else:
         # Compute downstream magnitudes from edges
         downstream_magnitudes = compute_batched_downstream_magnitudes_from_edges_mlp(
@@ -196,7 +249,12 @@ def main():
     )  # Shape: (num_batches, T, V)
     print(predicted_logits_full_circuit.shape)
 
+    # Compute logits full model
+    predicted_logits_full_model = model(input_ids, targets=None, is_eval=True).logits
+
+
     # Compute KL divergence between full and subcircuit logits
+    probs_full_model = F.softmax(predicted_logits_full_model, dim=-1)
     probs_full_circuit = F.softmax(predicted_logits_full_circuit, dim=-1)
     probs = F.softmax(predicted_logits, dim=-1)
 
@@ -204,6 +262,9 @@ def main():
     epsilon = 1e-8
     kl_div = probs_full_circuit * torch.log((probs_full_circuit + epsilon) / (probs + epsilon))
     kl_div = kl_div.sum(dim=-1)  # Sum over vocabulary dimension
+
+    kl_div_full_model = probs_full_model * torch.log((probs_full_model + epsilon) / (probs + epsilon))
+    kl_div_full_model = kl_div_full_model.sum(dim=-1)  # Sum over vocabulary dimension
 
     print(f"KL divergence shape: {kl_div.shape}")
 
@@ -229,6 +290,7 @@ def main():
         feature_magnitudes=downstream_magnitudes,
         logits=predicted_logits,
         kl_divergence=kl_div,
+        kl_divergence_full_model=kl_div_full_model,
         execution_time=execution_time
     )
     
