@@ -9,19 +9,19 @@ print(os.getcwd())
 import torch
 from models.gpt import MLP
 from models.sae.topk import TopKSAE
-from models.gpt import GPTConfig
+from models.gpt import GPTConfig, DynamicTanh
 
 from pathlib import Path
 from torch.nn import functional as F
 import einops
 from eindex import eindex
 from jaxtyping import Float, Int
+from typing import Optional, Callable
 from torch import Tensor
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
 import torch.nn as nn
-
 
 
 class DummySAE(nn.Module):
@@ -93,19 +93,23 @@ def get_jacobian_mlp_block(
     jacobian = jacobian_mlp_path + jacobian_skip_path
     return jacobian
 
-def my_act_fn(x):
-    return torch.tanh(x)
-
-def my_act_fn_grad(input, output):
-    # Gradient of tanh is 1 - tanh^2
-    return 1 - output ** 2
 
 activations = {}
+
+def get_elementwise_derivative(func: Callable, input : Tensor, output: Optional[Tensor] = None) -> Tensor: # (definition unchanged)
+    with torch.enable_grad():
+        if output is None:
+            output = func(input)
+        grads = torch.autograd.grad(outputs=output, inputs=input,
+                                    grad_outputs=torch.ones_like(output),
+                                    create_graph=False, retain_graph=True)[0]
+    return grads
 
 def sandwich_mlp_block(in_feat_mags : Float[Tensor, "batch seq feat"],
              sae_mlpin : DummySAE,
              mlp : MLP,
-             sae_mlpout : DummySAE) -> tuple[Float[Tensor, "batch seq feat"], Int[Tensor, "batch seq feat"]]:
+             sae_mlpout : DummySAE,
+             dyt: DynamicTanh) -> tuple[Float[Tensor, "batch seq feat"], Int[Tensor, "batch seq feat"]]:
     """
     takes sparse feature magnitudes and indices, and returns the sandwich product
     """
@@ -116,9 +120,9 @@ def sandwich_mlp_block(in_feat_mags : Float[Tensor, "batch seq feat"],
 
     resid_mid = sae_mlpin.decode(in_feat_mags_sparse)
 
-    mlp_pre_act = my_act_fn(resid_mid)
+    mlp_pre_act = dyt(resid_mid)
 
-    activations["norm_act_grad"] = my_act_fn_grad(resid_mid, mlp_pre_act)
+    activations["norm_act_grad"] = get_elementwise_derivative(dyt, resid_mid, mlp_pre_act)
 
     mlp_post_act = mlp(mlp_pre_act)
 
@@ -136,7 +140,7 @@ batch, seq = 2, 5
 mlp = MLP(GPTConfig(n_embd=n_embd)).to(device)
 sae_mlpin = DummySAE(n_embd, n_feat, k).to(device)
 sae_mlpout = DummySAE(n_embd, n_feat, k).to(device)
-
+dyt = DynamicTanh(n_embd).to(device)
 # %%
 
 
@@ -173,13 +177,13 @@ torch.manual_seed(42)
 sparse_feat_mags_in = torch.randn((batch, seq, n_feat), device=device)
 hook_handle = mlp.gelu.register_forward_hook(mlp_gelu_hook_fn)
 
-sparse_feat_mags_out, in_feat_idx, out_feat_idx = sandwich_mlp_block(sparse_feat_mags_in, sae_mlpin, mlp, sae_mlpout)
+sparse_feat_mags_out, in_feat_idx, out_feat_idx = sandwich_mlp_block(sparse_feat_mags_in, sae_mlpin, mlp, sae_mlpout, dyt)
 hook_handle.remove() 
 
 def sandwich_block_for_autograd(input_features):
     # We are differentiating the *final sparse output magnitudes*
     # w.r.t the *initial dense input feature magnitudes*.
-    sparse_output_mags, _, _ = sandwich_mlp_block(input_features, sae_mlpin, mlp, sae_mlpout)
+    sparse_output_mags, _, _ = sandwich_mlp_block(input_features, sae_mlpin, mlp, sae_mlpout, dyt)
     return sparse_output_mags
 
 
