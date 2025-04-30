@@ -71,7 +71,7 @@ class JSaeTrainer(ConcurrentTrainer):
             # HACK: We're doing something that causes DDP to crash unless DDP optimization is disabled.
             torch._dynamo.config.optimize_ddp = False  # type: ignore
             
-    def save_checkpoint(self, model: JSparsifiedGPT, is_best: torch.Tensor):
+    def save_checkpoint(self, model: JSparsifiedGPT, is_best: torch.Tensor, locs = ('mlpin', 'mlpout')):
         """
         Save SAE weights for layers that have achieved a better validation loss.
         """
@@ -88,7 +88,7 @@ class JSaeTrainer(ConcurrentTrainer):
         for layer_idx in self.model.layer_idxs:
             if is_best[layer_idx]:
             # save this pair of saes!
-                for loc in ['mlpin', 'mlpout']:
+                for loc in locs:
                     sae = self.model.saes[f'{layer_idx}_{loc}']
                     assert "jsae" in sae.config.sae_variant
                     sae.save(Path(dir))
