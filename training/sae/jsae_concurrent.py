@@ -29,32 +29,7 @@ from typing import Optional, List, Union
 #     os.chdir("..")
 # print(os.getcwd())
 
-@torch.compile(mode="max-autotune", fullgraph=True)
-def get_jacobian_mlp_sae(
-    sae_mlpin : SparseAutoencoder,
-    sae_mlpout : SparseAutoencoder,
-    mlp: MLP,
-    topk_indices_mlpin: torch.Tensor,
-    topk_indices_mlpout: torch.Tensor,
-    mlp_act_grads: torch.Tensor,
-) -> torch.Tensor:
-    # required to transpose mlp weights as nn.Linear stores them backwards
-    # everything should be of shape (d_out, d_in)
-
-    wd1 = sae_mlpin.W_dec @ mlp.W_in.T #(feat_size, d_model) @ (d_model, d_mlp) -> (feat_size, d_mlp)
-    w2e = mlp.W_out.T @ sae_mlpout.W_enc #(d_mlp, d_model) @ (d_model, feat_size) -> (d_mlp, feat_size)
-
-    dtype = wd1.dtype
-    k = sae_mlpin.k
-    jacobian = einops.einsum(
-        wd1[topk_indices_mlpin],
-        mlp_act_grads.to(dtype),
-        w2e[:, topk_indices_mlpout],
-        # "... seq_pos k1 d_mlp, ... seq_pos d_mlp,"
-        # "d_mlp ... seq_pos k2 -> ... seq_pos k2 k1",
-        "... k1 d_mlp, ... d_mlp, d_mlp ... k2 -> ... k2 k1",
-    ).abs_().sum() / (k ** 2)
-    return jacobian
+from utils.jsae import jacobian_mlp
 
 def parse_args() -> argparse.Namespace:
     """
@@ -153,7 +128,7 @@ class JSaeTrainer(ConcurrentTrainer):
 
             mlp_act_grads = output.activations[f"{layer_idx}_mlpactgrads"]
 
-            jacobian_loss = get_jacobian_mlp_sae(
+            jacobian_loss = jacobian_mlp(
                 sae_mlpin = self.model.saes[f'{layer_idx}_mlpin'],
                 sae_mlpout = self.model.saes[f'{layer_idx}_mlpout'],
                 mlp = self.model.gpt.transformer.h[layer_idx].mlp,
