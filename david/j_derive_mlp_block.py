@@ -1,11 +1,6 @@
-# %%
-# %load_ext autoreload
-# %autoreload 2
-# %%
-# from dataclasses import dataclass
+
 # %%
 import os
-os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 # Change current working directory to parent
 while not os.getcwd().endswith("gpt-circuits"):
     os.chdir("..")
@@ -14,17 +9,9 @@ print(os.getcwd())
 import torch
 from models.gpt import MLP
 from models.sae.topk import TopKSAE
-from models.sae import SAEConfig
 from models.gpt import GPTConfig
 
 from pathlib import Path
-from config.sae.models import SAEConfig, SAEVariant
-
-from config.sae.training import LossCoefficients
-from models.gpt import GPT
-from models.jsaesparsified import JSparsifiedGPT
-
-from typing import Optional, Literal
 from torch.nn import functional as F
 import einops
 
@@ -38,85 +25,104 @@ import torch.nn as nn
 
 
 class DummySAE(nn.Module):
-    def __init__(self, n_embd: int, n_features: int):
+    def __init__(self, n_embd: int, n_features: int, k: int = 1):
         super().__init__()
         self.W_dec = nn.Parameter(torch.randn((n_features, n_embd)))
         self.W_enc = nn.Parameter(torch.randn((n_embd, n_features)))
+        self.b_enc = nn.Parameter(torch.randn((n_features)))
+        self.b_dec = nn.Parameter(torch.randn((n_embd)))
+        self.k = k
 
-    def encode(self, x: torch.Tensor) -> torch.Tensor:
-        return x @ self.W_enc
+    def encode(self, x: torch.Tensor, return_indicies = False) -> torch.Tensor:
+        latent = (x - self.b_dec) @ self.W_enc + self.b_enc
+
+        # Zero out all but the top-k activations
+        top_k_values, top_k_indices = torch.topk(latent, self.k, dim=-1)
+        mask = latent >= top_k_values[..., -1].unsqueeze(-1)
+        latent_k_sparse = latent * mask.float()
+
+        if return_indicies:
+            return latent_k_sparse, top_k_indices
+        else:
+            return latent_k_sparse
     
     def decode(self, x: torch.Tensor) -> torch.Tensor:
-        return x @ self.W_dec
+        return x @ self.W_dec + self.b_dec
 
-def original_jacobian(
-    sae_mlpin : TopKSAE,
-    sae_mlpout : TopKSAE,
+def get_jacobian_mlp_sae(
+    sae_mlpin,
+    sae_mlpout,
     mlp: MLP,
-    topk_indices_mlpin: torch.Tensor,
-    topk_indices_mlpout: torch.Tensor,
-    mlp_act_grads: torch.Tensor,
+    topk_indices_mlpin: Int[Tensor, "batch seq k"],
+    topk_indices_mlpout: Int[Tensor, "batch seq k"],
+    mlp_act_grads: Float[Tensor, "batch seq d_mlp"], #d_mlp = 4 * n_embd
+    norm_act_grads: Float[Tensor, "batch seq n_embd"] = None,
 ) -> torch.Tensor:
     # required to transpose mlp weights as nn.Linear stores them backwards
     # everything should be of shape (d_out, d_in)
+
+    # #wd1 = sae_mlpin.W_dec @ mlp.W_in.T #(feat_size, d_model) @ (d_model, d_mlp) -> (feat_size, d_mlp)
+    # wd1 = einops.einsum(sae_mlpin.W_dec, norm_act_grads, mlp.W_in.T, "feat_size d_model, batch seq d_model -> batch seq feat_size d_mlp") 
+    # # w2e = mlp.W_out.T @ sae_mlpout.W_enc #(d_mlp, d_model) @ (d_model, feat_size) -> (d_mlp, feat_size)
+    # w2e = einops.einsum(mlp.W_out.T, sae_mlpout.W_enc, "d_mlp d_model, d_model feat_size -> d_mlp feat_size") # (d_mlp, feat_size)
+
+    wd1 = einops.einsum(sae_mlpin.W_dec, 
+                        norm_act_grads, 
+                        mlp.W_in, 
+                        "feat_size d_model, batch seq d_model, d_mlp d_model -> batch seq feat_size d_mlp")
     
-    wd1 = sae_mlpin.W_dec @ mlp.W_in.T #(feat_size, d_model) @ (d_model, d_mlp) -> (feat_size, d_mlp)
-    w2e = mlp.W_out.T @ sae_mlpout.W_enc #(d_mlp, d_model) @ (d_model, feat_size) -> (d_mlp, feat_size)
+    w2e = einops.einsum(mlp.W_out, sae_mlpout.W_enc, "d_model d_mlp, d_model feat_size -> d_mlp feat_size")
+
+    wd1_topk_indices = eindex(
+        wd1, topk_indices_mlpin, "batch seq [batch seq k] d_mlp -> batch seq k d_mlp"
+    )
 
     dtype = wd1.dtype
-
     jacobian = einops.einsum(
-        wd1[topk_indices_mlpin],
+        wd1_topk_indices,
         mlp_act_grads.to(dtype),
         w2e[:, topk_indices_mlpout],
-        # "... seq_pos k1 d_mlp, ... seq_pos d_mlp,"
-        # "d_mlp ... seq_pos k2 -> ... seq_pos k2 k1",
-        "... k1 d_mlp, ... d_mlp, d_mlp ... k2 -> ... k2 k1",
+        "batch seq k1 d_mlp, batch seq d_mlp, d_mlp batch seq k2 -> batch seq k2 k1", # ... = batch seq
     )
     return jacobian
 
+def my_act_fn(x):
+    return torch.tanh(x)
 
-def all_jacobian(
-    sae_mlpin : TopKSAE,
-    sae_mlpout : TopKSAE,
-    mlp: MLP,
-    mlp_act_grads: torch.Tensor,
-) -> torch.Tensor:
-    """
-    Computes the Jacobian of the output with respect to the input for all possible input indices.
-    """
-    wd1 = sae_mlpin.W_dec @ mlp.W_in.T #(feat_size, d_model) @ (d_model, d_mlp) -> (feat_size, d_mlp)
-    w2e = mlp.W_out.T @ sae_mlpout.W_enc #(d_mlp, d_model) @ (d_model, feat_size) -> (d_mlp, feat_size)
-
-    dtype = wd1.dtype
-
-    jacobian = einops.einsum(
-        wd1,
-        mlp_act_grads.to(dtype),
-        w2e,
-        "... feat1 d_mlp, ... d_mlp, d_mlp ... feat2 -> ... feat2 feat1",
-    )
-    return jacobian
-
+def my_act_fn_grad(input, output):
+    # Gradient of tanh is 1 - tanh^2
+    return 1 - output ** 2
 
 def sandwich(in_feat_mags : Float[Tensor, "batch seq feat"],
              sae_mlpin : DummySAE,
              mlp : MLP,
-             sae_mlpout : DummySAE):
+             sae_mlpout : DummySAE) -> tuple[Float[Tensor, "batch seq feat"], Int[Tensor, "batch seq feat"]]:
     """
     takes sparse feature magnitudes and indices, and returns the sandwich product
     """
     
-    mlp_pre_act = sae_mlpin.decode(in_feat_mags)
+    top_k_values, in_feat_idx = torch.topk(in_feat_mags, sae_mlpin.k, dim=-1)
+    mask = in_feat_mags >= top_k_values[..., -1].unsqueeze(-1)
+    in_feat_mags_sparse = in_feat_mags * mask.float()
+
+    norm_pre_act = sae_mlpin.decode(in_feat_mags_sparse)
+
+    mlp_pre_act = my_act_fn(norm_pre_act)
+
+    activations["norm_act_grad"] = my_act_fn_grad(norm_pre_act, mlp_pre_act)
+
     mlp_post_act = mlp(mlp_pre_act)
-    sae_mlpin_featmag = sae_mlpout.encode(mlp_post_act)
-    return sae_mlpin_featmag
+
+    out_feat_mags, out_feat_idx = sae_mlpout.encode(mlp_post_act, return_indicies=True)
+    
+    return out_feat_mags, in_feat_idx, out_feat_idx
   
-# %%
-n_embd, n_feat = 2, 5
+# %
+n_embd, n_feat, k = 7, 13, 3
+batch, seq = 2, 5
 mlp = MLP(GPTConfig(n_embd=n_embd)).to(device)
-sae_mlpin = DummySAE(n_embd, n_feat).to(device)
-sae_mlpout = DummySAE(n_embd, n_feat).to(device)
+sae_mlpin = DummySAE(n_embd, n_feat, k).to(device)
+sae_mlpout = DummySAE(n_embd, n_feat, k).to(device)
 
 # %%
 activations = {}
@@ -127,6 +133,9 @@ def mlp_gelu_hook_fn(module, inputs, outputs):
 
     pre_actfn_copy = pre_actfn.detach().requires_grad_(True)
 
+    print(f"pre_actfn_copy: {pre_actfn_copy.shape}")
+    print(f"post_actfn: {post_actfn.shape}")
+
     with torch.enable_grad():
         recomputed_post_actfn = F.gelu(pre_actfn_copy, approximate="tanh")
         grad_of_actfn = torch.autograd.grad(
@@ -136,54 +145,61 @@ def mlp_gelu_hook_fn(module, inputs, outputs):
             retain_graph=False,
             create_graph=False
         )[0]
+    print(f"grad_of_actfn: {grad_of_actfn.shape}")
 
     activations["mlp_gelu"] = grad_of_actfn
     return outputs
 
+
 # Hook registration
+
+
+# %%
+
+torch.manual_seed(42)
+sparse_feat_mags_in = torch.randn((batch, seq, n_feat), device=device)
 hook_handle = mlp.gelu.register_forward_hook(mlp_gelu_hook_fn)
 
-# %%
-
-
-batch, seq = 1, 1
-sparse_feat_mags_in = torch.randn((batch, seq, n_feat), device=device)
-# topk_indices_in = torch.arange(n_feat, device=device, dtype=torch.int64)
-# topk_indices_in = einops.repeat(topk_indices_in, "k -> b s k", b=batch, s=seq)
-sparse_feat_mags_out = sandwich(sparse_feat_mags_in, sae_mlpin, mlp, sae_mlpout)
+sparse_feat_mags_out, in_feat_idx, out_feat_idx = sandwich(sparse_feat_mags_in, sae_mlpin, mlp, sae_mlpout)
 hook_handle.remove() 
-# %%
-jacobian_exact = all_jacobian(
+
+def sandwich_for_autograd(input_features):
+    # We are differentiating the *final sparse output magnitudes*
+    # w.r.t the *initial dense input feature magnitudes*.
+    sparse_output_mags, _, _ = sandwich(input_features, sae_mlpin, mlp, sae_mlpout)
+    return sparse_output_mags
+
+
+jacobian_lucy = get_jacobian_mlp_sae(
     sae_mlpin,
     sae_mlpout,
     mlp,
-    activations["mlp_gelu"]
+    in_feat_idx,
+    out_feat_idx,
+    activations["mlp_gelu"],
+    activations["norm_act_grad"],
 )
 
-def compute_output_mags_fixed(s_feat_mags_in):
-    return sandwich( # Use the version defined previously
-        s_feat_mags_in,
-        sae_mlpin,
-        mlp,
-        sae_mlpout
-    )
 
-sparse_feat_mags_in_grad = sparse_feat_mags_in.clone().detach().requires_grad_(True)
+import torch.autograd.functional as autograd_F
 
-from torch.autograd.functional import jacobian
+jacobian_torch = autograd_F.jacobian(
+    sandwich_for_autograd,
+    sparse_feat_mags_in,
+    create_graph=True,
+    vectorize=False,
+)
 
-# Compute Jacobian using autograd
-jacobian_auto_full = jacobian(
-    func=compute_output_mags_fixed,
-    inputs=sparse_feat_mags_in_grad,
-    create_graph=False # Usually False unless you need higher-order derivatives
-).squeeze()
+print(f'{jacobian_lucy.shape=}')
+print(f'{jacobian_torch.shape=}')
 
-print(jacobian_auto_full)
-print(jacobian_exact)
-torch.testing.assert_close(jacobian_auto_full.squeeze(), jacobian_exact.squeeze())
-# )[0]
-
+from eindex import eindex
+jacobian_torch = einops.einsum(jacobian_torch, "b s k2 b s k1 -> b s k2 k1") #take diagonal along batch and seq
+jacobian_torch_block = eindex(jacobian_torch, out_feat_idx, in_feat_idx, "b s [b s k2] [b s k1] -> b s k2 k1")
+#jacobian_torch[out_feat_idx.squeeze()][:, in_feat_idx.squeeze()]
+print(f'{jacobian_torch_block.shape=}')
+torch.testing.assert_close(jacobian_lucy, jacobian_torch_block, rtol=1e-4, atol=1e-4)
+print("Results are close!")
 
 
 # %%
