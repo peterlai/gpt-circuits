@@ -19,10 +19,14 @@ from models.sae import SparseAutoencoder
 from models.sparsified import SparsifiedGPTOutput
 from training.sae import SAETrainer
 from training.sae.concurrent import ConcurrentTrainer
-
+from config.gpt.models import GPTConfig
+from models.gpt import GPT
+from config.gpt.models import NormalizationStrategy
+from safetensors.torch import load_model
 import dataclasses
 import json
 from config.sae.models import SAEConfig
+from training import Trainer
 
 from typing import Optional, List, Union
 # Change current working directory to parent
@@ -30,7 +34,7 @@ from typing import Optional, List, Union
 #     os.chdir("..")
 # print(os.getcwd())
 
-from utils.jsae import jacobian_mlp_block_fast
+from utils.jsae import jacobian_mlp_block_fast_noeindex
 
 def parse_args() -> argparse.Namespace:
     """
@@ -41,11 +45,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--load_from", type=str, help="GPT model weights to load", default="shakespeare_64x4_dyt")
     parser.add_argument("--name", type=str, help="Model name for checkpoints", default="jblock.shk_64x4")
     parser.add_argument("--sparsity", type=str, help="Jacobian sparsity loss coefficient(s). Either a single float or comma-separated floats for each layer.", default="0.02")
-    parser.add_argument("--max_steps", type=int, help="Maximum number of steps to train", default=7500)
+    parser.add_argument("--max_steps", type=int, help="Maximum number of steps to train", default=20000)
     return parser.parse_args()
 
 
-class JSaeBlockTrainer(JSaeTrainer):
+class JSaeBlockTrainer(JSaeTrainer, Trainer):
     """
     Train SAE weights for all layers concurrently.
     """
@@ -55,24 +59,72 @@ class JSaeBlockTrainer(JSaeTrainer):
         Load and freeze GPT weights before training SAE weights.
         """
         # Create model
+        config.sae_config.gpt_config.normalization = NormalizationStrategy.DYNAMIC_TANH
+        print(config.sae_config.gpt_config.normalization)
         model = JBlockSparsifiedGPT(config.sae_config, 
                                   config.loss_coefficients, 
                                   config.trainable_layers)
 
+        print(model.gpt)
         # Load GPT weights
-        model.load_gpt_weights(load_from)
+        #model.load_gpt_weights(load_from)
+        print(f"loading from: {load_from}")
+        load_model(model.gpt, load_from / "model.safetensors", device=config.device.type)
 
         # Freeze GPT parameters
         for param in model.gpt.parameters():
             param.requires_grad = False
-            
-        assert isinstance(model.gpt.transformer.h[0].ln_2, DynamicTanh), "Only DynamicTanh is supported for JSAE Block"
+        
+        for block in model.gpt.transformer.h:
+            assert isinstance(block.ln_2, DynamicTanh), "Only DynamicTanh is supported for JSAE Block"
 
         SAETrainer.__init__(self, model, config)
 
         if self.ddp:
             # HACK: We're doing something that causes DDP to crash unless DDP optimization is disabled.
             torch._dynamo.config.optimize_ddp = False  # type: ignore
+    
+    def train(self):
+        """
+        Reload model after done training and run eval one more time.
+        """
+        # Train weights.
+        Trainer.train(self)
+
+        # Wait for all processes to complete training.
+        if self.ddp:
+            torch.distributed.barrier()
+
+        # Reload all checkpoint weights, which may include those that weren't trained.
+        # NOTE: We're using `model_type` to account for use of subclasses.
+        # self.model = self.model_type.load(
+        #     self.config.out_dir,
+        #     loss_coefficients=self.config.loss_coefficients,
+        #     trainable_layers=None,  # Load all layers
+        #     device=self.config.device,
+        # ).to(self.config.device)
+        
+        #self.model.gpt = self.load_gpt_weights(self.config.out_dir)
+        load_model(self.model.gpt, self.config.out_dir / "model.safetensors", device=self.config.device.type)
+
+        # Wrap the model if using DDP
+        if self.ddp:
+            self.model = DistributedDataParallel(self.model, device_ids=[self.ddp_local_rank])  # type: ignore
+
+        # Gather final metrics. We don't bother compiling because we're just running eval once.
+        final_metrics = self.val_step(0, should_log=False)  # step 0 so checkpoint isn't saved.
+        self.checkpoint_l0s = final_metrics["l0s"]
+        self.checkpoint_ce_loss = final_metrics["ce_loss"]
+        self.checkpoint_ce_loss_increases = final_metrics["ce_loss_increases"]
+        self.checkpoint_compound_ce_loss_increase = final_metrics["compound_ce_loss_increase"]
+
+        # Summarize results
+        if self.is_main_process:
+            print(f"Final L0s: {self.pretty_print(self.checkpoint_l0s)}")
+            print(f"Final CE loss increases: {self.pretty_print(self.checkpoint_ce_loss_increases)}")
+            print(f"Final compound CE loss increase: {self.pretty_print(self.checkpoint_compound_ce_loss_increase)}")
+        
+        
             
     def save_checkpoint(self, model: JBlockSparsifiedGPT, is_best: torch.Tensor):
         """
@@ -99,7 +151,7 @@ class JSaeBlockTrainer(JSaeTrainer):
             if self.model.loss_coefficients.sparsity[layer_idx] == 0 and not is_eval: # compute jacobian loss only on eval if sparsity is 0
                 continue
 
-            jacobian_loss = jacobian_mlp_block_fast(
+            jacobian_loss = jacobian_mlp_block_fast_noeindex(
                 sae_residmid = self.model.saes[f'{layer_idx}_residmid'],
                 sae_residpost = self.model.saes[f'{layer_idx}_residpost'],
                 mlp = self.model.gpt.transformer.h[layer_idx].mlp,
@@ -173,7 +225,7 @@ if __name__ == "__main__":
             raise ValueError(f"Error: --sparsity must provide either 1 value (for all layers) or {num_trainable_layers} values (one per layer). Got {len(sparsity_values)} values.")
 
     # Initialize trainer
-    trainer = JSaeTrainer(config, load_from=TrainingConfig.checkpoints_dir / args.load_from)
+    trainer = JSaeBlockTrainer(config, load_from=TrainingConfig.checkpoints_dir / args.load_from)
     print(f'{trainer.model.saes.keys()=}')
     print(f'{trainer.model.layer_idxs=}')
     print(f'Using sparsity coefficients: {trainer.model.loss_coefficients.sparsity}')

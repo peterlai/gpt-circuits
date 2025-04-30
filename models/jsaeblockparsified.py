@@ -14,6 +14,7 @@ from safetensors.torch import load_model, save_model
 from config.sae.models import SAEConfig, SAEVariant
 from config.sae.training import LossCoefficients
 from models.gpt import GPT, MLP
+from config.gpt.models import NormalizationStrategy
 from models.sparsified import SparsifiedGPT
 from models.sae import EncoderOutput, SparseAutoencoder
 from models.sparsified import SparsifiedGPTOutput
@@ -36,7 +37,9 @@ class JBlockSparsifiedGPT(SparsifiedGPT):
         nn.Module.__init__(self) 
         self.config = config
         self.loss_coefficients = loss_coefficients
+        config.gpt_config.norm_strategy = NormalizationStrategy.DYNAMIC_TANH
         self.gpt = GPT(config.gpt_config)
+        
         assert len(config.n_features) == self.gpt.config.n_layer * 2
         self.layer_idxs = trainable_layers if trainable_layers else list(range(self.gpt.config.n_layer))
         sae_keys = [f'{x}_{y}' for x in self.layer_idxs for y in ['residmid', 'residpost']]

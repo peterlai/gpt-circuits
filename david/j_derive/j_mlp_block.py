@@ -219,6 +219,123 @@ def get_jacobian_mlp_block_fast(
 
     return jacobian
 
+@timing
+def jacobian_mlp_block_fast_noeindex(
+    sae_residmid: DummySAE,
+    sae_residpost: DummySAE,
+    mlp: MLP,
+    topk_indices_residmid: Int[Tensor, "batch seq k1"],
+    topk_indices_residpost: Int[Tensor, "batch seq k2"],
+    mlp_act_grads: Float[Tensor, "batch seq d_mlp"], # d_mlp = 4 * n_embd
+    norm_act_grads: Float[Tensor, "batch seq n_embd"], # Cannot be None for this path
+) -> Float[Tensor, "batch seq k2 k1"]:
+
+    # --- Input Shapes ---
+    # sae_residmid.W_dec: (feat_size_mid, n_embd)
+    # norm_act_grads:  (batch, seq, n_embd)
+    # mlp.W_in:        (d_mlp, n_embd)
+    # mlp.W_out:       (n_embd, d_mlp)
+    # sae_residpost.W_enc:(n_embd, feat_size_post)
+    # mlp_act_grads:   (batch, seq, d_mlp)
+    # topk_indices_residmid: (batch, seq, k1) # Indices into feat_size_mid
+    # topk_indices_residpost:(batch, seq, k2) # Indices into feat_size_post
+    # Output:          (batch, seq, k2, k1)
+
+    if norm_act_grads is None:
+         raise ValueError("norm_act_grads cannot be None for this Jacobian calculation path.")
+
+    # --- MLP Path Calculation ---
+
+    # 1. Index W_dec according to topk_indices_residmid using standard PyTorch indexing
+    # Original W_dec shape: (feat_size_mid, n_embd)
+    # Indices shape: (batch, seq, k1) -> selecting along the first dimension (feat_size_mid)
+    W_dec_indexed: Float[Tensor, "batch seq k1 n_embd"] = sae_residmid.W_dec[topk_indices_residmid]
+
+    # 2. Compute the first part of the MLP path Jacobian contribution
+    # Einsum: "b s k n, b s n, d n -> b s k d"
+    # Equivalent to: (W_dec_indexed * norm_act_grads.unsqueeze(2)) @ mlp.W_in.T
+    # Using einsum as it might be optimized well. Removed torch.compiler.disable() for now.
+    wd1_topk: Float[Tensor, "batch seq k1 d_mlp"] = einops.einsum(
+        W_dec_indexed,
+        norm_act_grads,
+        mlp.W_in,
+        "batch seq k1 n_embd, batch seq n_embd, d_mlp n_embd -> batch seq k1 d_mlp"
+    )
+    # wd1_topk shape: (batch, seq, k1, d_mlp)
+
+    # 3. Compute the second part of the MLP path (related to mlp output act -> sae output features)
+    # mlp.W_out shape: (n, d), mlp.W_out.T shape: (d, n)
+    # sae_residpost.W_enc shape: (n, feat_size_post)
+    # Result shape: (d_mlp, feat_size_post)
+    w2e: Float[Tensor, "d_mlp feat_size_post"] = torch.matmul(mlp.W_out.T, sae_residpost.W_enc)
+
+    # 4. Index w2e according to topk_indices_residpost using standard PyTorch indexing
+    # Original w2e shape: (d_mlp, feat_size_post)
+    # Indices shape: (batch, seq, k2) -> selecting along the second dimension (feat_size_post)
+    # Result shape: (d_mlp, batch, seq, k2)
+    w2e_indexed: Float[Tensor, "d_mlp batch seq k2"] = w2e[:, topk_indices_residpost]
+    # Permute for matmul/einsum: (batch, seq, d_mlp, k2)
+    # Note: the einsum below uses the (d, b, s, k2) shape directly.
+    # w2e_indexed_perm: Float[Tensor, "batch seq d_mlp k2"] = w2e_indexed.permute(1, 2, 0, 3) # Not needed if using einsum below
+
+    # 5. Combine parts for the MLP path Jacobian
+    # Einsum: "b s k1 d, b s d, d b s k2 -> b s k2 k1"
+    # This einsum combines the element-wise multiplication with mlp_act_grads and the contraction.
+    # Removed torch.compiler.disable() for now.
+    jacobian_mlp_path: Float[Tensor, "batch seq k2 k1"] = einops.einsum(
+         wd1_topk,                                  # (b, s, k1, d)
+         mlp_act_grads.to(wd1_topk.dtype),          # (b, s, d)
+         w2e_indexed,                               # (d, b, s, k2)
+        "batch seq k1 d_mlp, batch seq d_mlp, d_mlp batch seq k2 -> batch seq k2 k1"
+    )
+
+    # --- Skip Path Calculation ---
+
+    # 1. Calculate the raw skip matrix M = W_dec @ W_enc
+    # sae_residmid.W_dec shape: (feat_size_mid, n)
+    # sae_residpost.W_enc shape: (n, feat_size_post)
+    # Result shape: (feat_size_mid, feat_size_post)
+    # Note: Assumes feat_size_mid == feat_size_post if used directly,
+    #       otherwise the indexing implies selecting input features from mid
+    #       and output features from post. Let's assume dimensions match the names.
+    feat_size_mid = sae_residmid.W_dec.shape[0]
+    feat_size_post = sae_residpost.W_enc.shape[1]
+    skip_matrix: Float[Tensor, "feat_size_mid feat_size_post"] = torch.matmul(sae_residmid.W_dec, sae_residpost.W_enc)
+
+    # 2. Index the skip matrix M[idx_mid, idx_post] using torch.gather
+    # Step 2a: Select rows specified by topk_indices_residmid
+    # skip_matrix: (feat_size_mid, feat_size_post)
+    # topk_indices_residmid: (batch, seq, k1)
+    # -> rows_selected: (batch, seq, k1, feat_size_post)
+    rows_selected = skip_matrix[topk_indices_residmid]
+
+    # Step 2b: Select columns specified by topk_indices_residpost from the selected rows.
+    # Indices need broadcasting for gather: (b, s, k2) -> (b, s, 1, k2) -> (b, s, k1, k2)
+    b, s, k1 = topk_indices_residmid.shape
+    k2 = topk_indices_residpost.shape[-1]
+    idx_post_expanded = topk_indices_residpost.unsqueeze(2).expand(b, s, k1, k2)
+
+    # Step 2c: Gather along the feat_size_post dimension (dim=3)
+    # input: rows_selected (batch, seq, k1, feat_size_post)
+    # index: idx_post_expanded (batch, seq, k1, k2)
+    # output: jacobian_skip_path_raw (batch, seq, k1, k2)
+    jacobian_skip_path_raw = torch.gather(rows_selected, dim=3, index=idx_post_expanded)
+
+    # 3. Transpose the k1 and k2 dimensions to match the target shape (b, s, k2, k1)
+    jacobian_skip_path: Float[Tensor, "batch seq k2 k1"] = jacobian_skip_path_raw.transpose(-1, -2)
+
+    # --- Combine Paths ---
+    jacobian = jacobian_mlp_path + jacobian_skip_path
+    k = sae_residmid.k # Assuming k is the intended divisor factor k1 or k2? Or a fixed hyperparam?
+                       # The original code uses sae_residmid.k ** 2. Let's keep that.
+                       # Might be better to pass k1 and k2 explicitly if they vary.
+    k1_val = topk_indices_residmid.shape[-1]
+    k2_val = topk_indices_residpost.shape[-1]
+    # Using k1*k2 seems more appropriate given the Jacobian shape (k2, k1)
+    # return jacobian.abs_().sum() / (k1_val * k2_val)
+    # Or stick to the original if k is a hyperparameter unrelated to k1/k2 sizes:
+    return jacobian
+
 
 
 
@@ -264,7 +381,7 @@ def sandwich_mlp_block(in_feat_mags : Float[Tensor, "batch seq feat"],
   
 # %
 n_embd, n_feat, k = 128, 512, 10
-batch, seq = 128,64
+batch, seq = 64,16
 mlp = MLP(GPTConfig(n_embd=n_embd)).to(device)
 sae_mlpin = DummySAE(n_embd, n_feat, k).to(device)
 sae_mlpout = DummySAE(n_embd, n_feat, k).to(device)
@@ -335,6 +452,16 @@ jacobian_fast = get_jacobian_mlp_block_fast(
     activations["norm_act_grad"],
 )
 
+jacobian_fast_noeindex = jacobian_mlp_block_fast_noeindex(
+    sae_mlpin,
+    sae_mlpout,
+    mlp,
+    in_feat_idx,
+    out_feat_idx,
+    activations["mlp_gelu"],
+    activations["norm_act_grad"],
+)
+
 # jacobian_fast_optimized_v2 = get_jacobian_mlp_block_fast_optimized_v2(
 #     sae_mlpin,
 #     sae_mlpout,
@@ -366,7 +493,8 @@ jacobian_fast = get_jacobian_mlp_block_fast(
 # print(f'{raw_jacobian_torch_mlp_block.shape=}')
 
 torch.testing.assert_close(jacobian_lucy, jacobian_fast, rtol=1e-4, atol=1e-4)
-#torch.testing.assert_close(jacobian_fast, jacobian_fast_optimized_v2, rtol=1e-4, atol=1e-4)
+print("Results are close!")
+torch.testing.assert_close(jacobian_fast, jacobian_fast_noeindex, rtol=1e-4, atol=1e-4)
 print("Results are close!")
 
 
