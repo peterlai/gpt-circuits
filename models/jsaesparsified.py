@@ -14,7 +14,6 @@ from safetensors.torch import load_model, save_model
 from config.sae.models import SAEConfig, SAEVariant
 from config.sae.training import LossCoefficients
 from models.gpt import MLP
-from models.mlpgpt import MLP_GPT
 from models.mlpsparsified import MLPSparsifiedGPT
 from models.sae import EncoderOutput, SparseAutoencoder
 from models.sparsified import SparsifiedGPTOutput
@@ -112,7 +111,6 @@ class JSparsifiedGPT(MLPSparsifiedGPT):
         :yield activations: Dictionary of activations.
         activations[f'{layer_idx}_mlpin'] = h[layer_idx].mlpin
         activations[f'{layer_idx}_mlpout'] = h[layer_idx].mlpout
-        # NOTE: resid_mid is stored in self.resid_mid_cache, not yielded directly
         """
         act: dict[str, torch.Tensor] = {}
 

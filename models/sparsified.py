@@ -98,8 +98,8 @@ class SparsifiedGPT(nn.Module):
             ce_loss_increases = []
             for sae_key, output in encoder_outputs.items():
                 resid = output.reconstructed_activations
-                activation_idx = int(sae_key.split('_')[0])
-                sae_logits = self.gpt.forward(resid, start_at_layer=int(activation_idx)).logits
+                layer_idx, _ = self.split_sae_key(sae_key)
+                sae_logits = self.gpt.forward(resid, start_at_layer=layer_idx).logits
                 sae_ce_loss = F.cross_entropy(sae_logits.view(-1, sae_logits.size(-1)), targets.view(-1))
                 ce_loss_increases.append(sae_ce_loss - cross_entropy_loss)
             ce_loss_increases = torch.stack(ce_loss_increases)
@@ -121,14 +121,29 @@ class SparsifiedGPT(nn.Module):
             indices={i: output.indices for i, output in encoder_outputs.items()},
         )
         
+    def split_sae_key(self, sae_key: str) -> tuple[int, str]:
+        """
+        Split a SAE key into a layer index and hook location.
+        """
+        items = sae_key.split('_')
+        if len(items) == 1:
+            return int(items[0]), "resid_mid"
+        elif len(items) == 2:
+            return int(items[0]), items[1]
+        else:
+            raise ValueError(f"Invalid SAE key: {sae_key}")
+        
     def make_grad_hook(self,
                        hooks : list[torch.utils.hooks.RemovableHandle],
                        cache : dict[str, torch.Tensor],
                        target : nn.Module,
                        key : str):
-        
+        """
+        Hook for computing the gradient of any elementwise function.
+        e.g. gelu, relu, DynamicTanh, etc.
+        """
         @torch.compiler.disable(recursive=False)
-        def mlp_gelu_hook_fn(module, inputs, outputs, key = key):
+        def activation_grad_hook(module, inputs, outputs, key = key):
             # Want to still run this even if grads are disabled
             pre_actfn = inputs[0]
             post_actfn = outputs
@@ -148,7 +163,7 @@ class SparsifiedGPT(nn.Module):
             cache[key] = grad_of_actfn.detach()
             return outputs
         
-        hooks.append(target.register_forward_hook(mlp_gelu_hook_fn))
+        hooks.append(target.register_forward_hook(activation_grad_hook))
 
     def make_cache_pre_hook(self,
                         hooks : list[torch.utils.hooks.RemovableHandle],
@@ -189,12 +204,12 @@ class SparsifiedGPT(nn.Module):
                       cache : dict[str, EncoderOutput],
                       target : nn.Module,
                       sae_key : str,
-                      should_patch_activations : bool = False):
+                      activations_to_patch : Iterable[str] = ()):
 
         @torch.compiler.disable(recursive=False)  # type: ignore
         def sae_prehook_fn(module, inputs):
             cache[sae_key] = self.saes[sae_key](inputs[0])
-            if should_patch_activations:
+            if sae_key in activations_to_patch:
                 return cache[sae_key].reconstructed_activations
 
         hooks.append(target.register_forward_pre_hook(sae_prehook_fn))
@@ -205,12 +220,12 @@ class SparsifiedGPT(nn.Module):
                           cache : dict[str, EncoderOutput],
                           target : nn.Module,
                           sae_key : str,
-                          should_patch_activations : bool = False):
+                          activations_to_patch : Iterable[str] = ()):
         
         @torch.compiler.disable(recursive=False)  # type: ignore
         def sae_posthook_fn(module, inputs, outputs):
             cache[sae_key] = self.saes[sae_key](outputs)
-            if should_patch_activations:
+            if sae_key in activations_to_patch:
                 return cache[sae_key].reconstructed_activations
             
         hooks.append(target.register_forward_hook(sae_posthook_fn))
@@ -240,11 +255,11 @@ class SparsifiedGPT(nn.Module):
                 hook.remove()
 
     @contextmanager
-    def use_saes(self, layers_to_patch: Iterable[int] = ()):
+    def use_saes(self, activations_to_patch: Iterable[str] = ()):
         """
         Context manager for using SAE layers during the forward pass.
 
-        :param layers_to_patch: Layer indices for patching residual stream activations with reconstructions.
+        :param activations_to_patch: Layer indices for patching residual stream activations with reconstructions.
         :yield encoder_outputs: Dictionary of encoder outputs.
         """
         # Dictionary for storing results
@@ -254,7 +269,7 @@ class SparsifiedGPT(nn.Module):
         hooks = []
         for layer_idx in self.layer_idxs:
             target = self.get_hook_target(layer_idx)
-            self.make_sae_pre_hook(hooks, encoder_outputs, target, str(layer_idx), layer_idx in layers_to_patch)
+            self.make_sae_pre_hook(hooks, encoder_outputs, target, str(layer_idx), activations_to_patch)
 
 
         try:
