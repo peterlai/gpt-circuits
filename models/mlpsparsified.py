@@ -15,6 +15,8 @@ from models.mlpgpt import MLP_GPT
 from models.sae import EncoderOutput, SparseAutoencoder
 from models.sparsified import SparsifiedGPT, SparsifiedGPTOutput
 
+from typing import Literal
+
 class MLPSparsifiedGPT(SparsifiedGPT):
     def __init__(
         self, 
@@ -113,7 +115,9 @@ class MLPSparsifiedGPT(SparsifiedGPT):
             reconstructed_activations={i: output.reconstructed_activations for i, output in encoder_outputs.items()},
             indices={i: output.indices for i, output in encoder_outputs.items()},
         )
+
     
+       
     @contextmanager
     def record_activations(self):
         """
@@ -124,67 +128,27 @@ class MLPSparsifiedGPT(SparsifiedGPT):
         activations[f'{layer_idx}_mlpout'] = h[layer_idx].mlpout
         # NOTE: resid_mid is stored in self.resid_mid_cache, not yielded directly
         """
-        activations: dict[str, torch.Tensor] = {}
+        act: dict[str, torch.Tensor] = {}
 
         # Register hooks
         hooks = []
         for layer_idx in self.layer_idxs:
             mlp = self.gpt.transformer.h[layer_idx].mlp
             ln2 = self.gpt.transformer.h[layer_idx].ln_2
-
-            @torch.compiler.disable(recursive=False)
-            def mlp_hook_fn(module, inputs, outputs, layer_idx=layer_idx):
-                activations[f'{layer_idx}_mlpin'] = inputs[0]
-                activations[f'{layer_idx}_mlpout'] = outputs
             
-            # run pre hook for ln2 to capture resid_mid
-            # need to sneak them out of the hook_fn
-            
-            @torch.compiler.disable(recursive=False)
-            def ln2_hook_fn(module, inputs, layer_idx=layer_idx):
-                activations[f'{layer_idx}_residmid'] = inputs[0]
-
-            
-            hooks.append(ln2.register_forward_pre_hook(ln2_hook_fn))  # type: ignore
-            hooks.append(mlp.register_forward_hook(mlp_hook_fn))  # type: ignore
-
+            self.make_cache_post_hook(hooks, act, mlp, key_in = f"{layer_idx}_mlpin", 
+                                                        key_out = f"{layer_idx}_mlpout")
+            self.make_cache_pre_hook(hooks, act, ln2, key_in = f"{layer_idx}_residmid")        
+    
+            # MLP Sparsifies doesn't use grad hooks, but we can still use it for JSAE
         try:
-            yield activations
+            yield act
 
         finally:
+            # Unregister hooks
             for hook_fn in hooks:
                 hook_fn.remove()
- 
-    def create_sae_hook(self, sae, encoder_outputs, sae_key, should_patch_activations):
-        """
-        Create a forward pre-hook for the given layer index for applying sparse autoencoding.
-
-        :param sae: SAE module to use for the forward pass.
-        :param output: Encoder output to be updated.
-        :param should_patch_activations: Whether to patch activations.
-        """
-        @torch.compiler.disable(recursive=False)  # type: ignore
-        def sae_prehook_fn(module, inputs, outputs=None):
-            """
-            NOTE: Compiling seems to struggle with branching logic, and so we disable it (non-recursively).
-            """
-            hook_loc = sae_key.split('_')[-1]
-            assert isinstance(inputs, tuple), f"inputs: {inputs}"
-            if hook_loc == 'mlpin':
-                assert outputs is None, f"outputs: {outputs}"
-            if hook_loc == 'mlpout':
-                assert outputs is not None, f"outputs: {outputs}"
-            
-            x = inputs[0] if hook_loc == 'mlpin' else outputs
-            encoder_outputs[sae_key] = sae(x)
-
-            if should_patch_activations:
-                return encoder_outputs[sae_key].reconstructed_activations
-            else:
-                return None
-
-        return sae_prehook_fn
-            
+        
     def split_sae_key(self, sae_key: str) -> tuple[int, str]:
         """
         Split a SAE key into a layer index and hook location.
@@ -203,18 +167,18 @@ class MLPSparsifiedGPT(SparsifiedGPT):
         encoder_outputs: dict[str, EncoderOutput] = {}
 
         hooks = []
-        for sae_key in self.saes.keys():
-            layer_idx, hook_loc = self.split_sae_key(sae_key)
-            target = self.gpt.transformer.h[layer_idx].mlp
-            sae = self.saes[sae_key]
-            should_patch_activations = sae_key in activations_to_patch
-            hook_fn = self.create_sae_hook(sae, encoder_outputs, sae_key, should_patch_activations)
-            
-            if hook_loc == 'mlpin':
-                hooks.append(target.register_forward_pre_hook(hook_fn))  # type: ignore
-            else:
-                hooks.append(target.register_forward_hook(hook_fn))  # type: ignore
+        for layer_idx in self.layer_idxs:
 
+            mlp = self.gpt.transformer.h[layer_idx].mlp
+
+            sae_key = f'{layer_idx}_mlpin'
+            self.make_sae_pre_hook(hooks, encoder_outputs, mlp, sae_key, 
+                                   should_patch_activations = sae_key in activations_to_patch)
+            
+            sae_key = f'{layer_idx}_mlpout'
+            self.make_sae_post_hook(hooks, encoder_outputs, mlp, sae_key, 
+                                    should_patch_activations = sae_key in activations_to_patch)
+            
         try:
             yield encoder_outputs
 

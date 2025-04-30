@@ -6,6 +6,7 @@ from eindex import eindex
 import einops
 from models.gpt import MLP
 import torch
+from models.sae import SparseAutoencoder
 
 @torch.compile(mode="max-autotune", fullgraph=True)
 def jacobian_mlp(
@@ -62,7 +63,7 @@ def jacobian_mlp_block(
     wd1_topk_indices = eindex(
         wd1, topk_indices_mlpin, "batch seq [batch seq k] d_mlp -> batch seq k d_mlp"
     )
-
+    k = sae_mlpin.k
     dtype = wd1.dtype
     jacobian_mlp_path = einops.einsum(
         wd1_topk_indices,
@@ -77,4 +78,4 @@ def jacobian_mlp_block(
                                 "[batch seq k2] [batch seq k1] -> batch seq k2 k1")
 
     jacobian = jacobian_mlp_path + jacobian_skip_path
-    return jacobian
+    return jacobian.abs_().sum() / (k ** 2)

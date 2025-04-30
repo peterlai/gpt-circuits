@@ -96,9 +96,10 @@ class SparsifiedGPT(nn.Module):
         if is_eval and targets is not None:
             # Calculate cross-entropy loss increase for each SAE layer
             ce_loss_increases = []
-            for activation_idx, output in encoder_outputs.items():
-                x = output.reconstructed_activations
-                sae_logits = self.gpt.forward_with_patched_activations(x, activation_idx)
+            for sae_key, output in encoder_outputs.items():
+                resid = output.reconstructed_activations
+                activation_idx = int(sae_key.split('_')[0])
+                sae_logits = self.gpt.forward(resid, start_at_layer=int(activation_idx)).logits
                 sae_ce_loss = F.cross_entropy(sae_logits.view(-1, sae_logits.size(-1)), targets.view(-1))
                 ce_loss_increases.append(sae_ce_loss - cross_entropy_loss)
             ce_loss_increases = torch.stack(ce_loss_increases)
@@ -119,6 +120,100 @@ class SparsifiedGPT(nn.Module):
             reconstructed_activations={i: output.reconstructed_activations for i, output in encoder_outputs.items()},
             indices={i: output.indices for i, output in encoder_outputs.items()},
         )
+        
+    def make_grad_hook(self,
+                       hooks : list[torch.utils.hooks.RemovableHandle],
+                       cache : dict[str, torch.Tensor],
+                       target : nn.Module,
+                       key : str):
+        
+        @torch.compiler.disable(recursive=False)
+        def mlp_gelu_hook_fn(module, inputs, outputs, key = key):
+            # Want to still run this even if grads are disabled
+            pre_actfn = inputs[0]
+            post_actfn = outputs
+            
+            pre_actfn_copy = pre_actfn.detach().requires_grad_(True)
+            
+            with torch.enable_grad():
+                recomputed_post_actfn = module.forward(pre_actfn_copy)
+            
+                grad_of_actfn = torch.autograd.grad(
+                    outputs=recomputed_post_actfn, 
+                    inputs=pre_actfn_copy,
+                    grad_outputs=torch.ones_like(recomputed_post_actfn), 
+                    retain_graph=False,
+                    create_graph=False)[0]
+
+            cache[key] = grad_of_actfn.detach()
+            return outputs
+        
+        hooks.append(target.register_forward_hook(mlp_gelu_hook_fn))
+
+    def make_cache_pre_hook(self,
+                        hooks : list[torch.utils.hooks.RemovableHandle],
+                        cache : dict[str, torch.Tensor],
+                        target : nn.Module,
+                        *,
+                        key_in : Optional[str] = None, 
+                        key_out : Optional[str] = None):
+        
+        @torch.compiler.disable(recursive=False)
+        def pre_hook_fn(module, inputs):
+            if key_in is not None:
+                cache[key_in] = inputs[0]
+            return inputs
+        
+        hooks.append(target.register_forward_pre_hook(pre_hook_fn))
+            
+    def make_cache_post_hook(self,
+                            hooks : list[torch.utils.hooks.RemovableHandle],
+                            cache : dict[str, torch.Tensor],
+                            target : nn.Module,
+                            *,
+                            key_in : Optional[str] = None, 
+                            key_out : Optional[str] = None):
+               
+        @torch.compiler.disable(recursive=False)
+        def post_hook_fn(module, inputs, outputs):
+            if key_in is not None:
+                cache[key_in] = inputs[0]
+            if key_out is not None:
+                cache[key_out] = outputs
+            return outputs
+        
+        hooks.append(target.register_forward_hook(post_hook_fn))
+            
+    def make_sae_pre_hook(self,
+                      hooks : list[torch.utils.hooks.RemovableHandle],
+                      cache : dict[str, EncoderOutput],
+                      target : nn.Module,
+                      sae_key : str,
+                      should_patch_activations : bool = False):
+
+        @torch.compiler.disable(recursive=False)  # type: ignore
+        def sae_prehook_fn(module, inputs):
+            cache[sae_key] = self.saes[sae_key](inputs[0])
+            if should_patch_activations:
+                return cache[sae_key].reconstructed_activations
+
+        hooks.append(target.register_forward_pre_hook(sae_prehook_fn))
+        
+
+    def make_sae_post_hook(self,
+                           hooks : list[torch.utils.hooks.RemovableHandle],
+                          cache : dict[str, EncoderOutput],
+                          target : nn.Module,
+                          sae_key : str,
+                          should_patch_activations : bool = False):
+        
+        @torch.compiler.disable(recursive=False)  # type: ignore
+        def sae_posthook_fn(module, inputs, outputs):
+            cache[sae_key] = self.saes[sae_key](outputs)
+            if should_patch_activations:
+                return cache[sae_key].reconstructed_activations
+            
+        hooks.append(target.register_forward_hook(sae_posthook_fn))
 
     @contextmanager
     def record_activations(self):
@@ -134,8 +229,7 @@ class SparsifiedGPT(nn.Module):
         hooks = []
         for layer_idx in list(range(len(self.config.n_features))):
             target = self.get_hook_target(layer_idx)
-            hook = self.create_activation_hook(activations, layer_idx)
-            hooks.append(target.register_forward_pre_hook(hook))  # type: ignore
+            self.make_cache_pre_hook(hooks, activations, target, key_in = f"{layer_idx}_residmid")
 
         try:
             yield activations
@@ -144,19 +238,6 @@ class SparsifiedGPT(nn.Module):
             # Unregister hooks
             for hook in hooks:
                 hook.remove()
-
-    def create_activation_hook(self, activations, layer_idx):
-        """
-        Create a forward pre-hook for the given layer index for recording activations.
-
-        :param activations: Dictionary for storing activations.
-        :param layer_idx: Layer index to record activations for.
-        """
-
-        def activation_hook(_, inputs):
-            activations[layer_idx] = inputs[0]
-
-        return activation_hook
 
     @contextmanager
     def use_saes(self, layers_to_patch: Iterable[int] = ()):
@@ -173,13 +254,8 @@ class SparsifiedGPT(nn.Module):
         hooks = []
         for layer_idx in self.layer_idxs:
             target = self.get_hook_target(layer_idx)
-            sae = self.saes[f"{layer_idx}"]
-            # Output values will be overwritten (hack to pass object by reference)
-            output = EncoderOutput(torch.tensor(0), torch.tensor(0))
-            should_patch_activations = layer_idx in layers_to_patch
-            hook = self.create_sae_pre_hook(sae, output, should_patch_activations)
-            hooks.append(target.register_forward_pre_hook(hook))  # type: ignore
-            encoder_outputs[layer_idx] = output
+            self.make_sae_pre_hook(hooks, encoder_outputs, target, str(layer_idx), layer_idx in layers_to_patch)
+
 
         try:
             yield encoder_outputs
@@ -189,29 +265,6 @@ class SparsifiedGPT(nn.Module):
             for hook in hooks:
                 hook.remove()
 
-    def create_sae_pre_hook(self, sae, output, should_patch_activations):
-        """
-        Create a forward pre-hook for the given layer index for applying sparse autoencoding.
-
-        :param sae: SAE module to use for the forward pass.
-        :param output: Encoder output to be updated.
-        :param should_patch_activations: Whether to patch activations.
-        """
-
-        @torch.compiler.disable(recursive=False)  # type: ignore
-        def sae_hook(_, inputs):
-            """
-            NOTE: Compiling seems to struggle with branching logic, and so we disable it (non-recursively).
-            """
-
-            x = inputs[0]
-            # Override field values instead of replacing reference
-            output.__dict__ = sae(x).__dict__
-
-            # Patch activations if needed
-            return (output.reconstructed_activations,) if should_patch_activations else inputs
-
-        return sae_hook
 
     def get_hook_target(self, layer_idx) -> nn.Module:
         """
