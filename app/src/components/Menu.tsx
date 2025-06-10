@@ -14,19 +14,27 @@ function Menu() {
   const [{ data: modelOptions }] = useAtom(modelOptionsAtom);
 
   const shakespeareSampleIdToOptions = new Map<string, SampleOption[]>();
+  const tinyStoriesSampleIdToOptions = new Map<string, SampleOption[]>();
 
-  // For each model option, group sample options by sample ID.
+  // For each model option, group sample options by sample ID and dataset type.
   Object.values(modelOptions ?? {}).forEach((modelOption) => {
     Object.entries(modelOption.sampleOptions).forEach(([sampleId, sampleOption]) => {
-      const options = shakespeareSampleIdToOptions.get(sampleId) ?? [];
+      // Determine dataset type based on tokenization strategy
+      // Shakespeare uses character-level tokenization (all tokens are single characters)
+      // TinyStories uses subword tokenization (has multi-character tokens)
+      const tokens = sampleOption.decodedTokens || [];
+      const isShakespeare = !tokens.some((token) => token.length > 1);
+      const targetMap = isShakespeare ? shakespeareSampleIdToOptions : tinyStoriesSampleIdToOptions;
+
+      const options = targetMap.get(sampleId) ?? [];
       options.push(sampleOption);
-      shakespeareSampleIdToOptions.set(sampleId, options);
+      targetMap.set(sampleId, options);
     });
   });
 
   // Sort sample IDs numerically if possible.
-  const sortedShakespeareSampleIds = Array.from(shakespeareSampleIdToOptions.keys()).sort(
-    (a, b) => {
+  const sortSampleIds = (sampleIds: string[]) => {
+    return sampleIds.sort((a, b) => {
       // Check if ID is in the format "x.0.0.0"
       const aParts = a.split(".");
       const bParts = b.split(".");
@@ -48,8 +56,11 @@ function Menu() {
         // Otherwise, sort as strings.
         return a.localeCompare(b);
       }
-    }
-  );
+    });
+  };
+
+  const sortedShakespeareSampleIds = sortSampleIds(Array.from(shakespeareSampleIdToOptions.keys()));
+  const sortedTinyStoriesSampleIds = sortSampleIds(Array.from(tinyStoriesSampleIdToOptions.keys()));
 
   return (
     <menu>
@@ -64,23 +75,37 @@ function Menu() {
             This app uses sparse autoencoders and feature ablation to map the inner circuitry of an
             LLM. <a href={`#${getAboutPath()}`}>Learn more &raquo;</a>
           </p>
-          <h3>
-            <a
-              href="https://huggingface.co/datasets/karpathy/tiny_shakespeare"
-              target="about:blank"
-            >
-              Shakespeare
-            </a>{" "}
-            Samples
-          </h3>
-          <ul className="samples">
-            {sortedShakespeareSampleIds.map((sampleId) => (
-              <SampleMenuItem
-                key={sampleId}
-                sampleOptions={shakespeareSampleIdToOptions.get(sampleId)!}
-              />
-            ))}
-          </ul>
+          {[
+            {
+              name: "TinyStories",
+              url: "https://huggingface.co/datasets/roneneldan/TinyStories",
+              sampleIds: sortedTinyStoriesSampleIds,
+              sampleMap: tinyStoriesSampleIdToOptions,
+            },
+            {
+              name: "Shakespeare",
+              url: "https://huggingface.co/datasets/karpathy/tiny_shakespeare",
+              sampleIds: sortedShakespeareSampleIds,
+              sampleMap: shakespeareSampleIdToOptions,
+            },
+          ].map(
+            ({ name, url, sampleIds, sampleMap }) =>
+              sampleIds.length > 0 && (
+                <div key={name}>
+                  <h3>
+                    <a href={url} target="about:blank">
+                      {name}
+                    </a>{" "}
+                    Samples
+                  </h3>
+                  <ul className="samples">
+                    {sampleIds.map((sampleId) => (
+                      <SampleMenuItem key={sampleId} sampleOptions={sampleMap.get(sampleId)!} />
+                    ))}
+                  </ul>
+                </div>
+              )
+          )}
         </section>
       </div>
     </menu>

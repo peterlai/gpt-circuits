@@ -12,13 +12,13 @@ let hiddenModelPrefixes: string[]; // Hide these in the UI
 // Set directory and prefixes based on build mode
 if (buildMode) {
     console.log("Building index for deployment");
-    modelsDir = buildMode ? 'build/samples' : 'public/samples';
-    indexedModelPrefixes = ["toy-v0"];
+    modelsDir = 'build/samples';
+    indexedModelPrefixes = ["toy-v0", "toy-stories"];
     hiddenModelPrefixes = ["comparisons"];
 } else {
     modelsDir = 'public/samples';
-    indexedModelPrefixes = ["toy"];
-    hiddenModelPrefixes = ["toy-v0"];
+    indexedModelPrefixes = ["toy-v0", "toy-stories"];
+    hiddenModelPrefixes = ["comparisons"];
 }
 
 // If building for deploying, clean up build directory
