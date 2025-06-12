@@ -1,0 +1,38 @@
+#Guide {
+    li > div {
+        display: inline-flex;
+        align-items: flex-start;
+        width: 100%;
+    }
+    .label {
+        position: relative;
+        flex: 0 0 auto;
+        font-size: 0.8em;
+        margin-right: 5px;
+
+        .feature-number {
+            background: #eee;
+            padding: 2px;
+        }
+
+        .lighter-feature {
+            background: #eee;
+            padding: 2px;
+            color: #999;
+        }
+
+        .highlighted-feature {
+            background: rgba(255, 255, 0, 0.6);
+            padding: 2px;
+        }
+
+        .dependent-feature {
+            background: rgba(255, 0, 0, 0.6);
+            padding: 2px;
+        }
+        .weakly-iteracting-feature {
+            background: rgba(255, 0, 0, 0.3);
+            padding: 2px;
+        }
+    }
+}

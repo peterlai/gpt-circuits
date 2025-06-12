@@ -1,3 +1,4 @@
+import { Guide } from "../../components/Home/Guide";
 import { Intro } from "../../components/Home/Intro";
 import "./style.scss";
 
@@ -6,6 +7,7 @@ function Home() {
     <div id="Home">
       <main>
         <Intro />
+        <Guide />
       </main>
     </div>
   );

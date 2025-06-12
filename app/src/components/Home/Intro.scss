@@ -12,21 +12,42 @@
         height: auto;
         display: block;
     }
-    .authors {
+    .header-meta {
         display: flex;
         align-items: center;
+        margin-bottom: 1.5rem;
+        color: #999;
+        font-size: 1em;
 
-        .author {
+        .authors {
             display: flex;
             align-items: center;
-            margin-right: 10px;
-            color: #888;
+
+            .author {
+                display: flex;
+                align-items: center;
+                margin-right: 20px;
+            }
+
+            .icon {
+                font-size: 1em;
+                margin-right: 10px;
+            }
+
+            span {
+                font-weight: 400;
+            }
         }
 
-        .icon {
-            font-size: 1em;
-            margin-right: 5px;
-            padding-bottom: 2px;
+        .publication-date {
+            display: flex;
+            align-items: center;
+            font-weight: 400;
+
+            .icon {
+                font-size: 1em;
+                margin-right: 10px;
+            }
         }
     }
 

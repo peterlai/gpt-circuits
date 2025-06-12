@@ -1,6 +1,6 @@
 import { useAtom } from "jotai";
 import { useEffect, useRef } from "react";
-import { FaUpRightFromSquare } from "react-icons/fa6";
+import { FaCalendarDays, FaUpRightFromSquare, FaUser } from "react-icons/fa6";
 import { Tooltip, TooltipRefProps } from "react-tooltip";
 import { isMenuOpenAtom, isMobile } from "../../stores/Navigation";
 import { getInspectSamplePath } from "../../views/App/urls";
@@ -45,9 +45,18 @@ function Intro() {
         <img src={`${process.env.PUBLIC_URL}/logo.png`} alt="logo" />
         <span>Proof-of-Concept LLM Debugger</span>
       </h1>
-      <p>
-        <em>Peter Lai | Jun 11, 2025</em>
-      </p>
+      <div className="header-meta">
+        <div className="authors">
+          <div className="author">
+            <FaUser className="icon" />
+            <span>Peter Lai</span>
+          </div>
+        </div>
+        <div className="publication-date">
+          <FaCalendarDays className="icon" />
+          <span>June 12, 2025</span>
+        </div>
+      </div>
       <p>
         There are several great{" "}
         <a href="https://www.3blue1brown.com/lessons/gpt" target="_blank" rel="noopener noreferrer">
@@ -121,11 +130,18 @@ function Intro() {
         <a href="#/" onClick={openAppHandler}>
           menu
         </a>{" "}
-        on the left to browse example circuits. You'll find that each visual “block” is composed of
-        “features” that fire upon encountering specific sequences of tokens. These features act in
-        ensemble to produce higher level features, which then activate in response to (i) longer
-        sequences and (ii) specific grammatical patterns. What results is a graph tying the effects
-        of specific input tokens to the probabilities of the next token in a sequence.
+        on the left to browse example circuits. You'll find that each visual block is composed of “
+        <a
+          href="https://transformer-circuits.pub/2023/monosemantic-features/index.html"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          features
+        </a>
+        ” that fire upon encountering specific sequences of tokens. These features act in ensemble
+        to produce higher level features, which then activate in response to (i) longer sequences
+        and (ii) specific grammatical patterns. What results is a graph tying the effects of
+        specific input tokens to the probabilities of the next token in a sequence.
       </p>
       <Tooltip
         ref={tooltipRef}
