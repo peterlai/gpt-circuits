@@ -3,9 +3,14 @@
         display: flex;
         align-items: center;
     }
-    img {
+    h1 img {
         height: 1em;
         margin-right: 0.5em;
+    }
+    figure img {
+        width: 100%;
+        height: auto;
+        display: block;
     }
     .authors {
         display: flex;
@@ -23,5 +28,45 @@
             margin-right: 5px;
             padding-bottom: 2px;
         }
+    }
+
+    .deepdive-link {
+        margin: 1.5rem 0;
+        padding: 0.75rem 1rem;
+        background-color: rgba(0, 0, 0, 0.05);
+        border-left: 4px solid #6495ED;
+        border-radius: 4px;
+        transition: background-color 0.2s ease;
+
+        &:hover {
+            background-color: rgba(0, 0, 0, 0.08);
+        }
+
+        a.external-link {
+            display: flex;
+            align-items: center;
+            font-weight: 600;
+            color: #3a73d4;
+            text-decoration: none;
+
+            &:hover {
+                text-decoration: underline;
+            }
+
+            .external-icon {
+                margin-left: 6px;
+                margin-top: 1px;
+                font-size: 0.85em;
+                color: inherit;
+            }
+        }
+    }
+}
+
+/* Mobile style */
+@media screen and (max-width: 800px){
+    /* Don't show logo */
+    h1 img {
+        display: none;
     }
 }

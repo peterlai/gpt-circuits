@@ -1,16 +1,16 @@
 import { useAtom } from "jotai";
 import { useEffect, useRef } from "react";
+import { FaUpRightFromSquare } from "react-icons/fa6";
 import { Tooltip, TooltipRefProps } from "react-tooltip";
 import { isMenuOpenAtom, isMobile } from "../../stores/Navigation";
-import { getEmbeddedSamplePath } from "../../views/App/urls";
+import { getInspectSamplePath } from "../../views/App/urls";
 import { SampleAnchor } from "../Home/Sample";
 import "./Intro.scss";
 function Intro() {
   const modelId = "toy-v0";
   const sampleId = "val.0.69248.76";
   const version = "0.1";
-  const selectionKey = "0.2";
-  const embeddedSamplePath = `#${getEmbeddedSamplePath(modelId, sampleId, version, selectionKey)}`;
+  const samplePath = `#${getInspectSamplePath(modelId, sampleId, version)}`;
   const [isMenuOpen, setIsMenuOpen] = useAtom(isMenuOpenAtom);
   const tooltipRef = useRef<TooltipRefProps>(null);
   const tooltipPosition = isMobile() ? undefined : { x: 275, y: 300 };
@@ -43,17 +43,24 @@ function Intro() {
     <section id="Intro">
       <h1>
         <img src={`${process.env.PUBLIC_URL}/logo.png`} alt="logo" />
-        <span>GPT-2 Circuits</span>
+        <span>Proof-of-Concept LLM Debugger</span>
       </h1>
       <p>
-        This{" "}
+        <em>Peter Lai | Jun 11, 2025</em>
+      </p>
+      <p>
+        There are several great{" "}
+        <a href="https://www.3blue1brown.com/lessons/gpt" target="_blank" rel="noopener noreferrer">
+          tutorials
+        </a>{" "}
+        on how LLMs process information; however, these tutorials use hypothetical examples to
+        visualize the flow of data. What actually happens after feeding a simple sentence through an
+        LLM? This{" "}
         <a href="#/" onClick={openAppHandler}>
           app
         </a>{" "}
-        visualizes “circuits” that have been extracted from an LLM using the GPT-2 architecture. The
-        nodes in these circuits represent groups of features that collectively respond to clear
-        patterns in the text. Here’s an example node that picks out five-to-six letter words ending
-        in “s”.
+        implements a proof-of-concept LLM “debugger” that uses real internal representations of
+        learned concepts to construct an explanation of how simple LLMs produce simple behaviors.
       </p>
       <figure>
         <figcaption>
@@ -64,15 +71,61 @@ function Intro() {
             text="Predicting What Comes After the Letter “s”"
           />
         </figcaption>
-        <iframe title="Embedded Circuit" src={embeddedSamplePath} height="420px" />
+        <a href={samplePath} target="_blank" rel="noopener noreferrer">
+          <img src={`${process.env.PUBLIC_URL}/thinks-circuit.webp`} alt="Circuit visualization" />
+        </a>
       </figure>
       <p>
-        This research builds upon a{" "}
-        <a href="https://peterlai.github.io/gpt-mri/" target="_blank" rel="noreferrer">
-          previous version
+        This app automates “circuit” visualizations for two tiny GPT-2 models – one is
+        character-based and has been trained using text from{" "}
+        <a
+          href="https://huggingface.co/datasets/karpathy/tiny_shakespeare"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Shakespeare plays
+        </a>
+        . A second uses a more conventional GPT-2 tokenizer and has been trained using{" "}
+        <a
+          href="https://huggingface.co/datasets/roneneldan/TinyStories"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          short stories
         </a>{" "}
-        of this project in which we extract circuits from 4 &amp; 6 layer character-based GPT-2
-        models.
+        for children. For a more detailed explanation of what “circuits” are and how they're
+        extracted,{" "}
+        <a
+          href="https://www.lesswrong.com/posts/rxR5p9Qha937wTTBp/proof-of-concept-debugger-for-a-small-llm"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          this post
+        </a>{" "}
+        offers a deepdive into the heuristics used to assemble graphs and extract internal
+        representations.
+      </p>
+      <p className="deepdive-link">
+        <a
+          href="https://www.lesswrong.com/posts/rxR5p9Qha937wTTBp/proof-of-concept-debugger-for-a-small-llm"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="external-link"
+        >
+          Circuit Extraction Deepdive
+          <FaUpRightFromSquare className="external-icon" />
+        </a>
+      </p>
+      <p>
+        Use the{" "}
+        <a href="#/" onClick={openAppHandler}>
+          menu
+        </a>{" "}
+        on the left to browse example circuits. You'll find that each visual “block” is composed of
+        “features” that fire upon encountering specific sequences of tokens. These features act in
+        ensemble to produce higher level features, which then activate in response to (i) longer
+        sequences and (ii) specific grammatical patterns. What results is a graph tying the effects
+        of specific input tokens to the probabilities of the next token in a sequence.
       </p>
       <Tooltip
         ref={tooltipRef}
