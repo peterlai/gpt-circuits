@@ -91,8 +91,8 @@ function Intro() {
         </a>
       </figure>
       <p>
-        This app automates “circuit” visualizations for two tiny GPT-2 models – one is
-        character-based and has been trained using text from{" "}
+        This app automates “circuit” visualizations for two tiny GPT-2 models with four layers – one
+        is character-based and has been trained using text from{" "}
         <a
           href="https://huggingface.co/datasets/karpathy/tiny_shakespeare"
           target="_blank"
