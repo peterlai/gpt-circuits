@@ -1,5 +1,8 @@
+import { SampleData } from "../../stores/Sample";
+import { AlignmentOptions } from "../../stores/Search";
 import { getInspectSamplePath } from "../../views/App/urls";
-
+import { SamplesList } from "../SamplesList";
+import { similarSamples } from "./SimilarSamples";
 import "./VerdantForest.scss";
 
 function VerdantForest() {
@@ -14,6 +17,32 @@ function VerdantForest() {
     version,
     selectionKey
   )}`;
+
+  let samplesList: SampleData[] = similarSamples.map((sample) => {
+    // Create arrays of activations and normalized activations from tokens
+    const activations = sample.decodedTokens.map(() => 0); // Default all to 0
+    const normalizedActivations = sample.decodedTokens.map(() => 0); // Default all to 0
+
+    // If sample has tokens with activation data, use them
+    if (sample.tokens) {
+      sample.tokens.forEach((token, idx) => {
+        if (idx < activations.length) {
+          activations[idx] = token.activation || 0;
+          normalizedActivations[idx] = token.normalizedActivation || 0;
+        }
+      });
+    }
+
+    return new SampleData(
+      sample.text,
+      sample.decodedTokens,
+      activations,
+      normalizedActivations,
+      sample.targetIdx,
+      sample.absoluteTokenIdx,
+      sample.modelId
+    );
+  });
 
   return (
     <section id="VerdantForest">
@@ -93,12 +122,13 @@ function VerdantForest() {
             Similar Sequences from Training Data
           </a>
         </figcaption>
-        <a href={samplePathWithSelectionKey} target="_blank" rel="noopener noreferrer">
-          <img
-            src={`${process.env.PUBLIC_URL}/home/similar-sequences.png`}
-            alt="Similar sequences from training data"
-          />
-        </a>
+        <SamplesList
+          samples={samplesList}
+          alignment={AlignmentOptions.Token}
+          rightPadding={20}
+          hideActivation={true}
+          showIcon={true}
+        />
         <p>
           These sequences from the model's training dataset produce feature activations in the last
           layer that most strongly resemble the feature activations produced by the original

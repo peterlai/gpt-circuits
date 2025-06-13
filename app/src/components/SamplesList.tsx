@@ -132,7 +132,9 @@ function Sample({
   return (
     <li className="sample" data-sample-id={sample.absoluteTokenIdx}>
       {showIcon && <TbBlockquote className="icon" />}
-      {alignment === AlignmentOptions.Token && <span className="index">{sample.targetIdx}</span>}
+      {!hideActivation && alignment === AlignmentOptions.Token && (
+        <span className="index">{sample.targetIdx}</span>
+      )}
       <span
         className={classNames({
           tokens: true,
