@@ -1,4 +1,5 @@
 import { getInspectSamplePath } from "../../views/App/urls";
+
 import "./VerdantForest.scss";
 
 function VerdantForest() {
