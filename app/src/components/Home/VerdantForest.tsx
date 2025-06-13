@@ -75,6 +75,12 @@ function VerdantForest() {
             What Does Happen
           </a>
         </figcaption>
+        <a href={samplePath} target="_blank" rel="noopener noreferrer">
+          <img
+            src={`${process.env.PUBLIC_URL}/home/verdant-forest.png`}
+            alt="Circuit for verdant forest sentence"
+          />
+        </a>
       </figure>
       <figure>
         <figcaption>
