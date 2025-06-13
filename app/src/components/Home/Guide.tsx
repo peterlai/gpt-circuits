@@ -16,7 +16,7 @@ function Guide() {
         Each column in the graph represents the processing of a different input token. Each row
         represents a different layer within the LLM. The first row represents features contained
         within the embedding layer. The last row represents features responsible for a final output
-        prediction. Our interface supports tracing the downstream effects of “upstream” features.
+        prediction. Our interface supports tracing the “downstream” effects of “upstream” features.
         Select a feature to view its dependencies and list example sequences that trigger its
         activation.
       </p>
