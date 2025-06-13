@@ -2,10 +2,13 @@ import { useAtom } from "jotai";
 import { useEffect, useRef } from "react";
 import { FaCalendarDays, FaUpRightFromSquare, FaUser } from "react-icons/fa6";
 import { Tooltip, TooltipRefProps } from "react-tooltip";
+
 import { isMenuOpenAtom, isMobile } from "../../stores/Navigation";
 import { getInspectSamplePath } from "../../views/App/urls";
 import { SampleAnchor } from "../Home/Sample";
+
 import "./Intro.scss";
+
 function Intro() {
   const modelId = "toy-v0";
   const sampleId = "val.0.69248.76";
@@ -114,7 +117,7 @@ function Intro() {
         >
           this post
         </a>{" "}
-        offers a deepdive into the heuristics used to assemble graphs and extract internal
+        offers a deep dive into the heuristics used to assemble graphs and extract internal
         representations.
       </p>
       <p className="deepdive-link">
@@ -124,7 +127,7 @@ function Intro() {
           rel="noopener noreferrer"
           className="external-link"
         >
-          Circuit Extraction Deepdive
+          Circuit Extraction Details
           <FaUpRightFromSquare className="external-icon" />
         </a>
       </p>

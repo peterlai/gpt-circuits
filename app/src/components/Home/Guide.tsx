@@ -1,6 +1,7 @@
 import { getEmbeddedSamplePath } from "../../views/App/urls";
 import "./Guide.scss";
 import { SampleAnchor } from "./Sample";
+import "./Guide.scss";
 
 function Guide() {
   const modelId = "toy-v0";
@@ -78,7 +79,7 @@ function Guide() {
         <li>
           <div>
             <span className="label">
-              <span className="weakly-iteracting-feature">34</span> :
+              <span className="weakly-interacting-feature">34</span> :
             </span>
             <span className="description">
               A lighter background indicates a weaker feature interaction (i.e., muted ablation
