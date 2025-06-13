@@ -82,7 +82,7 @@ function Intro() {
         </figcaption>
         <a href={samplePath} target="_blank" rel="noopener noreferrer">
           <img
-            src={`${process.env.PUBLIC_URL}/home/thinks-circuit.webp`}
+            src={`${process.env.PUBLIC_URL}/home/thinks-circuit.png`}
             alt="Circuit visualization"
           />
         </a>
