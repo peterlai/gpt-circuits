@@ -81,6 +81,10 @@ function VerdantForest() {
             alt="Circuit for verdant forest sentence"
           />
         </a>
+        <p>
+          The model identifies a "creature" as the subject of this sentence and seems to use this
+          information to form the start of a new sentence.
+        </p>
       </figure>
       <figure>
         <figcaption>
